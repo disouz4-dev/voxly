@@ -1,0 +1,44 @@
+{
+  "name": "voxly",
+  "version": "1.0.0",
+  "description": "Voxly - Sistema de fila para karaoke com QR Code",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "electron-store": "^8.1.0",
+    "firebase": "^10.14.1",
+    "qrcode": "^1.5.3",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.voxly.app",
+    "productName": "Voxly",
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icons/icon.ico"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "musicas",
+        "to": "musicas",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000; 
+      color: #fff; 
+      height: 100vh; 
+      overflow: hidden; 
+      display: flex; 
+      flex-direction: column;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    #video-player {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      flex: 1;
+      display: none;
+    }
+    #idle-screen {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at center, #1a0033 0%, #000 70%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      flex: 1;
+    }
+    #idle-screen img {
+      height: 350px;
+      width: auto;
+      display: block;
+      margin-bottom: 12px;
+    }
+    #idle-sub {
+      font-size: 1.2rem;
+      color: #ffffff80;
+    }
+    /* QR code overlay (bottom-left) */
+    #qr-overlay {
+      position: absolute;
+      bottom: 25px;
+      left: 25px;
+      width: 140px;
+      height: 140px;
+      z-index: 10;
+    }
+    #qr-overlay img {
+      width: 100%;
+      height: 100%;
+      background: #fff;
+      padding: 4px;
+      box-sizing: content-box;
+    }
+    /* Footer with logo and credits */
+    .footer {
+      padding: 12px;
+      text-align: center;
+      color: #ffffff60;
+      font-size: .75rem;
+      border-top: 1px solid #ffffff10;
+      flex-shrink: 0;
+    }
+    .footer .logo {
+      height: 80px;
+      width: auto;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+    .footer .credits {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
+    }
+    .footer .credits strong { color: #e040fb; }
+  </style>
+</head>
+<body>
+  <!-- TELA DE ESPERA -->
+  <div id="idle-screen">
+    <img src="../assets/logo/logo_voxly.png" alt="Voxly Logo">
+    <div id="idle-sub">Aguardando próxima música...</div>
+  </div>
+
+  <!-- VÍDEO (quando houver reprodução) -->
+  <video id="video-player" controls></video>
+
+  <!-- QR CODE OVERLAY -->
+  <div id="qr-overlay">
+    <img id="qrImg" src="" alt="QR code">
+  </div>
+
+  <!-- Input manual de código (oculto, usado pelo script) -->
+  <div style="display:none;">
+    <input type="text" id="sessionCodeInput" placeholder="Código da sessão" />
+    <button id="joinSessionBtn">Entrar</button>
+  </div>
+
+  <!-- RODAPÉ -->
+  <footer class="footer">
+    <img src="../assets/logo/logo_voxly.png" alt="Voxly Logo" class="logo">
+    <div class="credits">
+      Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
+    </div>
+  </footer>
+
+<script>
+  const video   = document.getElementById("video-player");
+  // QR Code handling with session integration
+    const qrImg   = document.getElementById("qrImg");
+    const codeInput = document.getElementById("sessionCodeInput");
+    const joinBtn = document.getElementById("joinSessionBtn");
+
+    // Obtém URL base do app web
+    async function getWebAppUrl() {
+      // URL fixa do Firebase Hosting
+      return 'https://voxly-karaoke.web.app';
+    }
+
+    // Atualiza QR Code incluindo código da sessão atual
+    async function updateQRCode() {
+      try {
+        const session = await window.electronAPI.invoke('get-current-session');
+        // Use apenas o código da sessão como dado do QR
+        const data = session ? session.code : '';
+        const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(data)}`;
+        qrImg.src = qrApi;
+        qrImg.title = data;
+        // Preenche campo de código manual para conveniência
+        if (session) codeInput.value = session.code;
+      } catch (e) {
+        console.error('Erro ao gerar QR code:', e);
+        qrImg.src = '';
+        qrImg.title = 'Erro ao gerar QR code';
+      }
+    }
+
+    // Attempt to join session using entered code
+    async function joinSession() {
+      const code = codeInput.value.trim();
+      const user = firebase.auth().currentUser; // Assume Firebase auth loaded in renderer
+      if (!user) { alert('Faça login antes de entrar na sessão'); return; }
+      const result = await window.electronAPI.invoke('join-session', { uid: user.uid, code, displayName: user.displayName });
+      if (result.success) {
+        alert('Entrou na sessão!');
+      } else {
+        alert('Falha ao entrar: ' + (result.error || 'Código inválido'));
+      }
+    }
+
+    joinBtn.addEventListener('click', joinSession);
+
+    // Carrega inicialmente e atualiza periodicamente
+    updateQRCode();
+    setInterval(updateQRCode, 15000);
+
+    // CONTROLE DE REPRODUÇÃO DE VÍDEO (recebido do processo principal)
+    window.electronAPI.onPlayVideo(filePath => {
+      idle.style.display  = "none";
+      video.style.display = "block";
+      video.src           = `file://${filePath}`;
+      video.play();
+    });
+
+  window.electronAPI.onPlayerCmd(cmd => {
+    if (cmd === "play")        video.play();
+    if (cmd === "pause")       video.pause();
+    if (cmd === "stop")        { 
+      video.pause(); 
+      video.src = ""; 
+      video.style.display = "none"; 
+      idle.style.display = "flex"; 
+    }
+    if (cmd === "fullscreen")  document.documentElement.requestFullscreen?.();
+  });
+
+  video.addEventListener("ended", () => {
+    video.style.display = "none";
+    idle.style.display  = "flex";
+  });
+</script>
+</body>
+</html>
