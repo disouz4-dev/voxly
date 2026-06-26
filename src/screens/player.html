@@ -49,6 +49,7 @@
       width: 140px;
       height: 140px;
       z-index: 10;
+      display: none;
     }
     #qr-overlay img {
       width: 100%;
@@ -114,6 +115,7 @@
   const video   = document.getElementById("video-player");
   // QR Code handling with session integration
     const qrImg   = document.getElementById("qrImg");
+    const qrOverlay = document.getElementById("qr-overlay");
     const codeInput = document.getElementById("sessionCodeInput");
     const joinBtn = document.getElementById("joinSessionBtn");
 
