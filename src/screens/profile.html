@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Voxly – Entrar na Sessão</title>
+  <style>
+    body {font-family: system-ui, sans-serif; background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0;}
+    #video {width:320px; height:240px; background:#000; border:2px solid #444;}
+    button {margin-top:12px; padding:.5rem 1rem; font-size:.9rem;}
+    #status {margin-top:8px; font-size:.85rem; color:#aaa;}
+  </style>
+</head>
+<body>
+  <h2>Escanear QR da Sessão</h2>
+  <video id="video" autoplay muted></video>
+  <button id="scanBtn">Escanear QR</button>
+  <div id="status"></div>
+
+  <script>
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+    const scanBtn = document.getElementById('scanBtn');
+
+    // Inicia câmera do usuário
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+        video.srcObject = stream;
+        status.textContent = 'Câmera pronta';
+      } catch (e) {
+        console.error(e);
+        status.textContent = 'Erro ao acessar a câmera';
+      }
+    }
+
+    // Captura quadro e envia ao backend para decodificar QR (placeholder)
+    async function scanQR() {
+      if (!video.srcObject) {status.textContent='Câmera não está ativa'; return;}
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      const dataUrl = canvas.toDataURL('image/png');
+      // Envia ao main via electron API – implementação deve decodificar QR e retornar código da sessão
+      const result = await window.electronAPI.invoke('decode-qr', {image: dataUrl});
+      if (result && result.code) {
+        status.textContent = `Código da sessão: ${result.code}`;
+        // Junte à sessão (exemplo)
+        await window.electronAPI.invoke('join-session', {code: result.code});
+      } else {
+        status.textContent = 'QR não reconhecido';
+      }
+    }
+
+    scanBtn.addEventListener('click', scanQR);
+    startCamera();
+  </script>
+</body>
+</html>
