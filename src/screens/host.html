@@ -238,6 +238,7 @@
     <span id="cycle-label" style="font-size:.8rem;color:var(--muted)">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
     <button class="btn btn-secondary btn-sm" onclick="nextCycle()">Proximo Ciclo</button>
     <button class="btn btn-primary btn-sm" id="startSessionBtn">Iniciar Sess\u00e3o</button>
+    <button class="btn btn-secondary btn-sm" id="startQueueBtn">Iniciar Fila</button>
     <span id="sessionCodeDisplay" class="qr-url" style="margin-left:12px;color:var(--muted)"></span>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">? Config</button>
     <div id="onlineSingers" class="panel-body"></div>
@@ -482,6 +483,12 @@
 
   // ── Ações da fila ──────────────────────────────────────
   async function tocarMusica(itemId) {
+    // Verifica se a fila foi iniciada pelo host
+    const sessSnap = await db.collection('sessoes').doc(SESSAO_ID).get();
+    if (!sessSnap.data()?.filaIniciada) {
+      alert('A fila ainda não foi iniciada pelo host.');
+      return;
+    }
     // Marca como tocando no Firestore
     const batch = db.batch();
 
@@ -633,6 +640,7 @@
 
     // Iniciar sessão ao clicar no botão
     const startBtn = document.getElementById('startSessionBtn');
+    const startQueueBtn = document.getElementById('startQueueBtn');
     const codeSpan = document.getElementById('sessionCodeDisplay');
     if (startBtn) {
       startBtn.addEventListener('click', async () => {
@@ -641,6 +649,18 @@
           codeSpan.textContent = `Código: ${sess.code}`;
         } else {
           alert('Erro ao iniciar sessão');
+        }
+      });
+    }
+    if (startQueueBtn) {
+      startQueueBtn.addEventListener('click', async () => {
+        try {
+          await db.collection('sessoes').doc(SESSAO_ID).update({ filaIniciada: true });
+          alert('Fila iniciada – cantores podem tocar suas músicas.');
+          startQueueBtn.disabled = true;
+        } catch (e) {
+          console.error(e);
+          alert('Falha ao iniciar fila.');
         }
       });
     }
