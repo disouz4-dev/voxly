@@ -26,6 +26,7 @@
     }
     #idle-screen img { height: 350px; width: auto; display: block; }
     #idle-sub { font-size: 1.2rem; color: #ffffff80; }
+    #idle-next { animation: fadeUp .5s ease both; }
     .qr-corner {
       position: absolute; bottom: 20px; z-index: 10;
       display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -459,6 +460,10 @@
   <div id="idle-screen">
     <img src="../assets/logo/logo_voxly.png" alt="Voxly">
     <div id="idle-sub">Aguardando próxima música...</div>
+    <div id="idle-next" style="display:none;margin-top:18px;text-align:center;">
+      <div id="idle-next-singer" style="font-size:1.5rem;font-weight:700;color:#fff;margin-bottom:6px;"></div>
+      <div id="idle-next-song"   style="font-size:1.1rem;color:#c084fc;"></div>
+    </div>
   </div>
 
   <video id="video-player" controls></video>
@@ -872,7 +877,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "preview") {
           clearTimeout(idleFallbackTimer);
-          idle.style.display = "none";
+          // Atualiza idle com info do próximo cantor (fica visível atrás do overlay)
+          mostrarIdleScreen({ cantor: dados.cantor||'—', duo: dados.duo||null,
+                              musica: dados.musica||'—', artista: dados.artista||'' });
           pararIntervalo();
           const cantor = dados.cantor || "—";
           const duo    = dados.duo    || null;
@@ -922,6 +929,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "play-confirmed") {
           clearTimeout(idleFallbackTimer);
+          idleNextInfo = null;
           idle.style.display = "none";
           // Garante que o vídeo anterior está silenciado antes da intro
           video.pause();
@@ -968,7 +976,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cmd === "play")             video.play();
     if (cmd === "pause")            video.pause();
     if (cmd === "restart")          { video.currentTime = 0; video.play().catch(()=>{}); }
-    if (cmd === "stop-preview")     { pararPreview(); idleAtivo = true; tocarIntervalo(); }
+    if (cmd === "stop-preview")     { pararPreview(); mostrarIdleScreen(); }
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); }
     if (cmd === "intervalo-off") { intervaloHabilitado = false; pararIntervalo(); }
@@ -988,13 +996,28 @@ document.addEventListener("DOMContentLoaded", () => {
       video.removeAttribute("src");
       video.load();
       video.style.display = "none";
-      mostrarIdleScreen();
+      mostrarIdleScreen(null);
     }
   });
 
   let idleFallbackTimer = null;
+  let idleNextInfo = null; // { cantor, duo, musica, artista }
 
-  function mostrarIdleScreen() {
+  function atualizarIdleNext(info) {
+    const el = document.getElementById('idle-next');
+    if (!info) { el.style.display = 'none'; return; }
+    document.getElementById('idle-next-singer').textContent =
+      '🎤 ' + info.cantor + (info.duo ? ' & ' + info.duo : '');
+    document.getElementById('idle-next-song').textContent =
+      info.musica + (info.artista ? ' — ' + info.artista : '');
+    el.style.display = 'block';
+  }
+
+  function mostrarIdleScreen(info) {
+    if (info !== undefined) idleNextInfo = info || null;
+    document.getElementById('idle-sub').textContent =
+      idleNextInfo ? 'Próximo no palco:' : 'Aguardando próxima música...';
+    atualizarIdleNext(idleNextInfo);
     idle.style.display = "flex";
     idleAtivo = true;
     tocarIntervalo();
@@ -1002,29 +1025,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function agendarIdleFallback() {
     clearTimeout(idleFallbackTimer);
-    // Se o preview não chegar em 8s, exibe idle (fila vazia)
-    idleFallbackTimer = setTimeout(mostrarIdleScreen, 8000);
+    idleFallbackTimer = setTimeout(() => mostrarIdleScreen(null), 8000);
   }
 
-  video.addEventListener("ended", () => {
+  function aoTerminarMusica() {
+    video.pause();
     video.style.display = "none";
-    // Não exibe idle imediatamente — aguarda o preview da próxima música
-    idleAtivo = true;
-    tocarIntervalo();
-    agendarIdleFallback();
+    mostrarIdleScreen(null); // mostra idle imediatamente, sem info ainda
+    agendarIdleFallback();   // segurança: reseta info se preview não chegar em 8s
     window.electronAPI.songEnded();
-  });
+  }
 
+  video.addEventListener("ended",     () => { if (video.style.display !== "none") aoTerminarMusica(); });
   video.addEventListener("timeupdate", () => {
-    if (video.duration && video.currentTime >= video.duration - 0.5) {
-      if (video.style.display !== "none") {
-        video.pause();
-        video.style.display = "none";
-        idleAtivo = true;
-        tocarIntervalo();
-        agendarIdleFallback();
-        window.electronAPI.songEnded();
-      }
+    if (video.duration && video.currentTime >= video.duration - 0.5 && video.style.display !== "none") {
+      aoTerminarMusica();
     }
   });
 }); // DOMContentLoaded

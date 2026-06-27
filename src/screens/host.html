@@ -1256,13 +1256,10 @@
   // ── Confirmação próxima música ────────────────────────────
   async function iniciarConfirmacaoProxima() {
     if (!SESSAO_ID) return;
-    const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', '==', 'aguardando').get();
-    if (filaSnap.empty) return;
 
-    const items = filaSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(d => d.slot !== 'espera')
+    // Usa filaData em memória (já sincronizada) — elimina o round-trip do Firestore
+    const items = filaData
+      .filter(d => d.slot !== 'espera' && d.status === 'aguardando')
       .sort((a, b) => {
         if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
         if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
@@ -1271,7 +1268,9 @@
 
     if (items.length === 0) return;
     const proxima = items[0];
-    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
+
+    // Fire-and-forget: não bloqueia o envio do preview
+    db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
       .update({ status: 'confirmando', confirmandoAte: Date.now() + 15000 });
 
     let filePath = null;
