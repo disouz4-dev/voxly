@@ -181,6 +181,12 @@
       text-align: center; font-size: .85rem;
     }
     .rule-input:focus { outline: none; border-color: var(--teal); }
+    .rule-toggle { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; }
+    .rule-toggle input { opacity: 0; width: 0; height: 0; }
+    .rule-toggle span { position: absolute; inset: 0; background: #ffffff20; border-radius: 20px; transition: background .2s; }
+    .rule-toggle span::before { content:''; position: absolute; width: 14px; height: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: transform .2s; }
+    .rule-toggle input:checked + span { background: var(--teal); }
+    .rule-toggle input:checked + span::before { transform: translateX(16px); }
 
     /* ── Botões — sistema de hierarquia visual ───────────────── */
     .btn {
@@ -429,19 +435,39 @@
       <!-- REGRAS -->
       <div class="rules-section">
         <h3>Regras da Sessão</h3>
+
+        <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:8px 0 6px;">Rodízio</div>
         <div class="rule-row">
           <label>Músicas por ciclo:</label>
           <input type="number" id="songs-per-cycle" class="rule-input" min="1" value="1">
         </div>
         <div class="rule-row">
-          <label>Participações por ciclo:</label>
-          <input type="number" id="duets-per-cycle" class="rule-input" min="0" value="1">
-        </div>
-        <div class="rule-row">
           <label>Máximo na fila:</label>
           <input type="number" id="max-queue" class="rule-input" min="1" value="20">
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="salvarRegras()" style="width:100%;margin-top:8px;">💾 Salvar Regras</button>
+
+        <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px;">☕ Prioridade (Café com Leite)</div>
+        <div class="rule-row">
+          <label>Ativar prioridade:</label>
+          <label class="rule-toggle"><input type="checkbox" id="prioridade-ativa" onchange="togglePrioridade()"><span></span></label>
+        </div>
+        <div class="rule-row" id="row-prioridade-min">
+          <label>Espera mínima (min):</label>
+          <input type="number" id="prioridade-minutos" class="rule-input" min="0" value="40">
+        </div>
+
+        <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px;">🎤 Duo / Participações</div>
+        <div class="rule-row">
+          <label>Permitir duo:</label>
+          <label class="rule-toggle"><input type="checkbox" id="permitir-duo" onchange="toggleDuo()"><span></span></label>
+        </div>
+        <div class="rule-row" id="row-max-duo">
+          <label>Máx. participações por sessão:</label>
+          <input type="number" id="max-participacoes-duo" class="rule-input" min="0" value="1">
+        </div>
+        <div id="row-max-duo-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:6px;display:none;">0 = ilimitado</div>
+
+        <button class="btn btn-ghost btn-sm" onclick="salvarRegras()" style="width:100%;margin-top:10px;">💾 Salvar Regras</button>
       </div>
 
     </div>
@@ -478,8 +504,12 @@
 <div class="modal-overlay" id="modalMusica">
   <div class="modal-box">
     <h2>🎵 Adicionar Música</h2>
-    <label class="modal-label">Cantor</label>
+    <label class="modal-label">Cantor principal</label>
     <select class="modal-select" id="selectCantorMusica"></select>
+    <div id="duoSection" style="display:none;">
+      <label class="modal-label">Parceiro duo (opcional)</label>
+      <select class="modal-select" id="selectDuoMusica"><option value="">— Sem parceiro —</option></select>
+    </div>
     <label class="modal-label">Buscar no catálogo</label>
     <input class="modal-input" type="text" id="inputBuscaMusica" placeholder="Artista ou título..." oninput="buscarCatalogoModal()">
     <div id="resultadosBuscaModal" style="max-height:180px;overflow-y:auto;margin-top:6px;margin-bottom:4px;"></div>
@@ -515,7 +545,11 @@
   let currentSong      = null;
   let filaData         = [];
   let presencasData    = [];
-  let regras           = { musicasPorCiclo: 1, duetasPorCiclo: 1, maxFila: 20, segundosConfirmacao: 15 };
+  let regras           = {
+    musicasPorCiclo: 1, duetasPorCiclo: 1, maxFila: 20, segundosConfirmacao: 15,
+    prioridadeAtiva: true, prioridadeMinutos: 40,
+    permitirDuo: true, maxParticipacoesDuo: 1
+  };
   let cicloAtual       = 1;
   let proximaConfirmando = null;
   let timerConfirmacao   = null;
@@ -543,9 +577,25 @@
   }
 
   function popularInputsRegras() {
-    document.getElementById('songs-per-cycle').value = regras.musicasPorCiclo;
-    document.getElementById('duets-per-cycle').value = regras.duetasPorCiclo;
-    document.getElementById('max-queue').value        = regras.maxFila;
+    document.getElementById('songs-per-cycle').value          = regras.musicasPorCiclo;
+    document.getElementById('max-queue').value                = regras.maxFila;
+    document.getElementById('prioridade-ativa').checked       = regras.prioridadeAtiva !== false;
+    document.getElementById('prioridade-minutos').value       = regras.prioridadeMinutos ?? 40;
+    document.getElementById('permitir-duo').checked           = regras.permitirDuo !== false;
+    document.getElementById('max-participacoes-duo').value    = regras.maxParticipacoesDuo ?? 1;
+    togglePrioridade();
+    toggleDuo();
+  }
+
+  function togglePrioridade() {
+    const ativa = document.getElementById('prioridade-ativa').checked;
+    document.getElementById('row-prioridade-min').style.display = ativa ? 'flex' : 'none';
+  }
+
+  function toggleDuo() {
+    const ativo = document.getElementById('permitir-duo').checked;
+    document.getElementById('row-max-duo').style.display      = ativo ? 'flex' : 'none';
+    document.getElementById('row-max-duo-hint').style.display = ativo ? 'block' : 'none';
   }
 
   // ── Inicialização ─────────────────────────────────────────
@@ -1023,13 +1073,16 @@
   async function salvarRegras() {
     regras = {
       musicasPorCiclo:     parseInt(document.getElementById('songs-per-cycle').value) || 1,
-      duetasPorCiclo:      parseInt(document.getElementById('duets-per-cycle').value) || 1,
       maxFila:             parseInt(document.getElementById('max-queue').value) || 20,
-      segundosConfirmacao: 15
+      segundosConfirmacao: 15,
+      prioridadeAtiva:     document.getElementById('prioridade-ativa').checked,
+      prioridadeMinutos:   parseInt(document.getElementById('prioridade-minutos').value) || 40,
+      permitirDuo:         document.getElementById('permitir-duo').checked,
+      maxParticipacoesDuo: parseInt(document.getElementById('max-participacoes-duo').value) ?? 1,
     };
     localStorage.setItem('voxly_regras', JSON.stringify(regras));
     if (SESSAO_ID) await db.collection('sessoes').doc(SESSAO_ID).update({ regras });
-    alert('Regras salvas!');
+    mostrarToast('Regras salvas!');
   }
 
   async function nextCycle() {
@@ -1136,6 +1189,17 @@
       sel.appendChild(opt);
     });
     if (preUid) sel.value = preUid;
+    // Duo: mostra seção se permitido nas regras
+    const duoSec = document.getElementById('duoSection');
+    duoSec.style.display = regras.permitirDuo ? 'block' : 'none';
+    const selDuo = document.getElementById('selectDuoMusica');
+    selDuo.innerHTML = '<option value="">— Sem parceiro —</option>';
+    presencasData.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id || p.uid;
+      opt.textContent = p.nomeArtistico;
+      selDuo.appendChild(opt);
+    });
     document.getElementById('modalMusica').classList.add('open');
     setTimeout(() => document.getElementById('inputBuscaMusica').focus(), 80);
   }
@@ -1196,13 +1260,21 @@
     const uid  = sel.value;
     const nome = sel.options[sel.selectedIndex]?.dataset?.nome || '';
     if (!uid) { alert('Selecione um cantor.'); return; }
+
+    // Duo (opcional, só manual — sem convite)
+    const selDuo  = document.getElementById('selectDuoMusica');
+    const duoUid  = selDuo?.value || '';
+    const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
+
     const cantor    = presencasData.find(p => (p.id || p.uid) === uid);
-    const filaLonga = filaData.filter(d => d.status === 'aguardando').length >= 10;
-    const tipo      = (cantor && !cantor.primeiraMusicaCantada && filaLonga) ? 'prioridade' : 'normal';
-    const item   = {
+    const filaLonga = filaData.filter(d => d.status === 'aguardando').length >= Math.floor((regras.prioridadeMinutos || 40) / 4);
+    const tipo      = (regras.prioridadeAtiva && cantor && !cantor.primeiraMusicaCantada && filaLonga) ? 'prioridade' : 'normal';
+
+    const item = {
       cantorUid: uid, nomeArtistico: nome,
       musica: musicaModalSelecionada.musica, artista: musicaModalSelecionada.artista,
       disponivel: musicaModalSelecionada.disponivel ?? true,
+      duoNome: duoNome || null, duoUid: duoUid || null,
       status: 'aguardando', slot: 'ativa', tipo,
       ordemFila: filaData.length + 1,
       adicionadoEm: modoOffline ? Date.now() : firebase.firestore.FieldValue.serverTimestamp()
@@ -1215,7 +1287,7 @@
       renderQueue();
     }
     fecharModalMusica();
-    mostrarToast(`${musicaModalSelecionada.musica} → ${nome}`);
+    mostrarToast(`${musicaModalSelecionada.musica} → ${nome}${duoNome ? ' & ' + duoNome : ''}`);
   }
 
   async function selectFolder() {
