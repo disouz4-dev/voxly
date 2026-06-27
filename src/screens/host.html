@@ -1104,7 +1104,9 @@
               window.electronAPI.playerCommand(JSON.stringify({
                 cmd: 'play-confirmed', filePath,
                 musica: item.musica, artista: item.artista,
-                cantor: item.nomeArtistico, duo: item.duoNome || null
+                cantor: item.nomeArtistico, duo: item.duoNome || null,
+                photoURL: item.photoURL || null,
+                duoPhotoURL: item.duoPhotoURL || null
               }));
             }
           } else {

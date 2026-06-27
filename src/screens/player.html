@@ -113,19 +113,37 @@
 
     .intro-badge {
       font-size: 0.75rem; letter-spacing: 4px; text-transform: uppercase;
-      color: #e040fb; margin-bottom: 24px;
+      color: #e040fb; margin-bottom: 20px;
       animation: fadeSlideDown .5s ease .2s both;
     }
-    .intro-mic {
-      font-size: 5rem; line-height: 1;
-      animation: popIn .4s cubic-bezier(.17,.67,.35,1.4) .4s both;
+    .intro-avatars {
+      display: flex; align-items: center; gap: 20px;
+      animation: popIn .45s cubic-bezier(.17,.67,.35,1.4) .3s both;
+    }
+    .intro-avatar {
+      width: 130px; height: 130px; border-radius: 50%;
+      object-fit: cover;
+      border: 4px solid #e040fb;
+      box-shadow: 0 0 30px #e040fb60, 0 0 60px #7c4dff40;
+    }
+    .intro-avatar-placeholder {
+      width: 130px; height: 130px; border-radius: 50%;
+      background: linear-gradient(135deg, #3d0066, #7c4dff);
+      border: 4px solid #e040fb;
+      box-shadow: 0 0 30px #e040fb60;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 3rem; font-weight: 900; color: #fff;
+    }
+    .intro-duo-vs {
+      font-size: 2rem; color: #ffffff40; font-weight: 900;
+      animation: popIn .3s ease .5s both;
     }
     .intro-names {
-      margin-top: 28px;
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      margin-top: 20px;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
     }
     .intro-name {
-      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      font-size: clamp(2rem, 5vw, 3.8rem);
       font-weight: 900;
       letter-spacing: 2px;
       text-align: center;
@@ -137,18 +155,18 @@
     }
     .intro-name:nth-child(2) { animation-delay: .15s; }
     .intro-duo-sep {
-      font-size: 1rem; color: #ffffff60; letter-spacing: 6px;
+      font-size: 0.9rem; color: #ffffff60; letter-spacing: 6px;
       animation: fadeSlideUp .4s ease .1s both;
     }
     .intro-song {
-      margin-top: 32px; text-align: center;
+      margin-top: 24px; text-align: center;
       animation: fadeSlideUp .5s ease .35s both;
     }
     .intro-song-title {
-      font-size: clamp(1.2rem, 3vw, 2rem); font-weight: 700; color: #fff;
+      font-size: clamp(1.1rem, 2.5vw, 1.8rem); font-weight: 700; color: #fff;
     }
     .intro-song-artist {
-      font-size: clamp(.9rem, 2vw, 1.3rem); color: #ffffff60; margin-top: 4px;
+      font-size: clamp(.85rem, 1.8vw, 1.2rem); color: #ffffff60; margin-top: 4px;
     }
 
     /* barra de progresso na parte inferior */
@@ -196,7 +214,7 @@
   <!-- Intro animação (aparece entre confirmação e vídeo) -->
   <div id="intro-overlay">
     <div class="intro-badge">🎵 Próximo no palco</div>
-    <div class="intro-mic">🎤</div>
+    <div class="intro-avatars" id="intro-avatars"></div>
     <div class="intro-names" id="intro-names"></div>
     <div class="intro-song">
       <div class="intro-song-title" id="intro-song-title"></div>
@@ -233,8 +251,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return encodeURI("file://" + filePath);
   }
 
-  function mostrarIntro(cantor, duo, musica, artista, onDone) {
-    // Monta nomes
+  function avatarHtml(nome, url) {
+    if (url) return `<img class="intro-avatar" src="${url}" alt="${nome}">`;
+    const inicial = (nome || '?')[0].toUpperCase();
+    return `<div class="intro-avatar-placeholder">${inicial}</div>`;
+  }
+
+  function mostrarIntro(cantor, duo, musica, artista, photoURL, duoPhotoURL, onDone) {
+    // Avatares
+    const avatarsEl = document.getElementById("intro-avatars");
+    if (duo) {
+      avatarsEl.innerHTML = avatarHtml(cantor, photoURL) +
+        `<div class="intro-duo-vs">&amp;</div>` +
+        avatarHtml(duo, duoPhotoURL);
+    } else {
+      avatarsEl.innerHTML = avatarHtml(cantor, photoURL);
+    }
+
+    // Nomes
     const namesEl = document.getElementById("intro-names");
     if (duo) {
       namesEl.innerHTML = `
@@ -343,12 +377,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "play-confirmed") {
           pararPreview();
-          // Mostra intro antes de tocar
           mostrarIntro(
-            dados.cantor  || "Cantor",
-            dados.duo     || null,
-            dados.musica  || "",
-            dados.artista || "",
+            dados.cantor      || "Cantor",
+            dados.duo         || null,
+            dados.musica      || "",
+            dados.artista     || "",
+            dados.photoURL    || null,
+            dados.duoPhotoURL || null,
             () => iniciarVideo(dados.filePath)
           );
         }
