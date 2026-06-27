@@ -818,8 +818,8 @@
       const avatarHtml = u.photoURL
         ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
         : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
-      const uid  = JSON.stringify(u.id || u.uid || '');
-      const nome = JSON.stringify(u.nomeArtistico || '');
+      const uid  = escHtml(JSON.stringify(u.id || u.uid || ''));
+      const nome = escHtml(JSON.stringify(u.nomeArtistico || ''));
       return `<div class="user-item">
         ${avatarHtml}
         <div style="flex:1;">
