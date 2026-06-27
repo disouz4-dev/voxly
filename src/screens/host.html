@@ -948,14 +948,22 @@
   }
 
   async function pularMusica(itemId) {
-    // Cancela qualquer timer/preview em andamento
     clearTimeout(timerConfirmacao);
     proximaConfirmando = null;
-    if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
+
+    // Para o player imediatamente — antes de qualquer await
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand('stop-preview');
+      window.electronAPI.playerCommand('stop');
+    }
+    document.getElementById('np-song').textContent   = '—';
+    document.getElementById('np-artist').textContent = '—';
+    document.getElementById('np-singer').textContent = '—';
+    currentSong = null;
 
     const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     const itemSnap = await itemRef.get();
-    if (!itemSnap.exists) return;
+    if (!itemSnap.exists) { await iniciarConfirmacaoProxima(); return; }
     const item = itemSnap.data();
 
     await itemRef.update({ status: 'pulada' });
@@ -966,11 +974,6 @@
         status: 'pulada', horario: firebase.firestore.FieldValue.serverTimestamp()
       });
     }
-    if (window.electronAPI) window.electronAPI.playerCommand('stop');
-    document.getElementById('np-song').textContent   = '—';
-    document.getElementById('np-artist').textContent = '—';
-    document.getElementById('np-singer').textContent = '—';
-    currentSong = null;
     await iniciarConfirmacaoProxima();
   }
 
