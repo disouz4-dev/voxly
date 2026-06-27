@@ -384,6 +384,7 @@
     <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar</button>
     <button class="btn btn-secondary btn-sm" id="btnAdicionarCantor" onclick="abrirModalCantor()" style="display:none;">➕ Cantor</button>
     <button class="btn btn-ghost btn-sm" onclick="reabrirPlayer()">🖥 Player</button>
+    <button class="btn btn-ghost btn-sm" id="btnIntervalo" onclick="toggleIntervalo()" title="Música de intervalo">🎵 Intervalo</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
 </header>
@@ -655,6 +656,14 @@
   document.addEventListener('DOMContentLoaded', async () => {
     // QR do app sempre visível
     gerarQR('qr-app', APP_URL);
+
+    // Estado do intervalo
+    atualizarBtnIntervalo();
+    setTimeout(() => {
+      if (window.electronAPI) {
+        window.electronAPI.playerCommand(intervaloAtivo ? 'intervalo-on' : 'intervalo-off');
+      }
+    }, 2500);
 
     // Carrega regras salvas localmente
     carregarRegrasLocal();
@@ -1302,6 +1311,31 @@
     cicloAtual++;
     if (SESSAO_ID) await db.collection('sessoes').doc(SESSAO_ID).update({ cicloAtual });
     document.getElementById('cycle-num').textContent = cicloAtual;
+  }
+
+  // ── Música de intervalo ───────────────────────────────────
+  let intervaloAtivo = localStorage.getItem('voxly_intervalo') !== 'off';
+
+  function atualizarBtnIntervalo() {
+    const btn = document.getElementById('btnIntervalo');
+    if (!btn) return;
+    if (intervaloAtivo) {
+      btn.textContent = '🎵 Intervalo';
+      btn.style.opacity = '1';
+    } else {
+      btn.textContent = '🔇 Intervalo';
+      btn.style.opacity = '0.45';
+    }
+  }
+
+  function toggleIntervalo() {
+    intervaloAtivo = !intervaloAtivo;
+    localStorage.setItem('voxly_intervalo', intervaloAtivo ? 'on' : 'off');
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand(intervaloAtivo ? 'intervalo-on' : 'intervalo-off');
+    }
+    atualizarBtnIntervalo();
+    mostrarToast(intervaloAtivo ? 'Música de intervalo ativada' : 'Música de intervalo desativada');
   }
 
   function openSettings() { alert('Em desenvolvimento'); }

@@ -655,9 +655,12 @@ document.addEventListener("DOMContentLoaded", () => {
     "../assets/intervalo/Pausa Animada.mp3",
     "../assets/intervalo/Pausa de Karaokê.mp3"
   ];
-  let intervaloIdx = Math.floor(Math.random() * intervaloFaixas.length);
+  let intervaloIdx    = Math.floor(Math.random() * intervaloFaixas.length);
+  let intervaloHabilitado = true;
+  let idleAtivo = true; // true enquanto idle screen estiver visível
 
   function tocarIntervalo() {
+    if (!intervaloHabilitado || !idleAtivo) return;
     intervaloAudio.src    = intervaloFaixas[intervaloIdx];
     intervaloAudio.volume = 0.5;
     intervaloAudio.play().catch(() => {});
@@ -773,6 +776,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function iniciarVideo(filePath) {
+    idleAtivo = false;
     pararIntervalo();
     idle.style.display  = "none";
     video.style.display = "block";
@@ -869,6 +873,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cmd === "pause")            video.pause();
     if (cmd === "stop-preview")     pararPreview();
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
+    if (cmd === "intervalo-on")  { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); }
+    if (cmd === "intervalo-off") { intervaloHabilitado = false; pararIntervalo(); }
     if (cmd === "sessao-encerrada") {
       document.getElementById("qr-sessao").style.display = "none";
       document.getElementById("qrImgSessao").src = "";
@@ -883,6 +889,7 @@ document.addEventListener("DOMContentLoaded", () => {
       video.load();
       video.style.display = "none";
       idle.style.display  = "flex";
+      idleAtivo = true;
       tocarIntervalo();
     }
   });
@@ -890,6 +897,7 @@ document.addEventListener("DOMContentLoaded", () => {
   video.addEventListener("ended", () => {
     video.style.display = "none";
     idle.style.display  = "flex";
+    idleAtivo = true;
     tocarIntervalo();
     window.electronAPI.songEnded();
   });
