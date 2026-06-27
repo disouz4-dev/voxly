@@ -871,6 +871,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (dados.cmd === "preview") {
+          clearTimeout(idleFallbackTimer);
+          idle.style.display = "none";
           pararIntervalo();
           const cantor = dados.cantor || "—";
           const duo    = dados.duo    || null;
@@ -919,6 +921,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (dados.cmd === "play-confirmed") {
+          clearTimeout(idleFallbackTimer);
+          idle.style.display = "none";
           pararPreview();
           mostrarIntro(
             dados.cantor      || "Cantor",
@@ -968,6 +972,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("qrImgSessao").src = "";
     }
     if (cmd === "stop") {
+      clearTimeout(idleFallbackTimer);
       pararPreview();
       clearTimeout(introTimeout);
       clearInterval(particleTimer);
@@ -978,17 +983,30 @@ document.addEventListener("DOMContentLoaded", () => {
       video.removeAttribute("src");
       video.load();
       video.style.display = "none";
-      idle.style.display  = "flex";
-      idleAtivo = true;
-      tocarIntervalo();
+      mostrarIdleScreen();
     }
   });
 
-  video.addEventListener("ended", () => {
-    video.style.display = "none";
-    idle.style.display  = "flex";
+  let idleFallbackTimer = null;
+
+  function mostrarIdleScreen() {
+    idle.style.display = "flex";
     idleAtivo = true;
     tocarIntervalo();
+  }
+
+  function agendarIdleFallback() {
+    clearTimeout(idleFallbackTimer);
+    // Se o preview não chegar em 4s, exibe idle (fila vazia)
+    idleFallbackTimer = setTimeout(mostrarIdleScreen, 4000);
+  }
+
+  video.addEventListener("ended", () => {
+    video.style.display = "none";
+    // Não exibe idle imediatamente — aguarda o preview da próxima música
+    idleAtivo = true;
+    tocarIntervalo();
+    agendarIdleFallback();
     window.electronAPI.songEnded();
   });
 
@@ -996,7 +1014,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (video.duration && video.currentTime >= video.duration - 0.5) {
       if (video.style.display !== "none") {
         video.style.display = "none";
-        idle.style.display  = "flex";
+        idleAtivo = true;
+        tocarIntervalo();
+        agendarIdleFallback();
         window.electronAPI.songEnded();
       }
     }
