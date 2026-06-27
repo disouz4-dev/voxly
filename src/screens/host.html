@@ -389,7 +389,6 @@
   <div class="header-controls">
     <span class="session-badge inativa" id="sessionBadge">● Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
-    <button class="btn btn-ghost btn-sm" id="nextCycleBtn" onclick="nextCycle()" style="display:none;">↻ Próximo Ciclo</button>
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="iniciarSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-ok btn-sm" id="startQueueBtn" onclick="iniciarFila()" style="display:none;">▶ Iniciar Fila</button>
     <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar</button>
@@ -454,10 +453,6 @@
         <h3>Regras da Sessão</h3>
 
         <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:8px 0 6px;">Rodízio</div>
-        <div class="rule-row">
-          <label>Músicas por ciclo:</label>
-          <input type="number" id="songs-per-cycle" class="rule-input" min="1" value="1">
-        </div>
         <div class="rule-row">
           <label>Máximo na fila:</label>
           <input type="number" id="max-queue" class="rule-input" min="1" value="20">
@@ -635,7 +630,7 @@
   }
 
   function popularInputsRegras() {
-    document.getElementById('songs-per-cycle').value          = regras.musicasPorCiclo;
+    // musicasPorCiclo é sempre 1 — gerenciado automaticamente pelo sistema de slots
     document.getElementById('max-queue').value                = regras.maxFila;
     document.getElementById('prioridade-ativa').checked       = regras.prioridadeAtiva !== false;
     document.getElementById('prioridade-minutos').value       = regras.prioridadeMinutos ?? 40;
@@ -765,7 +760,6 @@
     document.getElementById('startQueueBtn').style.display   = 'inline-block';
     document.getElementById('stopSessionBtn').style.display  = 'inline-block';
     document.getElementById('cycle-label').style.display        = 'inline';
-    document.getElementById('nextCycleBtn').style.display       = 'inline-block';
     document.getElementById('cycle-num').textContent            = cicloAtual;
     document.getElementById('btnAdicionarCantor').style.display = 'inline-block';
 
@@ -836,7 +830,6 @@
     document.getElementById('startQueueBtn').style.display   = 'none';
     document.getElementById('stopSessionBtn').style.display  = 'none';
     document.getElementById('cycle-label').style.display        = 'none';
-    document.getElementById('nextCycleBtn').style.display       = 'none';
     document.getElementById('btnAdicionarCantor').style.display = 'none';
     document.getElementById('qr-sessao-box').style.opacity      = '0.3';
     document.getElementById('qr-sessao-url').textContent     = 'Inicie uma sessão';
@@ -1266,7 +1259,7 @@
         return (a.ordemFila || 0) - (b.ordemFila || 0);
       });
 
-    if (items.length === 0) return;
+    if (items.length === 0) { avancarCicloSeVazio(); return; }
     const proxima = items[0];
 
     // Fire-and-forget: não bloqueia o envio do preview
@@ -1320,7 +1313,7 @@
   // ── Regras / Config ───────────────────────────────────────
   async function salvarRegras() {
     regras = {
-      musicasPorCiclo:     parseInt(document.getElementById('songs-per-cycle').value) || 1,
+      musicasPorCiclo:     1,
       maxFila:             parseInt(document.getElementById('max-queue').value) || 20,
       segundosConfirmacao: 15,
       prioridadeAtiva:     document.getElementById('prioridade-ativa').checked,
@@ -1333,10 +1326,14 @@
     mostrarToast('Regras salvas!');
   }
 
-  async function nextCycle() {
-    cicloAtual++;
-    if (SESSAO_ID) await db.collection('sessoes').doc(SESSAO_ID).update({ cicloAtual });
-    document.getElementById('cycle-num').textContent = cicloAtual;
+  // Auto-incrementa o ciclo quando a fila esvazia (rodada completa)
+  async function avancarCicloSeVazio() {
+    const aguardando = filaData.filter(d => d.status === 'aguardando' && d.slot !== 'espera');
+    if (aguardando.length === 0) {
+      cicloAtual++;
+      document.getElementById('cycle-num').textContent = cicloAtual;
+      if (SESSAO_ID) db.collection('sessoes').doc(SESSAO_ID).update({ cicloAtual });
+    }
   }
 
   // ── Música de intervalo ───────────────────────────────────
