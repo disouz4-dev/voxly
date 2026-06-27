@@ -1089,7 +1089,11 @@
             document.getElementById('np-artist').textContent = item.artista || '—';
             document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—');
             if (window.electronAPI) {
-              window.electronAPI.playerCommand(JSON.stringify({ cmd: 'play-confirmed', filePath }));
+              window.electronAPI.playerCommand(JSON.stringify({
+                cmd: 'play-confirmed', filePath,
+                musica: item.musica, artista: item.artista,
+                cantor: item.nomeArtistico, duo: item.duoNome || null
+              }));
             }
           } else {
             await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)

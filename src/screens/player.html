@@ -49,6 +49,8 @@
       text-align: center;
     }
     .footer strong { color: #e040fb; }
+
+    /* ── Preview overlay (confirmação 15s) ── */
     #preview-overlay {
       display: none;
       position: absolute; inset: 0;
@@ -72,6 +74,104 @@
     }
     .timer-circle.urgente { border-color: #ff1744; color: #ff1744; }
     .preview-msg { font-size: 1rem; color: #ffffff80; text-align: center; }
+
+    /* ── Intro animação ── */
+    #intro-overlay {
+      display: none;
+      position: absolute; inset: 0; z-index: 30;
+      background: #000;
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    #intro-overlay.active { display: flex; }
+
+    /* fundo com partículas de luz */
+    #intro-overlay::before {
+      content: '';
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 50%, #3d006680 0%, transparent 70%),
+        radial-gradient(ellipse 40% 40% at 20% 80%, #00b4d820 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 80% 20%, #e040fb20 0%, transparent 60%);
+    }
+
+    /* linha de brilho horizontal que varre a tela */
+    #intro-overlay::after {
+      content: '';
+      position: absolute;
+      width: 100%; height: 3px;
+      background: linear-gradient(90deg, transparent, #e040fb, #7c4dff, #e040fb, transparent);
+      animation: sweep 1.6s ease-in-out forwards;
+      top: 50%;
+    }
+    @keyframes sweep {
+      from { transform: translateY(-200px); opacity: 0; }
+      20%  { opacity: 1; }
+      to   { transform: translateY(200px); opacity: 0; }
+    }
+
+    .intro-badge {
+      font-size: 0.75rem; letter-spacing: 4px; text-transform: uppercase;
+      color: #e040fb; margin-bottom: 24px;
+      animation: fadeSlideDown .5s ease .2s both;
+    }
+    .intro-mic {
+      font-size: 5rem; line-height: 1;
+      animation: popIn .4s cubic-bezier(.17,.67,.35,1.4) .4s both;
+    }
+    .intro-names {
+      margin-top: 28px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .intro-name {
+      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      font-weight: 900;
+      letter-spacing: 2px;
+      text-align: center;
+      background: linear-gradient(135deg, #fff 30%, #e040fb 70%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: fadeSlideUp .5s ease both;
+    }
+    .intro-name:nth-child(2) { animation-delay: .15s; }
+    .intro-duo-sep {
+      font-size: 1rem; color: #ffffff60; letter-spacing: 6px;
+      animation: fadeSlideUp .4s ease .1s both;
+    }
+    .intro-song {
+      margin-top: 32px; text-align: center;
+      animation: fadeSlideUp .5s ease .35s both;
+    }
+    .intro-song-title {
+      font-size: clamp(1.2rem, 3vw, 2rem); font-weight: 700; color: #fff;
+    }
+    .intro-song-artist {
+      font-size: clamp(.9rem, 2vw, 1.3rem); color: #ffffff60; margin-top: 4px;
+    }
+
+    /* barra de progresso na parte inferior */
+    #intro-progress {
+      position: absolute; bottom: 0; left: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #7c4dff, #e040fb);
+      width: 0%;
+      transition: width linear;
+    }
+
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeSlideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(.3) rotate(-10deg); }
+      to   { opacity: 1; transform: scale(1) rotate(0deg); }
+    }
   </style>
 </head>
 <body>
@@ -93,6 +193,18 @@
     <div class="preview-msg">Confirme no seu celular para cantar!</div>
   </div>
 
+  <!-- Intro animação (aparece entre confirmação e vídeo) -->
+  <div id="intro-overlay">
+    <div class="intro-badge">🎵 Próximo no palco</div>
+    <div class="intro-mic">🎤</div>
+    <div class="intro-names" id="intro-names"></div>
+    <div class="intro-song">
+      <div class="intro-song-title" id="intro-song-title"></div>
+      <div class="intro-song-artist" id="intro-song-artist"></div>
+    </div>
+    <div id="intro-progress"></div>
+  </div>
+
   <div class="qr-corner" id="qr-app">
     <img id="qrImgApp" src="" alt="QR App">
     <div class="qr-corner-label">📱 Acesse o App</div>
@@ -111,10 +223,44 @@
 document.addEventListener("DOMContentLoaded", () => {
   const video = document.getElementById("video-player");
   const idle  = document.getElementById("idle-screen");
+  const introOverlay  = document.getElementById("intro-overlay");
+  const introProgress = document.getElementById("intro-progress");
 
-  // Converte caminho de arquivo para URL segura (lida com espaços, [ ] e acentos)
+  const INTRO_DURATION = 4000; // ms que a animação fica na tela
+  let introTimeout = null;
+
   function toFileUrl(filePath) {
     return encodeURI("file://" + filePath);
+  }
+
+  function mostrarIntro(cantor, duo, musica, artista, onDone) {
+    // Monta nomes
+    const namesEl = document.getElementById("intro-names");
+    if (duo) {
+      namesEl.innerHTML = `
+        <div class="intro-name">${cantor}</div>
+        <div class="intro-duo-sep">&amp;</div>
+        <div class="intro-name">${duo}</div>`;
+    } else {
+      namesEl.innerHTML = `<div class="intro-name">${cantor}</div>`;
+    }
+    document.getElementById("intro-song-title").textContent  = musica  || "";
+    document.getElementById("intro-song-artist").textContent = artista || "";
+
+    // Barra de progresso
+    introProgress.style.transition = "none";
+    introProgress.style.width = "0%";
+    introOverlay.classList.add("active");
+    // Força reflow para a transição funcionar
+    introProgress.getBoundingClientRect();
+    introProgress.style.transition = `width ${INTRO_DURATION}ms linear`;
+    introProgress.style.width = "100%";
+
+    clearTimeout(introTimeout);
+    introTimeout = setTimeout(() => {
+      introOverlay.classList.remove("active");
+      onDone();
+    }, INTRO_DURATION);
   }
 
   // QR do app — sempre visível
@@ -122,7 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("qrImgApp").src =
     `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(APP_URL)}`;
 
-  // Play video
+  // Play video (canal legado)
   window.electronAPI.onPlayVideo(filePath => {
     console.log("[PLAYER] Recebeu:", filePath);
     idle.style.display  = "none";
@@ -144,14 +290,25 @@ document.addEventListener("DOMContentLoaded", () => {
     clearInterval(timerInterval);
   }
 
+  function iniciarVideo(filePath) {
+    idle.style.display  = "none";
+    video.style.display = "block";
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.src = toFileUrl(filePath);
+    video.load();
+    video.play().catch(e => console.error("[PLAYER] Erro:", e));
+  }
+
   // Comandos do host
   window.electronAPI.onPlayerCmd(cmd => {
     console.log("[PLAYER] Comando:", cmd);
 
-    // Comando de preview (JSON)
     if (cmd.startsWith("{")) {
       try {
         const dados = JSON.parse(cmd);
+
         if (dados.cmd === "sessao-iniciada") {
           const sessaoUrl = `${APP_URL}/profile.html?sessao=${dados.codigo}`;
           document.getElementById("qrImgSessao").src =
@@ -159,21 +316,19 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById("qr-sessao").style.display = "flex";
           return;
         }
+
         if (dados.cmd === "preview") {
-          // Mostra overlay
           document.getElementById("prev-song").textContent   = dados.musica  || "—";
           document.getElementById("prev-artist").textContent = dados.artista || "—";
           document.getElementById("prev-singer").textContent = "🎤 " + (dados.cantor || "—");
           previewOverlay.classList.add("active");
 
-          // Toca trecho da música (do segundo 30 ao 45)
           if (dados.filePath) {
             previewAudio.src    = toFileUrl(dados.filePath) + "#t=30";
             previewAudio.volume = 0.3;
             previewAudio.play().catch(e => console.log("Preview audio:", e));
           }
 
-          // Timer
           let segundos = dados.segundos || 15;
           timerCircle.textContent = segundos;
           timerCircle.classList.remove("urgente");
@@ -182,22 +337,20 @@ document.addEventListener("DOMContentLoaded", () => {
             segundos--;
             timerCircle.textContent = segundos;
             if (segundos <= 5) timerCircle.classList.add("urgente");
-            if (segundos <= 0) {
-              clearInterval(timerInterval);
-              pararPreview();
-            }
+            if (segundos <= 0) { clearInterval(timerInterval); pararPreview(); }
           }, 1000);
         }
+
         if (dados.cmd === "play-confirmed") {
           pararPreview();
-          video.pause();
-          video.removeAttribute("src");
-          video.load();
-          idle.style.display  = "none";
-          video.style.display = "block";
-          video.src = toFileUrl(dados.filePath);
-          video.load();
-          video.play().catch(e => console.error("[PLAYER] Erro:", e));
+          // Mostra intro antes de tocar
+          mostrarIntro(
+            dados.cantor  || "Cantor",
+            dados.duo     || null,
+            dados.musica  || "",
+            dados.artista || "",
+            () => iniciarVideo(dados.filePath)
+          );
         }
       } catch(e) {
         console.error("[PLAYER] Erro JSON cmd:", e);
@@ -215,6 +368,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (cmd === "stop") {
       pararPreview();
+      clearTimeout(introTimeout);
+      introOverlay.classList.remove("active");
       video.pause();
       video.removeAttribute("src");
       video.load();
