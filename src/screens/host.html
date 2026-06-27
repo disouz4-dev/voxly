@@ -808,7 +808,7 @@
       return;
     }
     const agora = Date.now();
-    el.innerHTML = presencasData.map(u => {
+    el.innerHTML = presencasData.map((u, i) => {
       const online = u.status === 'aqui';
       const prioridade = !u.primeiraMusicaCantada;
       const ultimo = u.ultimoHeartbeat?.toDate ? u.ultimoHeartbeat.toDate().getTime() : 0;
@@ -818,15 +818,13 @@
       const avatarHtml = u.photoURL
         ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
         : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
-      const uid  = escHtml(JSON.stringify(u.id || u.uid || ''));
-      const nome = escHtml(JSON.stringify(u.nomeArtistico || ''));
       return `<div class="user-item">
         ${avatarHtml}
         <div style="flex:1;">
           <div class="user-name">${escHtml(u.nomeArtistico||'-')} ${prioridade ? '☕' : ''}</div>
           <div class="user-status">${u.modo === 'manual' ? 'Manual' : (ativo ? 'Online' : 'Sem sinal')}</div>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="abrirModalMusica(${uid}, ${nome})" title="Adicionar música para ${u.nomeArtistico}" style="min-width:30px;">🎵</button>
+        <button class="btn btn-secondary btn-sm" onclick="abrirModalMusicaIdx(${i})" title="Adicionar música" style="min-width:30px;">🎵</button>
         <span class="${tagCls} user-badge">${tagTxt}</span>
       </div>`;
     }).join('');
@@ -1112,6 +1110,12 @@
   // ── Modal: Adicionar Música ───────────────────────────────
   let musicaModalSelecionada = null;
   let buscaModalTimeout      = null;
+
+  function abrirModalMusicaIdx(i) {
+    const u = presencasData[i];
+    if (!u) return;
+    abrirModalMusica(u.id || u.uid || '', u.nomeArtistico || '');
+  }
 
   function abrirModalMusica(preUid = '', preNome = '') {
     if (!SESSAO_ID) return;
