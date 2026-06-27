@@ -931,12 +931,12 @@ document.addEventListener("DOMContentLoaded", () => {
           clearTimeout(idleFallbackTimer);
           idleNextInfo = null;
           idle.style.display = "none";
-          // Garante que o vídeo anterior está silenciado antes da intro
           video.pause();
           video.removeAttribute("src");
           video.load();
           video.style.display = "none";
           pararPreview();
+          esconderPronto();
           mostrarIntro(
             dados.cantor      || "Cantor",
             dados.duo         || null,
@@ -948,17 +948,17 @@ document.addEventListener("DOMContentLoaded", () => {
           );
         }
 
-        // Após confirmação: exibe intro, depois aguarda host dar play
-        if (dados.cmd === "play-intro") {
+        // Cantor confirmou: para preview e mostra tela de espera com nome do cantor
+        if (dados.cmd === "mostrar-pronto") {
+          clearTimeout(idleFallbackTimer);
           pararPreview();
-          mostrarIntro(
-            dados.cantor      || "Cantor",
+          mostrarPronto(
+            dados.cantor      || "—",
             dados.duo         || null,
-            dados.musica      || "",
+            dados.musica      || "—",
             dados.artista     || "",
             dados.photoURL    || null,
-            dados.duoPhotoURL || null,
-            () => mostrarPronto(dados.cantor, dados.duo, dados.musica, dados.artista, dados.photoURL, dados.duoPhotoURL)
+            dados.duoPhotoURL || null
           );
         }
 

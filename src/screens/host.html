@@ -1302,10 +1302,20 @@
           const item = { id: doc.id, ...doc.data() };
           clearTimeout(timerConfirmacao);
           proximaConfirmando = null;
-          // Marca como 'pronto': host vê o badge e pressiona ▶ Tocar quando quiser
           await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
             .update({ status: 'pronto' });
-          // Player continua mostrando idle + intervalo até o host dar play
+          // Para o overlay de preview e mostra tela de "aguardando host"
+          if (window.electronAPI) {
+            window.electronAPI.playerCommand(JSON.stringify({
+              cmd: 'mostrar-pronto',
+              cantor:      item.nomeArtistico || '—',
+              duo:         item.duoNome || null,
+              musica:      item.musica || '—',
+              artista:     item.artista || '',
+              photoURL:    item.photoURL || null,
+              duoPhotoURL: item.duoPhotoURL || null
+            }));
+          }
         }
       });
   }
