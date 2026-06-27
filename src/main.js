@@ -97,6 +97,7 @@ function createPlayerWindow() {
     backgroundColor: "#000000",
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
+      webSecurity: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
