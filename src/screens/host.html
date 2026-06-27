@@ -725,6 +725,15 @@
     gerarQR('qr-sessao', sessaoUrl);
     document.getElementById('qr-sessao-url').textContent = `Código: ${sessaoCodigo}`;
     document.getElementById('qr-sessao-box').style.opacity = '1';
+
+    // Notifica player — aguarda 2s para garantir que o player já carregou
+    setTimeout(() => {
+      if (window.electronAPI) {
+        window.electronAPI.playerCommand(JSON.stringify({
+          cmd: 'sessao-iniciada', codigo: sessaoCodigo, appUrl: APP_URL
+        }));
+      }
+    }, 2000);
   }
 
   async function iniciarFila() {
