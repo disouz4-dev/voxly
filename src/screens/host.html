@@ -1036,12 +1036,13 @@
     const filePath = currentSong.filePath
       || await window.electronAPI.resolveMusicFile(currentSong.musica, currentSong.artista);
     if (!filePath) { alert('Arquivo não encontrado para reiniciar.'); return; }
-    // Toca do início sem exibir a intro novamente
+    // Exibe animação de intro e toca do início
     setTimeout(() => {
       window.electronAPI.playerCommand(JSON.stringify({
-        cmd: 'play-direct', filePath,
+        cmd: 'play-confirmed', filePath,
         musica: currentSong.musica, artista: currentSong.artista,
-        cantor: currentSong.nomeArtistico, duo: currentSong.duoNome || null
+        cantor: currentSong.nomeArtistico, duo: currentSong.duoNome || null,
+        photoURL: currentSong.photoURL || null, duoPhotoURL: currentSong.duoPhotoURL || null
       }));
     }, 600); // aguarda o player abrir
   }
