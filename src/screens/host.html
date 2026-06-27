@@ -1591,7 +1591,7 @@
     const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
 
     const cantor    = presencasData.find(p => (p.id || p.uid) === uid);
-    const filaLonga = filaData.filter(d => d.status === 'aguardando').length >= Math.floor((regras.prioridadeMinutos || 40) / 4);
+    const filaLonga = filaData.filter(d => d.status === 'aguardando').length * 4 > (regras.prioridadeMinutos || 40);
     const tipo      = (regras.prioridadeAtiva && cantor && !cantor.primeiraMusicaCantada && filaLonga) ? 'prioridade' : 'normal';
 
     const item = {
