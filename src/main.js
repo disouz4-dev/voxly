@@ -253,6 +253,21 @@ ipcMain.handle("open-player", () => {
   }
 });
 
+// ── IPC: Imagem externa (bypass CORS — net.fetch roda no processo principal) ──
+const { net } = require('electron');
+ipcMain.handle("fetch-image", async (_, url) => {
+  if (!url) return null;
+  try {
+    const resp = await net.fetch(url);
+    if (!resp.ok) return null;
+    const buf  = Buffer.from(await resp.arrayBuffer());
+    const mime = resp.headers.get('content-type') || 'image/jpeg';
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch(e) {
+    return null;
+  }
+});
+
 // ── IPC: QR Code ───────────────────────────────────────────
 ipcMain.handle("get-webapp-url", () => store.get("webAppUrl", "https://voxly-karaoke.web.app"));
 ipcMain.handle("set-webapp-url", (_, url) => store.set("webAppUrl", url));

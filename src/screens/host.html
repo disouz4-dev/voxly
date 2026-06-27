@@ -424,6 +424,12 @@
         <div class="np-song"   id="np-song">—</div>
         <div class="np-artist" id="np-artist">—</div>
         <div class="np-singer" id="np-singer">—</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+          <span style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Tom:</span>
+          <button class="btn btn-ghost btn-sm" onclick="ajustarTom(-1)" style="padding:2px 10px;font-size:1rem;">−</button>
+          <span id="tom-display" style="font-size:.85rem;font-weight:700;color:var(--accent);min-width:60px;text-align:center;">Original</span>
+          <button class="btn btn-ghost btn-sm" onclick="ajustarTom(+1)" style="padding:2px 10px;font-size:1rem;">+</button>
+        </div>
       </div>
 
       <div class="player-controls">
@@ -607,6 +613,7 @@
   let proximaConfirmando = null;
   let timerConfirmacao   = null;
   let modoOffline        = false;
+  let tomAtual           = 0; // semitons em relação ao original
 
   // ── Helpers ───────────────────────────────────────────────
   function escHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
@@ -1005,12 +1012,17 @@
     document.getElementById('np-song').textContent   = item.musica  || '—';
     document.getElementById('np-artist').textContent = item.artista || '—';
     document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—') + (item.duoNome ? ' & ' + item.duoNome : '');
+    // Aplica tom salvo no pedido do cantor, depois reseta o display para o host
+    const semitons = item.semitons || 0;
+    tomAtual = semitons;
+    const td = document.getElementById('tom-display');
+    if (td) td.textContent = semitons === 0 ? 'Original'
+      : (semitons > 0 ? `+${semitons}` : `${semitons}`) + ' st';
 
     if (window.electronAPI) {
       if (filePath) {
-        // Sempre exibe intro (4.5s + abertura) antes de tocar
         window.electronAPI.playerCommand(JSON.stringify({
-          cmd: 'play-confirmed', filePath,
+          cmd: 'play-confirmed', filePath, semitons,
           musica: item.musica, artista: item.artista,
           cantor: item.nomeArtistico, duo: item.duoNome || null,
           photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
@@ -1032,12 +1044,12 @@
     // Exibe animação de intro e toca do início
     setTimeout(() => {
       window.electronAPI.playerCommand(JSON.stringify({
-        cmd: 'play-confirmed', filePath,
+        cmd: 'play-confirmed', filePath, semitons: tomAtual,
         musica: currentSong.musica, artista: currentSong.artista,
         cantor: currentSong.nomeArtistico, duo: currentSong.duoNome || null,
         photoURL: currentSong.photoURL || null, duoPhotoURL: currentSong.duoPhotoURL || null
       }));
-    }, 600); // aguarda o player abrir
+    }, 600);
   }
 
   async function pularMusica(itemId) {
@@ -1375,6 +1387,22 @@
 
   // ── Player controls ───────────────────────────────────────
   function playerCmd(cmd) { if (window.electronAPI) window.electronAPI.playerCommand(cmd); }
+
+  function ajustarTom(delta) {
+    tomAtual = Math.max(-6, Math.min(6, tomAtual + delta));
+    const el = document.getElementById('tom-display');
+    el.textContent = tomAtual === 0 ? 'Original'
+      : (tomAtual > 0 ? `+${tomAtual}` : `${tomAtual}`) + (Math.abs(tomAtual) === 1 ? ' st' : ' st');
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand(JSON.stringify({ cmd: 'set-pitch', semitons: tomAtual }));
+    }
+  }
+
+  function resetarTom() {
+    tomAtual = 0;
+    const el = document.getElementById('tom-display');
+    if (el) el.textContent = 'Original';
+  }
   async function skipSong() {
     if (!SESSAO_ID) return;
     if (currentSong) { await pularMusica(currentSong.id); return; }

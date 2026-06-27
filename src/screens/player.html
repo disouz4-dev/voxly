@@ -541,6 +541,82 @@ document.addEventListener("DOMContentLoaded", () => {
   let introTimeout  = null;
   let particleTimer = null;
 
+  // ── Áudio: compressor + pitch shift ──────────────────────
+  let audioCtx   = null;
+  let srcNode    = null;
+  let pitchNode  = null;
+  let compNode   = null;
+  let currentSemitons = 0;
+
+  const PITCH_WORKLET_CODE = `
+const GRAIN=2048,HOP=512,BUF=32768;
+class PitchProcessor extends AudioWorkletProcessor{
+  constructor(){
+    super();
+    this._r=1.0;
+    this._st=[0,1].map(()=>({inB:new Float32Array(BUF),outB:new Float32Array(BUF),wr:BUF>>1,gr:(BUF>>1)-GRAIN,gwo:(BUF>>1)+GRAIN,ord:BUF>>1}));
+    this._win=new Float32Array(GRAIN);
+    for(let i=0;i<GRAIN;i++)this._win[i]=0.5*(1-Math.cos(2*Math.PI*i/(GRAIN-1)));
+    this.port.onmessage=e=>{if(e.data.ratio!=null)this._r=e.data.ratio;};
+  }
+  _ch(s,inp,out){
+    const n=inp.length,M=BUF,w=this._win;
+    for(let i=0;i<n;i++)s.inB[(s.wr+i)&(M-1)]=inp[i];
+    s.wr+=n;
+    if(s.wr-s.gr>M>>2)s.gr=s.wr-GRAIN;
+    if(s.wr-Math.floor(s.gr)<GRAIN){out.fill(0);return;}
+    while(s.gwo<=s.ord+GRAIN){
+      const g0=Math.floor(s.gr);
+      if(s.wr-g0<GRAIN)break;
+      for(let k=0;k<GRAIN;k++)s.outB[(s.gwo+k)&(M-1)]+=s.inB[(g0+k)&(M-1)]*w[k];
+      s.gr+=HOP*this._r;s.gwo+=HOP;
+    }
+    for(let i=0;i<n;i++)out[i]=s.outB[(s.ord+i)&(M-1)];
+    for(let i=0;i<n;i++)s.outB[(s.ord+i)&(M-1)]=0;
+    s.ord+=n;
+  }
+  process(inputs,outputs){
+    const nch=Math.min((inputs[0]||[]).length,(outputs[0]||[]).length,2);
+    for(let c=0;c<nch;c++)if(inputs[0][c]&&outputs[0][c])this._ch(this._st[c],inputs[0][c],outputs[0][c]);
+    return true;
+  }
+}
+registerProcessor('pitch-processor',PitchProcessor);
+`;
+
+  async function initAudio() {
+    if (audioCtx) { audioCtx.resume(); return; }
+    audioCtx = new AudioContext();
+
+    const blob = new Blob([PITCH_WORKLET_CODE], { type: 'application/javascript' });
+    const url  = URL.createObjectURL(blob);
+    try { await audioCtx.audioWorklet.addModule(url); } catch(e) { console.warn('[AUDIO] worklet:', e); }
+    URL.revokeObjectURL(url);
+
+    pitchNode = new AudioWorkletNode(audioCtx, 'pitch-processor', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]
+    });
+
+    compNode = audioCtx.createDynamicsCompressor();
+    compNode.threshold.value = -16;
+    compNode.knee.value      = 10;
+    compNode.ratio.value     = 8;
+    compNode.attack.value    = 0.005;
+    compNode.release.value   = 0.1;
+
+    pitchNode.connect(compNode);
+    compNode.connect(audioCtx.destination);
+
+    // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
+    srcNode = audioCtx.createMediaElementSource(video);
+    srcNode.connect(pitchNode);
+  }
+
+  function setSemitons(n) {
+    currentSemitons = n || 0;
+    if (pitchNode) pitchNode.port.postMessage({ ratio: Math.pow(2, currentSemitons / 12) });
+  }
+
   function toFileUrl(filePath) {
     return encodeURI("file://" + filePath);
   }
@@ -764,6 +840,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })();
 
+  // ── Resolver URL de avatar via processo principal (bypassa CORS/CSP) ──
+  const _avatarCache = {};
+  async function resolveUrl(url) {
+    if (!url) return null;
+    if (_avatarCache[url]) return _avatarCache[url];
+    if (window.electronAPI) {
+      const data = await window.electronAPI.invoke('fetch-image', url);
+      if (data) { _avatarCache[url] = data; return data; }
+    }
+    return url;
+  }
+  async function resolveAvatarPair(a, b) {
+    return Promise.all([resolveUrl(a), resolveUrl(b)]);
+  }
+
   // ── Avatar preview ───────────────────────────────────────
   function prevAvatarHtml(nome, url, delay) {
     const style = `animation-delay:${delay}s`;
@@ -847,7 +938,7 @@ document.addEventListener("DOMContentLoaded", () => {
     prontoOverlay.classList.remove("active");
   }
 
-  function iniciarVideo(filePath) {
+  async function iniciarVideo(filePath, semitons) {
     idleAtivo = false;
     pararIntervalo();
     esconderPronto();
@@ -856,13 +947,15 @@ document.addEventListener("DOMContentLoaded", () => {
     video.pause();
     video.removeAttribute("src");
     video.load();
+    await initAudio();
+    setSemitons(semitons !== undefined ? semitons : currentSemitons);
     video.src = toFileUrl(filePath);
     video.load();
     video.play().catch(e => console.error("[PLAYER] Erro:", e));
   }
 
   // Comandos do host
-  window.electronAPI.onPlayerCmd(cmd => {
+  window.electronAPI.onPlayerCmd(async cmd => {
     if (cmd.startsWith("{")) {
       try {
         const dados = JSON.parse(cmd);
@@ -877,7 +970,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "preview") {
           clearTimeout(idleFallbackTimer);
-          // Atualiza idle com info do próximo cantor (fica visível atrás do overlay)
           mostrarIdleScreen({ cantor: dados.cantor||'—', duo: dados.duo||null,
                               musica: dados.musica||'—', artista: dados.artista||'' });
           pararIntervalo();
@@ -890,7 +982,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `🎤 ${cantor} & ${duo}`
             : `🎤 ${cantor}`;
 
-          atualizarPrevAvatares(cantor, duo, dados.photoURL || null, dados.duoPhotoURL || null);
+          // Resolve fotos via processo principal (bypass CORS/CSP)
+          resolveAvatarPair(dados.photoURL||null, dados.duoPhotoURL||null)
+            .then(([p, dp]) => atualizarPrevAvatares(cantor, duo, p, dp));
           previewOverlay.classList.add("active");
 
           // Música de fundo a partir do segundo 30 — volume moderado
@@ -937,14 +1031,15 @@ document.addEventListener("DOMContentLoaded", () => {
           video.style.display = "none";
           pararPreview();
           esconderPronto();
+          const [rPhoto, rDuo] = await resolveAvatarPair(dados.photoURL||null, dados.duoPhotoURL||null);
+          const sm = dados.semitons ?? 0;
           mostrarIntro(
-            dados.cantor      || "Cantor",
-            dados.duo         || null,
-            dados.musica      || "",
-            dados.artista     || "",
-            dados.photoURL    || null,
-            dados.duoPhotoURL || null,
-            () => iniciarVideo(dados.filePath)
+            dados.cantor   || "Cantor",
+            dados.duo      || null,
+            dados.musica   || "",
+            dados.artista  || "",
+            rPhoto, rDuo,
+            () => iniciarVideo(dados.filePath, sm)
           );
         }
 
@@ -952,20 +1047,25 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dados.cmd === "mostrar-pronto") {
           clearTimeout(idleFallbackTimer);
           pararPreview();
+          const [rPhoto, rDuo] = await resolveAvatarPair(dados.photoURL||null, dados.duoPhotoURL||null);
           mostrarPronto(
-            dados.cantor      || "—",
-            dados.duo         || null,
-            dados.musica      || "—",
-            dados.artista     || "",
-            dados.photoURL    || null,
-            dados.duoPhotoURL || null
+            dados.cantor   || "—",
+            dados.duo      || null,
+            dados.musica   || "—",
+            dados.artista  || "",
+            rPhoto, rDuo
           );
         }
 
         // Host deu play: toca direto sem intro
         if (dados.cmd === "play-direct") {
           esconderPronto();
-          iniciarVideo(dados.filePath);
+          iniciarVideo(dados.filePath, dados.semitons ?? 0);
+        }
+
+        // Host ajustou o tom durante a música
+        if (dados.cmd === "set-pitch") {
+          setSemitons(dados.semitons ?? 0);
         }
       } catch(e) {
         console.error("[PLAYER] Erro JSON cmd:", e);
