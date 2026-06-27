@@ -94,11 +94,16 @@
       padding: 10px 12px; margin-bottom: 8px;
       display: flex; align-items: flex-start; gap: 10px;
       position: relative;
-      transition: border-color .2s;
+      transition: border-color .2s, opacity .15s, transform .15s;
     }
     .queue-item.playing  { border-color: var(--ok);    background: #00e67608; }
     .queue-item.priority { border-color: var(--warn);  background: #ff910008; }
     .queue-item.missing  { border-color: var(--danger); background: #ff174408; }
+    .queue-item[draggable="true"] { cursor: grab; }
+    .queue-item[draggable="true"]:active { cursor: grabbing; }
+    .queue-item.drag-over { border-color: var(--teal); background: #00e5ff12; transform: scale(1.01); }
+    .queue-item.dragging  { opacity: .35; }
+    .drag-handle { color: #ffffff25; font-size: .9rem; cursor: grab; padding: 0 2px; flex-shrink: 0; align-self: center; }
 
     .queue-pos {
       min-width: 26px; height: 26px; border-radius: 50%;
@@ -524,6 +529,18 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalExpulsar">
+  <div class="modal-box">
+    <h2>⚠️ Remover da Fila</h2>
+    <p style="margin:12px 0 6px;font-size:.9rem;">Remover <strong id="expulsarNome" style="color:var(--accent)"></strong> da fila?</p>
+    <p style="font-size:.78rem;color:var(--danger);margin-bottom:16px;">Esta ação não pode ser desfeita.</p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalExpulsar()">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarExpulsao()">Remover</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalDuoFila">
   <div class="modal-box">
     <h2>🎤 Adicionar Parceiro Duo</h2>
@@ -844,17 +861,24 @@
         ? `<img src="${item.photoURL}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
         : `<div style="width:30px;height:30px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;">${getInitials(item.nomeArtistico)}</div>`;
 
-      const playBtn   = !isPlaying && !isConfirming ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
-      const skipBtn   = isPlaying ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
-      const removeBtn = `<button class="btn btn-danger btn-sm" onclick="removerMusica('${item.id}')" title="Remover da fila">✕</button>`;
-      const duoBtn    = !isPlaying && !isConfirming && !isDuet && regras.permitirDuo
+      const isDraggable = !isPlaying && !isConfirming;
+      const playBtn   = isDraggable ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
+      const skipBtn   = isPlaying   ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
+      const removeBtn = `<button class="btn btn-danger btn-sm" onclick="abrirModalExpulsar(${i})" title="Remover da fila">✕</button>`;
+      const duoBtn    = isDraggable && !isDuet && regras.permitirDuo
         ? `<button class="btn btn-secondary btn-sm" onclick="abrirModalDuoFila(${i})" title="Adicionar parceiro duo">🎤 Duo</button>`
         : '';
-      const duoRemBtn = !isPlaying && !isConfirming && isDuet
+      const duoRemBtn = isDraggable && isDuet
         ? `<button class="btn btn-ghost btn-sm" onclick="removerDuoFila('${item.id}')" title="Remover parceiro duo" style="color:#ff6b6b;">✕ Duo</button>`
         : '';
+      const dragHandle = isDraggable ? `<span class="drag-handle" title="Arrastar para reordenar">⠿</span>` : '';
 
-      return `<div class="${cls}">
+      const dragAttrs = isDraggable
+        ? `draggable="true" ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,${i})" ondragend="onDragEnd()"`
+        : '';
+
+      return `<div class="${cls}" ${dragAttrs}>
+        ${dragHandle}
         <div class="queue-pos">${isPlaying ? '▶' : i + 1}</div>
         ${avatarHtml}
         <div class="queue-info">
@@ -977,9 +1001,86 @@
     await iniciarConfirmacaoProxima();
   }
 
-  async function removerMusica(itemId) {
-    if (!confirm('Remover esta música da fila?')) return;
-    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId).delete();
+  // ── Expulsar da fila ─────────────────────────────────────
+  let expulsarIdx = null;
+
+  function abrirModalExpulsar(i) {
+    const item = filaData[i];
+    if (!item) return;
+    expulsarIdx = i;
+    document.getElementById('expulsarNome').textContent = item.nomeArtistico;
+    document.getElementById('modalExpulsar').classList.add('open');
+  }
+
+  function fecharModalExpulsar() {
+    document.getElementById('modalExpulsar').classList.remove('open');
+    expulsarIdx = null;
+  }
+
+  async function confirmarExpulsao() {
+    const item = filaData[expulsarIdx];
+    fecharModalExpulsar();
+    if (!item) return;
+    if (modoOffline) {
+      filaData.splice(expulsarIdx, 1);
+      renderQueue(); salvarBackupLocal();
+    } else {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id).delete();
+    }
+  }
+
+  // ── Drag-and-drop para reordenar fila ────────────────────
+  let dragSrcIdx = null;
+
+  function onDragStart(e, i) {
+    dragSrcIdx = i;
+    e.currentTarget.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drag-over');
+  }
+
+  function onDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over');
+  }
+
+  function onDragEnd() {
+    document.querySelectorAll('.queue-item').forEach(el => {
+      el.classList.remove('dragging', 'drag-over');
+    });
+    dragSrcIdx = null;
+  }
+
+  async function onDrop(e, destIdx) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    if (dragSrcIdx === null || dragSrcIdx === destIdx) return;
+
+    // Reordena localmente
+    const moved = filaData.splice(dragSrcIdx, 1)[0];
+    filaData.splice(destIdx, 0, moved);
+
+    // Atualiza ordemFila apenas nos itens aguardando
+    const aguardando = filaData.filter(d => d.status === 'aguardando');
+    aguardando.forEach((item, idx) => { item.ordemFila = idx + 1; });
+    renderQueue();
+
+    if (!modoOffline) {
+      const batch = db.batch();
+      aguardando.forEach(item => {
+        batch.update(
+          db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id),
+          { ordemFila: item.ordemFila }
+        );
+      });
+      await batch.commit();
+    } else {
+      salvarBackupLocal();
+    }
   }
 
   function marcarCantadaAtual() {
