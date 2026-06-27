@@ -923,6 +923,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dados.cmd === "play-confirmed") {
           clearTimeout(idleFallbackTimer);
           idle.style.display = "none";
+          // Garante que o vídeo anterior está silenciado antes da intro
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+          video.style.display = "none";
           pararPreview();
           mostrarIntro(
             dados.cantor      || "Cantor",
@@ -1013,6 +1018,7 @@ document.addEventListener("DOMContentLoaded", () => {
   video.addEventListener("timeupdate", () => {
     if (video.duration && video.currentTime >= video.duration - 0.5) {
       if (video.style.display !== "none") {
+        video.pause();
         video.style.display = "none";
         idleAtivo = true;
         tocarIntervalo();
