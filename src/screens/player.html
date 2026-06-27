@@ -958,6 +958,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (cmd === "play")             video.play();
     if (cmd === "pause")            video.pause();
+    if (cmd === "restart")          { video.currentTime = 0; video.play().catch(()=>{}); }
     if (cmd === "stop-preview")     { pararPreview(); idleAtivo = true; tocarIntervalo(); }
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); }

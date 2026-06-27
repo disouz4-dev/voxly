@@ -899,8 +899,9 @@
         : `<div style="width:30px;height:30px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;">${getInitials(item.nomeArtistico)}</div>`;
 
       const isDraggable = !isPlaying && !isConfirming && !isPronto;
-      const playBtn   = (!isPlaying && !isConfirming) ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
-      const skipBtn   = (isPlaying || isPronto) ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
+      const playBtn    = (!isPlaying && !isConfirming) ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
+      const restartBtn = isPlaying ? `<button class="btn btn-ghost btn-sm" onclick="reiniciarMusica()" title="Voltar ao início">⏮ Reiniciar</button>` : '';
+      const skipBtn    = (isPlaying || isPronto) ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
       const removeBtn = `<button class="btn btn-danger btn-sm" onclick="abrirModalExpulsar(${i})" title="Remover da fila">✕</button>`;
       const duoBtn    = isDraggable && !isDuet && regras.permitirDuo
         ? `<button class="btn btn-secondary btn-sm" onclick="abrirModalDuoFila(${i})" title="Adicionar parceiro duo">🎤 Duo</button>`
@@ -922,7 +923,7 @@
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
-          <div class="queue-actions">${playBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}</div>
+          <div class="queue-actions">${playBtn}${restartBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}</div>
         </div>
         ${badge}
       </div>`;
@@ -1013,6 +1014,10 @@
         alert(`Arquivo não encontrado: ${item.musica}\nVincule manualmente.`);
       }
     }
+  }
+
+  function reiniciarMusica() {
+    if (window.electronAPI) window.electronAPI.playerCommand('restart');
   }
 
   async function pularMusica(itemId) {
