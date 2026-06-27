@@ -190,6 +190,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (dados.cmd === "play-confirmed") {
           pararPreview();
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
           idle.style.display  = "none";
           video.style.display = "block";
           video.src = toFileUrl(dados.filePath);
@@ -213,7 +216,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cmd === "stop") {
       pararPreview();
       video.pause();
-      video.src = "";
+      video.removeAttribute("src");
+      video.load();
       video.style.display = "none";
       idle.style.display  = "flex";
     }

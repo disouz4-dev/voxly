@@ -115,6 +115,21 @@
     .footer { padding: 8px; text-align: center; color: #ffffff40; font-size: .7rem; border-top: 1px solid #ffffff10; flex-shrink: 0; }
     .footer strong { color: #e040fb; }
 
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal-box { background: var(--surface); border-radius: var(--radius); padding: 24px; width: 440px; max-width: 95vw; border: 1px solid #ffffff18; }
+    .modal-box h2 { font-size: 1rem; color: var(--accent); margin-bottom: 14px; }
+    .modal-label { font-size: .78rem; color: var(--muted); display: block; margin-bottom: 4px; margin-top: 10px; }
+    .modal-input  { width: 100%; padding: 8px 12px; background: var(--surface2); border: 1px solid #ffffff20; border-radius: 8px; color: var(--text); font-size: .88rem; }
+    .modal-select { width: 100%; padding: 8px 12px; background: var(--surface2); border: 1px solid #ffffff20; border-radius: 8px; color: var(--text); font-size: .88rem; }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .modal-result-item { padding: 8px 10px; border-radius: 6px; background: var(--surface2); margin-bottom: 4px; cursor: pointer; border: 1px solid transparent; font-size: .82rem; }
+    .modal-result-item:hover { border-color: var(--accent2); }
+    .modal-result-item.selecionado { border-color: var(--ok); background: #00e67610; }
+    .tag-manual { background: #7c4dff30; color: var(--accent2); }
+    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--accent2); color: #fff; padding: 10px 24px; border-radius: 8px; font-size: .85rem; z-index: 200; opacity: 0; transition: opacity .3s; pointer-events: none; white-space: nowrap; }
+    .toast.show { opacity: 1; }
+
   </style>
 </head>
 <body>
@@ -131,6 +146,8 @@
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="iniciarSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-ok btn-sm" id="startQueueBtn" onclick="iniciarFila()" style="display:none;">▶ Iniciar Fila</button>
     <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar Sessão</button>
+    <button class="btn btn-secondary btn-sm" id="btnAdicionarCantor" onclick="abrirModalCantor()" style="display:none;">➕ Cantor</button>
+    <button class="btn btn-secondary btn-sm" id="btnAdicionarMusica" onclick="abrirModalMusica()" style="display:none;">🎵 Música</button>
     <button class="btn btn-ghost btn-sm" onclick="reabrirPlayer()">🖥 Player</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
@@ -220,6 +237,38 @@
   Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
 </footer>
 
+<!-- Modal: Adicionar Cantor Manual -->
+<div class="modal-overlay" id="modalCantor">
+  <div class="modal-box">
+    <h2>➕ Adicionar Cantor</h2>
+    <label class="modal-label">Nome artístico</label>
+    <input class="modal-input" type="text" id="inputNomeCantor" placeholder="Ex: João Silva" maxlength="40">
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalCantor()">Cancelar</button>
+      <button class="btn btn-primary" onclick="adicionarCantorManual()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Adicionar Música Manual -->
+<div class="modal-overlay" id="modalMusica">
+  <div class="modal-box">
+    <h2>🎵 Adicionar Música</h2>
+    <label class="modal-label">Cantor</label>
+    <select class="modal-select" id="selectCantorMusica"></select>
+    <label class="modal-label">Buscar no catálogo</label>
+    <input class="modal-input" type="text" id="inputBuscaMusica" placeholder="Artista ou título..." oninput="buscarCatalogoModal()">
+    <div id="resultadosBuscaModal" style="max-height:180px;overflow-y:auto;margin-top:6px;margin-bottom:4px;"></div>
+    <div id="musicaSelecionadaModal" style="display:none;padding:8px;border-radius:6px;background:#00e67610;border:1px solid var(--ok);font-size:.82rem;margin-bottom:4px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalMusica()">Cancelar</button>
+      <button class="btn btn-ok" id="btnConfirmarMusica" onclick="adicionarMusicaManual()" disabled>Adicionar à Fila</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -246,6 +295,7 @@
   let cicloAtual       = 1;
   let proximaConfirmando = null;
   let timerConfirmacao   = null;
+  let modoOffline        = false;
 
   // ── Helpers ───────────────────────────────────────────────
   function escHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
@@ -292,18 +342,37 @@
     // Verifica se há sessão ativa salva localmente
     const sessaoSalva = localStorage.getItem('voxly_sessao_id');
     if (sessaoSalva) {
-      const snap = await db.collection('sessoes').doc(sessaoSalva).get();
-      if (snap.exists && snap.data().status === 'ativa') {
-        SESSAO_ID    = sessaoSalva;
-        sessaoCodigo = snap.data().codigo;
-        regras       = snap.data().regras || regras;
-        cicloAtual   = snap.data().cicloAtual || 1;
-        popularInputsRegras();
-        ativarInterfaceSessao();
-        escutarFila();
-        escutarPresencas();
-        escutarConfirmacoes();
-        return;
+      try {
+        const snap = await db.collection('sessoes').doc(sessaoSalva).get();
+        if (snap.exists && snap.data().status === 'ativa') {
+          SESSAO_ID    = sessaoSalva;
+          sessaoCodigo = snap.data().codigo;
+          regras       = snap.data().regras || regras;
+          cicloAtual   = snap.data().cicloAtual || 1;
+          popularInputsRegras();
+          ativarInterfaceSessao();
+          escutarFila();
+          escutarPresencas();
+          escutarConfirmacoes();
+          return;
+        }
+      } catch(e) {
+        // Sem internet — restaura do backup local
+        const bkpFila      = localStorage.getItem('voxly_backup_fila');
+        const bkpPresencas = localStorage.getItem('voxly_backup_presencas');
+        const bkpCodigo    = localStorage.getItem('voxly_backup_sessaoCodigo');
+        if (bkpFila) {
+          SESSAO_ID    = sessaoSalva;
+          sessaoCodigo = bkpCodigo || '????';
+          modoOffline  = true;
+          filaData     = JSON.parse(bkpFila);
+          presencasData= JSON.parse(bkpPresencas || '[]');
+          popularInputsRegras();
+          ativarInterfaceSessao();
+          renderQueue();
+          renderUsers();
+          mostrarToast('⚠️ Modo offline — sessão restaurada do backup local', 5000);
+        }
       }
     }
   });
@@ -348,9 +417,11 @@
     document.getElementById('startSessionBtn').style.display = 'none';
     document.getElementById('startQueueBtn').style.display   = 'inline-block';
     document.getElementById('stopSessionBtn').style.display  = 'inline-block';
-    document.getElementById('cycle-label').style.display     = 'inline';
-    document.getElementById('nextCycleBtn').style.display    = 'inline-block';
-    document.getElementById('cycle-num').textContent = cicloAtual;
+    document.getElementById('cycle-label').style.display        = 'inline';
+    document.getElementById('nextCycleBtn').style.display       = 'inline-block';
+    document.getElementById('cycle-num').textContent            = cicloAtual;
+    document.getElementById('btnAdicionarCantor').style.display = 'inline-block';
+    document.getElementById('btnAdicionarMusica').style.display = 'inline-block';
 
     // QR da sessão
     const sessaoUrl = `${APP_URL}/profile.html?sessao=${sessaoCodigo}`;
@@ -398,17 +469,22 @@
     }
 
     localStorage.removeItem('voxly_sessao_id');
+    localStorage.removeItem('voxly_backup_fila');
+    localStorage.removeItem('voxly_backup_presencas');
     SESSAO_ID    = null;
     sessaoCodigo = null;
+    modoOffline  = false;
 
     document.getElementById('sessionBadge').textContent = '● Sem Sessão';
     document.getElementById('sessionBadge').className   = 'session-badge inativa';
     document.getElementById('startSessionBtn').style.display = 'inline-block';
     document.getElementById('startQueueBtn').style.display   = 'none';
     document.getElementById('stopSessionBtn').style.display  = 'none';
-    document.getElementById('cycle-label').style.display     = 'none';
-    document.getElementById('nextCycleBtn').style.display    = 'none';
-    document.getElementById('qr-sessao-box').style.opacity   = '0.3';
+    document.getElementById('cycle-label').style.display        = 'none';
+    document.getElementById('nextCycleBtn').style.display       = 'none';
+    document.getElementById('btnAdicionarCantor').style.display = 'none';
+    document.getElementById('btnAdicionarMusica').style.display = 'none';
+    document.getElementById('qr-sessao-box').style.opacity      = '0.3';
     document.getElementById('qr-sessao-url').textContent     = 'Inicie uma sessão';
     document.getElementById('queue-list').innerHTML  = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
     document.getElementById('users-list').innerHTML  = '<div class="empty">Nenhum cantor conectado.</div>';
@@ -434,6 +510,7 @@
             return (a.ordemFila || 0) - (b.ordemFila || 0);
           });
         renderQueue();
+        salvarBackupLocal();
       });
   }
 
@@ -489,6 +566,7 @@
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(d => {
             if (d.status === 'offline') return false;
+            if (d.modo === 'manual') return true;
             if (d.ultimoHeartbeat) {
               const ultimo = d.ultimoHeartbeat.toDate ? d.ultimoHeartbeat.toDate().getTime() : 0;
               if (agora - ultimo > 300000) return false; // 5 minutos
@@ -496,6 +574,7 @@
             return true;
           });
         renderUsers();
+        salvarBackupLocal();
       });
     setInterval(renderUsers, 15000);
   }
@@ -512,8 +591,8 @@
       const prioridade = !u.primeiraMusicaCantada;
       const ultimo = u.ultimoHeartbeat?.toDate ? u.ultimoHeartbeat.toDate().getTime() : 0;
       const ativo  = agora - ultimo < 300000;
-      const tagCls = online && ativo ? 'tag tag-online' : 'tag tag-away';
-      const tagTxt = online && ativo ? '✅ Aqui' : '🕐 Ausente';
+      const tagCls = u.modo === 'manual' ? 'tag tag-manual' : (online && ativo ? 'tag tag-online' : 'tag tag-away');
+      const tagTxt = u.modo === 'manual' ? '👤 Manual' : (online && ativo ? '✅ Aqui' : '🕐 Ausente');
       const avatarHtml = u.photoURL
         ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
         : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
@@ -557,9 +636,16 @@
   }
 
   async function pularMusica(itemId) {
+    // Cancela qualquer timer/preview em andamento
+    clearTimeout(timerConfirmacao);
+    proximaConfirmando = null;
+    if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
+
     const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     const itemSnap = await itemRef.get();
-    const item     = itemSnap.data();
+    if (!itemSnap.exists) return;
+    const item = itemSnap.data();
+
     await itemRef.update({ status: 'pulada' });
     if (item?.cantorUid) {
       await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
@@ -734,14 +820,172 @@
   // ── Player controls ───────────────────────────────────────
   function playerCmd(cmd) { if (window.electronAPI) window.electronAPI.playerCommand(cmd); }
   async function skipSong() {
-    if (currentSong) { pularMusica(currentSong.id); return; }
-    // Fallback: busca no Firestore a música tocando agora
     if (!SESSAO_ID) return;
+    if (currentSong) { await pularMusica(currentSong.id); return; }
+    // Fallback: busca tocando OU confirmando (preview 15s)
     const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', '==', 'tocando').limit(1).get();
-    if (!snap.empty) pularMusica(snap.docs[0].id);
+      .where('status', 'in', ['tocando', 'confirmando']).limit(1).get();
+    if (!snap.empty) await pularMusica(snap.docs[0].id);
   }
   function reabrirPlayer() { if (window.electronAPI) window.electronAPI.invoke('open-player'); }
+
+  // ── Toast ────────────────────────────────────────────────
+  function mostrarToast(msg, dur = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), dur);
+  }
+
+  // ── Backup local ─────────────────────────────────────────
+  function salvarBackupLocal() {
+    if (!SESSAO_ID) return;
+    try {
+      localStorage.setItem('voxly_backup_fila', JSON.stringify(filaData));
+      localStorage.setItem('voxly_backup_presencas', JSON.stringify(
+        presencasData.map(p => ({
+          ...p,
+          ultimoHeartbeat: p.ultimoHeartbeat?.toDate ? p.ultimoHeartbeat.toDate().getTime() : (p.ultimoHeartbeat || null)
+        }))
+      ));
+      localStorage.setItem('voxly_backup_sessaoCodigo', sessaoCodigo || '');
+    } catch(e) {}
+  }
+
+  // ── Modal: Adicionar Cantor ───────────────────────────────
+  function abrirModalCantor() {
+    if (!SESSAO_ID) return;
+    document.getElementById('inputNomeCantor').value = '';
+    document.getElementById('modalCantor').classList.add('open');
+    setTimeout(() => document.getElementById('inputNomeCantor').focus(), 80);
+  }
+  function fecharModalCantor() {
+    document.getElementById('modalCantor').classList.remove('open');
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { fecharModalCantor(); fecharModalMusica(); }
+  });
+
+  async function adicionarCantorManual() {
+    const nome = document.getElementById('inputNomeCantor').value.trim();
+    if (!nome) return;
+    const uid = 'manual_' + Date.now();
+    const cantor = { uid, nomeArtistico: nome, status: 'aqui', modo: 'manual', primeiraMusicaCantada: false };
+    if (!modoOffline) {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(uid).set({
+        ...cantor, entrou: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } else {
+      presencasData.push({ ...cantor, id: uid, entrou: Date.now() });
+      salvarBackupLocal();
+      renderUsers();
+    }
+    fecharModalCantor();
+    mostrarToast(`${nome} adicionado!`);
+  }
+
+  // ── Modal: Adicionar Música ───────────────────────────────
+  let musicaModalSelecionada = null;
+  let buscaModalTimeout      = null;
+
+  function abrirModalMusica() {
+    if (!SESSAO_ID) return;
+    musicaModalSelecionada = null;
+    document.getElementById('inputBuscaMusica').value = '';
+    document.getElementById('resultadosBuscaModal').innerHTML = '';
+    document.getElementById('musicaSelecionadaModal').style.display = 'none';
+    document.getElementById('btnConfirmarMusica').disabled = true;
+    // Preenche dropdown de cantores
+    const sel = document.getElementById('selectCantorMusica');
+    sel.innerHTML = '<option value="">— Selecione o cantor —</option>';
+    presencasData.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id || p.uid;
+      opt.textContent = p.nomeArtistico;
+      opt.dataset.nome = p.nomeArtistico;
+      opt.dataset.uid  = p.id || p.uid;
+      sel.appendChild(opt);
+    });
+    document.getElementById('modalMusica').classList.add('open');
+    setTimeout(() => document.getElementById('inputBuscaMusica').focus(), 80);
+  }
+  function fecharModalMusica() {
+    document.getElementById('modalMusica').classList.remove('open');
+    musicaModalSelecionada = null;
+  }
+
+  function buscarCatalogoModal() {
+    clearTimeout(buscaModalTimeout);
+    const termo = document.getElementById('inputBuscaMusica').value.trim();
+    if (termo.length < 2) { document.getElementById('resultadosBuscaModal').innerHTML = ''; return; }
+    buscaModalTimeout = setTimeout(() => _buscarModal(termo), 300);
+  }
+
+  async function _buscarModal(termo) {
+    const palavras = termo.toLowerCase().split(/\s+/).filter(Boolean);
+    let resultados = [];
+    try {
+      const resp = await fetch('http://127.0.0.1:7432/catalogo');
+      if (resp.ok) {
+        const cat = await resp.json();
+        resultados = cat.filter(d => {
+          const h = (d.musica + ' ' + d.artista).toLowerCase();
+          return palavras.every(p => h.includes(p));
+        }).slice(0, 8);
+      }
+    } catch(e) {}
+    const el = document.getElementById('resultadosBuscaModal');
+    el._res = resultados;
+    if (!resultados.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:.78rem;padding:8px 0;">Nenhum resultado</div>';
+      return;
+    }
+    el.innerHTML = resultados.map((r, i) => `
+      <div class="modal-result-item" onclick="selecionarMusicaModal(${i})">
+        <div style="font-weight:600;">${escHtml(r.musica)}</div>
+        <div style="color:var(--muted);font-size:.74rem;">${escHtml(r.artista)}</div>
+      </div>`).join('');
+  }
+
+  function selecionarMusicaModal(idx) {
+    const el = document.getElementById('resultadosBuscaModal');
+    const r = el._res?.[idx];
+    if (!r) return;
+    musicaModalSelecionada = r;
+    el.querySelectorAll('.modal-result-item').forEach((item, i) => item.classList.toggle('selecionado', i === idx));
+    const box = document.getElementById('musicaSelecionadaModal');
+    box.style.display = 'block';
+    box.innerHTML = `<strong>${escHtml(r.musica)}</strong> — ${escHtml(r.artista)}
+      <span style="float:right;color:${r.disponivel ? 'var(--ok)' : 'var(--danger)'};">${r.disponivel ? '✓ Disponível' : '⬇ Download'}</span>`;
+    document.getElementById('btnConfirmarMusica').disabled = false;
+  }
+
+  async function adicionarMusicaManual() {
+    if (!musicaModalSelecionada) return;
+    const sel  = document.getElementById('selectCantorMusica');
+    const uid  = sel.value;
+    const nome = sel.options[sel.selectedIndex]?.dataset?.nome || '';
+    if (!uid) { alert('Selecione um cantor.'); return; }
+    const cantor = presencasData.find(p => (p.id || p.uid) === uid);
+    const tipo   = (cantor && !cantor.primeiraMusicaCantada) ? 'prioridade' : 'normal';
+    const item   = {
+      cantorUid: uid, nomeArtistico: nome,
+      musica: musicaModalSelecionada.musica, artista: musicaModalSelecionada.artista,
+      disponivel: musicaModalSelecionada.disponivel ?? true,
+      status: 'aguardando', slot: 'ativa', tipo,
+      ordemFila: filaData.length + 1,
+      adicionadoEm: modoOffline ? Date.now() : firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (!modoOffline) {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').add(item);
+    } else {
+      filaData.push({ ...item, id: 'local_' + Date.now() });
+      salvarBackupLocal();
+      renderQueue();
+    }
+    fecharModalMusica();
+    mostrarToast(`${musicaModalSelecionada.musica} → ${nome}`);
+  }
 
   async function selectFolder() {
     if (!window.electronAPI) return;
