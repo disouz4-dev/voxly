@@ -1002,8 +1002,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function agendarIdleFallback() {
     clearTimeout(idleFallbackTimer);
-    // Se o preview não chegar em 4s, exibe idle (fila vazia)
-    idleFallbackTimer = setTimeout(mostrarIdleScreen, 4000);
+    // Se o preview não chegar em 8s, exibe idle (fila vazia)
+    idleFallbackTimer = setTimeout(mostrarIdleScreen, 8000);
   }
 
   video.addEventListener("ended", () => {

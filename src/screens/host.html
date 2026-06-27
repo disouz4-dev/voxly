@@ -1208,6 +1208,10 @@
     document.getElementById('np-artist').textContent = '—';
     document.getElementById('np-singer').textContent = '—';
 
+    // Dispara o preview do próximo cantor IMEDIATAMENTE, sem aguardar os writes
+    iniciarConfirmacaoProxima();
+
+    // Writes de histórico em background — não bloqueiam o preview
     try {
       const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
       const itemSnap = await itemRef.get();
@@ -1216,26 +1220,28 @@
       await itemRef.update({ status: 'cantada' });
 
       if (item?.cantorUid) {
-        await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
-          cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
-          musica: item.musica, artista: item.artista,
-          duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
-          status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        await db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
-          sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
-          duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
-          status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
-          .update({ primeiraMusicaCantada: true });
+        const [,, esperaSnap] = await Promise.all([
+          db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
+            cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
+            musica: item.musica, artista: item.artista,
+            duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
+            status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
+          }),
+          db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
+            sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
+            duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
+            status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
+          }),
+          db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+            .where('cantorUid', '==', item.cantorUid)
+            .where('slot', '==', 'espera')
+            .where('status', '==', 'aguardando')
+            .limit(1).get(),
+          db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
+            .update({ primeiraMusicaCantada: true }),
+        ]);
 
         // Promove música em espera
-        const esperaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-          .where('cantorUid', '==', item.cantorUid)
-          .where('slot', '==', 'espera')
-          .where('status', '==', 'aguardando')
-          .limit(1).get();
         if (!esperaSnap.empty) {
           const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
             .where('status', '==', 'aguardando').get();
@@ -1244,8 +1250,6 @@
       }
     } catch(e) {
       console.error('[HOST] Erro em marcarCantada:', e);
-    } finally {
-      await iniciarConfirmacaoProxima();
     }
   }
 
