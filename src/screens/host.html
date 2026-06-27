@@ -1196,8 +1196,9 @@
     const uid  = sel.value;
     const nome = sel.options[sel.selectedIndex]?.dataset?.nome || '';
     if (!uid) { alert('Selecione um cantor.'); return; }
-    const cantor = presencasData.find(p => (p.id || p.uid) === uid);
-    const tipo   = (cantor && !cantor.primeiraMusicaCantada) ? 'prioridade' : 'normal';
+    const cantor    = presencasData.find(p => (p.id || p.uid) === uid);
+    const filaLonga = filaData.filter(d => d.status === 'aguardando').length >= 10;
+    const tipo      = (cantor && !cantor.primeiraMusicaCantada && filaLonga) ? 'prioridade' : 'normal';
     const item   = {
       cantorUid: uid, nomeArtistico: nome,
       musica: musicaModalSelecionada.musica, artista: musicaModalSelecionada.artista,
