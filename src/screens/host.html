@@ -1216,7 +1216,9 @@
       window.electronAPI.playerCommand(JSON.stringify({
         cmd: 'preview', filePath,
         musica: proxima.musica, artista: proxima.artista,
-        cantor: proxima.nomeArtistico, itemId: proxima.id, segundos: 15
+        cantor: proxima.nomeArtistico, duo: proxima.duoNome || null,
+        photoURL: proxima.photoURL || null, duoPhotoURL: proxima.duoPhotoURL || null,
+        itemId: proxima.id, segundos: 15
       }));
     }
 
