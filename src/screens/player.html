@@ -446,7 +446,8 @@
   </div>
 
   <video id="video-player" controls></video>
-  <audio id="preview-audio" style="display:none;"></audio>
+  <audio id="preview-audio"   style="display:none;"></audio>
+  <audio id="intervalo-audio" style="display:none;"></audio>
 
   <div id="preview-overlay">
     <div id="prev-waveform"></div>
@@ -647,6 +648,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }, INTRO_DURATION);
   }
 
+  // ── Músicas de intervalo (idle screen) ──────────────────────
+  const intervaloAudio = document.getElementById("intervalo-audio");
+  const intervaloFaixas = [
+    "../assets/intervalo/Intervalo Animado.mp3",
+    "../assets/intervalo/Pausa Animada.mp3",
+    "../assets/intervalo/Pausa de Karaokê.mp3"
+  ];
+  let intervaloIdx = Math.floor(Math.random() * intervaloFaixas.length);
+
+  function tocarIntervalo() {
+    intervaloAudio.src    = intervaloFaixas[intervaloIdx];
+    intervaloAudio.volume = 0.5;
+    intervaloAudio.play().catch(() => {});
+  }
+
+  function pararIntervalo() {
+    intervaloAudio.pause();
+    intervaloAudio.src = "";
+  }
+
+  intervaloAudio.addEventListener("ended", () => {
+    intervaloIdx = (intervaloIdx + 1) % intervaloFaixas.length;
+    tocarIntervalo();
+  });
+
+  // Começa quando a página carrega (idle screen visível)
+  tocarIntervalo();
+
   // QR do app
   const APP_URL = "https://voxly-karaoke.web.app";
   document.getElementById("qrImgApp").src =
@@ -744,6 +773,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function iniciarVideo(filePath) {
+    pararIntervalo();
     idle.style.display  = "none";
     video.style.display = "block";
     video.pause();
@@ -769,6 +799,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (dados.cmd === "preview") {
+          intervaloAudio.volume = 0.15; // abaixa durante o preview/voz
           const cantor = dados.cantor || "—";
           const duo    = dados.duo    || null;
 
@@ -817,6 +848,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "play-confirmed") {
           pararPreview();
+          pararIntervalo();
           mostrarIntro(
             dados.cantor      || "Cantor",
             dados.duo         || null,
@@ -851,12 +883,14 @@ document.addEventListener("DOMContentLoaded", () => {
       video.load();
       video.style.display = "none";
       idle.style.display  = "flex";
+      tocarIntervalo();
     }
   });
 
   video.addEventListener("ended", () => {
     video.style.display = "none";
     idle.style.display  = "flex";
+    tocarIntervalo();
     window.electronAPI.songEnded();
   });
 
