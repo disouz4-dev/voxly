@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   invoke:            (channel, ...args) => ipcRenderer.invoke(channel, ...args),
 
   onMusicFolderChanged: (cb) => ipcRenderer.on("music-folder-changed", cb),
+  songEnded:            () => ipcRenderer.invoke("song-ended"),
+  onSongEnded:          (cb) => ipcRenderer.on("song-ended", cb),
   onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp) => cb(fp)),
   onPlayerCmd:          (cb) => ipcRenderer.on("player-cmd", (_e, cmd) => cb(cmd)),
 });

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Voxly - Gerencia</title>
+  <title>Voxly - Gerência</title>
   <style>
     :root {
       --bg:       #0d0d1a;
@@ -17,309 +17,214 @@
       --text:     #e8e8ff;
       --muted:    #7a7a9d;
       --radius:   10px;
-      --font:     'Segoe UI', system-ui, sans-serif;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-    /* -- HEADER ----------------------------------- */ 
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
     header {
       background: var(--surface2);
-      padding: 12px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      padding: 10px 20px;
+      display: flex; align-items: center; justify-content: space-between;
       border-bottom: 1px solid #ffffff18;
-    }
-    .header-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .header-logo img {
-      height: 36px;
-      width: auto;
-    }
-    .header-logo h1 {
-      font-size: 1.2rem;
-      letter-spacing: 2px;
-      color: var(--accent);
-      text-transform: uppercase;
-      margin: 0;
-    }
-    .header-controls { display: flex; gap: 10px; align-items: center; }
-    /* -- LAYOUT ------------------------------------ */ 
-    .layout { display: grid; grid-template-columns: 340px 1fr 320px; gap: 0; flex: 1; overflow: hidden; }
-    .panel {
-      background: var(--surface);
-      border-right: 1px solid #ffffff10;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .panel:last-child { border-right: none; }
-    .panel-header {
-      padding: 14px 16px;
-      font-size: .75rem;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      color: var(--muted);
-      text-transform: uppercase;
-      border-bottom: 1px solid #ffffff10;
       flex-shrink: 0;
     }
-    .panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+    .header-logo { display: flex; align-items: center; gap: 10px; }
+    .header-logo img { height: 32px; }
+    .header-logo h1 { font-size: 1.1rem; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; }
+    .header-controls { display: flex; gap: 8px; align-items: center; }
+    .session-badge {
+      padding: 4px 12px; border-radius: 20px;
+      font-size: 0.75rem; font-weight: 700; letter-spacing: 1px;
+    }
+    .session-badge.ativa    { background: #00e67620; color: var(--ok); border: 1px solid var(--ok); }
+    .session-badge.inativa  { background: #ff174420; color: var(--danger); border: 1px solid var(--danger); }
+
+    .layout { display: grid; grid-template-columns: 340px 1fr 300px; flex: 1; overflow: hidden; }
+    .panel { background: var(--surface); border-right: 1px solid #ffffff10; display: flex; flex-direction: column; overflow: hidden; }
+    .panel:last-child { border-right: none; }
+    .panel-header { padding: 12px 16px; font-size: .72rem; font-weight: 700; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; border-bottom: 1px solid #ffffff10; flex-shrink: 0; }
+    .panel-body { flex: 1; overflow-y: auto; padding: 10px; }
     .panel-body::-webkit-scrollbar { width: 4px; }
     .panel-body::-webkit-scrollbar-thumb { background: #ffffff20; border-radius: 2px; }
-    /* -- FILA -------------------------------------- */ 
-    .queue-item {
-      background: var(--surface2);
-      border: 1px solid #ffffff12;
-      border-radius: var(--radius);
-      padding: 12px 14px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      position: relative;
-      cursor: default;
-      transition: border-color .2s;
-    }
-    .queue-item:hover { border-color: var(--accent2); }
-    .queue-item.playing { border-color: var(--ok); background: #00e67610; }
-    .queue-item.missing { border-color: var(--danger); background: #ff174410; }
-    .queue-item.duet { border-color: var(--warn); }
-    .queue-pos {
-      min-width: 28px; height: 28px;
-      border-radius: 50%;
-      background: var(--accent2);
-      color: #fff;
-      font-size: .8rem;
-      font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-s:center;
-      flex-shrink: 0;
-    }
-    .queue-item.playing .queue-pos { background: var(--ok); color: #000; }
-    .queue-item.missing .queue-pos { background: var(--danger); }
-    .queue-info { flex: 1; }
-    .queue-song { font-size: .95rem; font-weight: 600; margin-bottom: 2px; }
-    .queue-artist { font-size: .8rem; color: var(--muted); }
-    .queue-singer { font-size: .78rem; color: var(--accent); margin-top: 4px; }
-    .queue-badge {
-      font-size: .65rem; font-weight: 700; letter-spacing: 1px;
-      padding: 2px 7px; border-radius: 99px;
-      background: var(--danger); color: #fff;
-      position: absolute; top: 8px; right: 8px;
-    }
-    .queue-badge.duet { background: var(--warn); color: #000; }
-    .queue-badge.playing { background: var(--ok); color: #000; }
-    .queue-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-    /* -- CENTRO - PLAYER CONTROLS ------------------ */ 
-    .center-panel { border-right: 1px solid #ffffff10; }
-    .now-playing {
-      margin: 16px;
-      background: var(--surface2);
-      border-radius: var(--radius);
-      padding: 20px;
-      border: 1px solid var(--ok);
-    }
-    .np-label { font-size: .7rem; letter-spacing: 1.5px; color: var(--ok); text-transform: uppercase; margin-bottom: 8px; }
-    .np-song { font-size: 1.4rem; font-weight: 700; }
-    .np-artist { color: var(--muted); font-size: .9rem; margin-top: 4px; }
-    .np-singer { color: var(--accent); font-size: .85rem; margin-top: 6px; }
-    .player-controls {
-      display: flex; gap: 12px; align-items: center;
-      margin: 0 16px 16px;
-      flex-wrap: wrap;
-    }
-    /* -- REGRAS / CONFIG ---------------------------- */ 
-    .rules-section { padding: 16px; }
-    .rules-section h3 { font-size: .75rem; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px; }
-    .rule-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: .88rem; }
-    .rule-row label { color: var(--text); }
-    .rule-input {
-      width: 60px; padding: 4px 8px;
-      background: var(--surface2); border: 1px solid #ffffff20;
-      border-radius: 6px; color: var(--text); text-align: center; font-size: .9rem;
-    }
-    /* -- BUTTONS ----------------------------------- */ 
-    .btn {
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      font-size: .82rem;
-      font-weight: 600;
-      letter-spacing: .5px;
-      transition: opacity .15s, transform .1s;
-    }
-    .btn:active { transform: scale(.97); }
-    .btn:hover { opacity: .85; }
-    .btn-primary   { background: var(--accent); color: #fff; }
-    .btn-secondary { background: var(--accent2); color: #fff; }
-    .btn-ok        { background: var(--ok); color: #000; }
-    .btn-danger    { background: var(--danger); color: #fff; }
-    .btn-ghost     { background: transparent; border: 1px solid #ffffff25; color: var(--text); }
-    .btn-warn      { background: var(--warn); color: #000; }
-    .btn-sm        { padding: 4px 10px; font-size: .75rem; border-radius: 6px; }
-    /* -- QR CODE ------------------------------------ */ 
-    .qr-container { text-align: center; padding: 16px; }
-    #qr-canvas { border-radius: 10px; background: #fff; padding: 8px; }
-    .qr-url { font-size: .7rem; color: var(--muted); margin-top: 8px; word-break: break-all; }
-    /* -- USERS LIST --------------------------------- */ 
-    .user-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 10px; border-radius: 8px;
-      background: var(--surface2);
-      margin-bottom: 6px;
-    }
-    .user-avatar {
-      width: 34px; height: 34px; border-radius: 50%;
-      object-fit: cover; background: var(--accent2);
-      flex-shrink: 0;
-    }
-    .user-name { font-size: .88rem; font-weight: 500; }
-    .user-status { font-size: .72rem; color: var(--muted); }
-    .user-badge { margin-left: auto; }
-    /* -- MISC -------------------------------------- */ 
-    .empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 30px 0; }
-    .tag { font-size: .65rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
-    .tag-online { background: #00e67620; color: var(--ok); }
-    .tag-busy   { background: #ff910020; color: var(--warn); }
-    .folder-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 16px;
-      background: var(--surface2);
-      border-bottom: 1px solid #ffffff10;
-      font-size: .8rem;
-    }
+
+    .folder-row { padding: 8px 12px; background: var(--surface2); border-bottom: 1px solid #ffffff10; display: flex; align-items: center; gap: 8px; font-size: .78rem; }
     .folder-path { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cycle-bar {
-      padding: 8px 16px;
-      background: var(--surface2);
-      border-bottom: 1px solid #ffffff10;
-      display: flex; align-items: center; gap: 12px; font-size: .82rem;
+
+    .queue-item {
+      background: var(--surface2); border: 1px solid #ffffff12;
+      border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px;
+      display: flex; align-items: flex-start; gap: 10px; position: relative;
     }
-    .cycle-num { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
-    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
-    /* Footer with logo and credits */ 
-    .footer {
-      padding: 12px;
-      text-align: center;
-      color: #ffffff60;
-      font-size: .75rem;
-      border-top: 1px solid #ffffff10;
-      flex-shrink: 0;
-    }
-    .footer .logo {
-      height: 48px;
-      width: auto;
-      display: inline-block;
-      margin-bottom: 4px;
-    }
-    .footer .credits {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      align-items: center;
-    }
-    .footer .credits strong {
-      color: #e040fb;
-    }
+    .queue-item.playing  { border-color: var(--ok);    background: #00e67610; }
+    .queue-item.priority { border-color: var(--warn);  }
+    .queue-item.missing  { border-color: var(--danger); background: #ff174410; }
+    .queue-pos { min-width: 26px; height: 26px; border-radius: 50%; background: var(--accent2); color: #fff; font-size: .75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .queue-item.playing .queue-pos { background: var(--ok); color: #000; }
+    .queue-info { flex: 1; }
+    .queue-song   { font-size: .9rem; font-weight: 600; margin-bottom: 2px; }
+    .queue-artist { font-size: .75rem; color: var(--muted); }
+    .queue-singer { font-size: .72rem; color: var(--accent); margin-top: 3px; }
+    .queue-badge  { font-size: .6rem; font-weight: 700; letter-spacing: 1px; padding: 2px 6px; border-radius: 99px; position: absolute; top: 6px; right: 6px; }
+    .badge-playing  { background: var(--ok);   color: #000; }
+    .badge-priority { background: var(--warn);  color: #000; }
+    .badge-missing  { background: var(--danger); color: #fff; }
+    .queue-actions  { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+
+    .now-playing { margin: 12px; background: var(--surface2); border-radius: var(--radius); padding: 16px; border: 1px solid var(--ok); }
+    .np-label  { font-size: .65rem; letter-spacing: 1.5px; color: var(--ok); text-transform: uppercase; margin-bottom: 6px; }
+    .np-song   { font-size: 1.3rem; font-weight: 700; }
+    .np-artist { color: var(--muted); font-size: .85rem; margin-top: 3px; }
+    .np-singer { color: var(--accent); font-size: .8rem; margin-top: 5px; }
+
+    .player-controls { display: flex; gap: 8px; align-items: center; margin: 0 12px 12px; flex-wrap: wrap; }
+
+    .qr-section { padding: 12px; display: flex; gap: 12px; }
+    .qr-box { flex: 1; text-align: center; background: var(--surface2); border-radius: var(--radius); padding: 12px; border: 1px solid #ffffff10; }
+    .qr-box-title { font-size: .65rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+    .qr-box img   { border-radius: 8px; background: #fff; padding: 4px; }
+    .qr-box-url   { font-size: .6rem; color: var(--muted); margin-top: 6px; word-break: break-all; }
+
+    .rules-section { padding: 12px; }
+    .rules-section h3 { font-size: .7rem; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; }
+    .rule-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: .85rem; }
+    .rule-input { width: 55px; padding: 3px 6px; background: var(--surface2); border: 1px solid #ffffff20; border-radius: 6px; color: var(--text); text-align: center; font-size: .85rem; }
+
+    .btn { padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: .78rem; font-weight: 600; letter-spacing: .5px; transition: opacity .15s, transform .1s; }
+    .btn:active { transform: scale(.97); }
+    .btn:hover  { opacity: .85; }
+    .btn-primary   { background: var(--accent);  color: #fff; }
+    .btn-secondary { background: var(--accent2); color: #fff; }
+    .btn-ok        { background: var(--ok);      color: #000; }
+    .btn-danger    { background: var(--danger);  color: #fff; }
+    .btn-ghost     { background: transparent; border: 1px solid #ffffff25; color: var(--text); }
+    .btn-warn      { background: var(--warn);    color: #000; }
+    .btn-sm        { padding: 3px 9px; font-size: .7rem; border-radius: 6px; }
+
+    .user-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; background: var(--surface2); margin-bottom: 5px; }
+    .user-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: var(--accent2); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; overflow: hidden; }
+    .user-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .user-name   { font-size: .85rem; font-weight: 500; }
+    .user-status { font-size: .68rem; color: var(--muted); }
+    .user-badge  { margin-left: auto; }
+    .tag { font-size: .62rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+    .tag-online  { background: #00e67620; color: var(--ok); }
+    .tag-away    { background: #ff910020; color: var(--warn); }
+
+    .empty { color: var(--muted); font-size: .82rem; text-align: center; padding: 28px 0; }
+
+    .footer { padding: 8px; text-align: center; color: #ffffff40; font-size: .7rem; border-top: 1px solid #ffffff10; flex-shrink: 0; }
+    .footer strong { color: #e040fb; }
+
   </style>
 </head>
 <body>
+
 <header>
   <div class="header-logo">
-    <img src="../assets/logo/logo_voxly.png" alt="Voxly Logo">
+    <img src="../assets/logo/logo_voxly.png" alt="Voxly">
     <h1>Voxly</h1>
   </div>
   <div class="header-controls">
-    <span id="cycle-label" style="font-size:.8rem;color:var(--muted)">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
-    <button class="btn btn-secondary btn-sm" onclick="nextCycle()">Proximo Ciclo</button>
-    <button class="btn btn-primary btn-sm" id="startSessionBtn">Iniciar Sess\u00e3o</button>
-    <button class="btn btn-secondary btn-sm" id="startQueueBtn">Iniciar Fila</button>
-    <span id="sessionCodeDisplay" class="qr-url" style="margin-left:12px;color:var(--muted)"></span>
-    <button class="btn btn-ghost btn-sm" onclick="openSettings()">? Config</button>
-    <div id="onlineSingers" class="panel-body"></div>
+    <span class="session-badge inativa" id="sessionBadge">● Sem Sessão</span>
+    <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
+    <button class="btn btn-secondary btn-sm" id="nextCycleBtn" onclick="nextCycle()" style="display:none;">Próximo Ciclo</button>
+    <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="iniciarSessao()">▶ Iniciar Sessão</button>
+    <button class="btn btn-ok btn-sm" id="startQueueBtn" onclick="iniciarFila()" style="display:none;">▶ Iniciar Fila</button>
+    <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar Sessão</button>
+    <button class="btn btn-ghost btn-sm" onclick="reabrirPlayer()">🖥 Player</button>
+    <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
 </header>
 
 <div class="layout">
 
-  <!-- -- PAINEL ESQUERDO: FILA -------------------- -->
+  <!-- PAINEL ESQUERDO: FILA -->
   <div class="panel">
-    <div class="panel-header">Fila de Musicas</div>
+    <div class="panel-header">Fila de Músicas</div>
     <div class="folder-row">
       <span class="folder-path" id="folder-path-display">Nenhuma pasta selecionada</span>
-      <button class="btn btn-ghost btn-sm" onclick="selectFolder()">📁 Biblioteca de Músicas</button>
+      <button class="btn btn-ghost btn-sm" onclick="selectFolder()">📁 Biblioteca</button>
+      <button class="btn btn-ghost btn-sm" onclick="scanFolder()">🔄</button>
     </div>
     <div class="panel-body" id="queue-list">
-      <div class="empty">A fila esta vazia.<br>Aguarde solicitacoes.</div>
+      <div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>
     </div>
   </div>
 
-  <!-- -- PAINEL CENTRAL: CONTROLES --------------- -->
-  <div class="panel center-panel">
+  <!-- PAINEL CENTRAL -->
+  <div class="panel">
     <div class="panel-header">Controle do Palco</div>
     <div class="panel-body">
 
-      <div class="now-playing" id="now-playing-box">
-        <div class="np-label">> Tocando agora</div>
-        <div class="np-song" id="np-song">-</div>
-        <div class="np-artist" id="np-artist">-</div>
-        <div class="np-singer" id="np-singer">-</div>
+      <div class="now-playing">
+        <div class="np-label">▶ Tocando agora</div>
+        <div class="np-song"   id="np-song">—</div>
+        <div class="np-artist" id="np-artist">—</div>
+        <div class="np-singer" id="np-singer">—</div>
       </div>
 
       <div class="player-controls">
-        <button class="btn btn-ok"      onclick="playerCmd('play')">> Play</button>
-        <button class="btn btn-warn"    onclick="playerCmd('pause')">|| Pausa</button>
-        <button class="btn btn-danger"  onclick="skipSong()">>> Pular</button>
-        <button class="btn btn-ghost"   onclick="playerCmd('fullscreen')">? Fullscreen</button>
+        <button class="btn btn-ok"      onclick="playerCmd('play')">▶ Play</button>
+        <button class="btn btn-warn"    onclick="playerCmd('pause')">⏸ Pausa</button>
+        <button class="btn btn-danger"  onclick="skipSong()">⏭ Pular</button>
+        <button class="btn btn-primary" onclick="marcarCantadaAtual()">✓ Cantada</button>
+        <button class="btn btn-ghost"   onclick="playerCmd('fullscreen')">⛶ Tela Cheia</button>
       </div>
 
+      <!-- QR CODES -->
+      <div class="qr-section">
+        <div class="qr-box">
+          <div class="qr-box-title">📱 Acesso ao App</div>
+          <img id="qr-app" width="130" height="130" src="">
+          <div class="qr-box-url">voxly-karaoke.web.app</div>
+        </div>
+        <div class="qr-box" id="qr-sessao-box" style="opacity:0.3;">
+          <div class="qr-box-title">🎤 Entrar na Sessão</div>
+          <img id="qr-sessao" width="130" height="130" src="">
+          <div class="qr-box-url" id="qr-sessao-url">Inicie uma sessão</div>
+        </div>
+      </div>
 
-      <!-- REGRAS DO HOST -->
+      <!-- REGRAS -->
       <div class="rules-section">
-        <h3>Regras do Ciclo</h3>
+        <h3>Regras da Sessão</h3>
         <div class="rule-row">
           <label>Músicas por ciclo:</label>
-          <input type="number" id="songs-per-cycle" min="1" value="1">
+          <input type="number" id="songs-per-cycle" class="rule-input" min="1" value="1">
         </div>
         <div class="rule-row">
-          <label>Duetos por ciclo:</label>
-          <input type="number" id="duets-per-cycle" min="1" value="1">
+          <label>Participações por ciclo:</label>
+          <input type="number" id="duets-per-cycle" class="rule-input" min="0" value="1">
         </div>
         <div class="rule-row">
           <label>Máximo na fila:</label>
-          <input type="number" id="max-queue" min="1" value="20">
+          <input type="number" id="max-queue" class="rule-input" min="1" value="20">
         </div>
+        <button class="btn btn-secondary btn-sm" onclick="salvarRegras()" style="width:100%;margin-top:8px;">💾 Salvar Regras</button>
       </div>
+
     </div>
   </div>
 
-  <!-- -- PAINEL DIREITO: USUÁRIOS ----------------- -->
+  <!-- PAINEL DIREITO: CANTORES -->
   <div class="panel">
     <div class="panel-header">Cantores Online</div>
     <div class="panel-body" id="users-list">
-      <div class="empty">Nenhum cantor conectado ainda.</div>
+      <div class="empty">Nenhum cantor conectado.</div>
     </div>
   </div>
+
 </div>
 
-<!-- Footer with logo and credits -->
 <footer class="footer">
-  <img src="../assets/logo/logo_voxly.png" alt="Voxly Logo" class="logo">
-  <div class="credits">
-    Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
-  </div>
+  Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
 </footer>
 
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
+
 <script>
-  // Firebase init
   firebase.initializeApp({
     apiKey: "AIzaSyB5sPKpmPVWDDhwprU8TB0Bn0N0WSiafoI",
     authDomain: "voxly-karaoke.firebaseapp.com",
@@ -330,51 +235,204 @@
   });
 
   const db  = firebase.firestore();
-  const SESSAO_ID = 'sessao_default';
+  const APP_URL = "https://voxly-karaoke.web.app";
 
-  let currentSong  = null;
-  let filaData     = [];
-  let presencasData= [];
-  let regras       = { musicasPorCiclo:1, duetasPorCiclo:1, maxFila:20, segundosConfirmacao:15 };
-  let cicloAtual   = 1;
+  let SESSAO_ID        = null;
+  let sessaoCodigo     = null;
+  let currentSong      = null;
+  let filaData         = [];
+  let presencasData    = [];
+  let regras           = { musicasPorCiclo: 1, duetasPorCiclo: 1, maxFila: 20, segundosConfirmacao: 15 };
+  let cicloAtual       = 1;
+  let proximaConfirmando = null;
+  let timerConfirmacao   = null;
 
-  // ── Inicialização ──────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
-    carregarSessao();
-    escutarFila();
-    escutarPresencas();
-    carregarWebAppUrl();
+  // ── Helpers ───────────────────────────────────────────────
+  function escHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+  function getInitials(n) { return (n||'?').trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?'; }
+
+  function gerarCodigo() {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  }
+
+  function gerarQR(elId, url) {
+    document.getElementById(elId).src =
+      `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(url)}`;
+  }
+
+  // ── Regras: persistência local ────────────────────────────
+  function carregarRegrasLocal() {
+    try {
+      const salvas = localStorage.getItem('voxly_regras');
+      if (salvas) regras = { ...regras, ...JSON.parse(salvas) };
+    } catch(_) {}
+  }
+
+  function popularInputsRegras() {
+    document.getElementById('songs-per-cycle').value = regras.musicasPorCiclo;
+    document.getElementById('duets-per-cycle').value = regras.duetasPorCiclo;
+    document.getElementById('max-queue').value        = regras.maxFila;
+  }
+
+  // ── Inicialização ─────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    // QR do app sempre visível
+    gerarQR('qr-app', APP_URL);
+
+    // Carrega regras salvas localmente
+    carregarRegrasLocal();
+    popularInputsRegras();
+
     // Restaura pasta salva
     if (window.electronAPI) {
-      window.electronAPI.getMusicFolder().then(folder => {
-        if (folder) {
-          document.getElementById('folder-path-display').textContent = folder;
-        }
-      });
+      const folder = await window.electronAPI.getMusicFolder();
+      if (folder) document.getElementById('folder-path-display').textContent = folder;
+    }
+
+    // Verifica se há sessão ativa salva localmente
+    const sessaoSalva = localStorage.getItem('voxly_sessao_id');
+    if (sessaoSalva) {
+      const snap = await db.collection('sessoes').doc(sessaoSalva).get();
+      if (snap.exists && snap.data().status === 'ativa') {
+        SESSAO_ID    = sessaoSalva;
+        sessaoCodigo = snap.data().codigo;
+        regras       = snap.data().regras || regras;
+        cicloAtual   = snap.data().cicloAtual || 1;
+        popularInputsRegras();
+        ativarInterfaceSessao();
+        escutarFila();
+        escutarPresencas();
+        escutarConfirmacoes();
+        return;
+      }
     }
   });
 
-  async function carregarSessao() {
-    const snap = await db.collection('sessoes').doc(SESSAO_ID).get();
-    if (snap.exists) {
-      const d = snap.data();
-      regras      = d.regras || regras;
-      cicloAtual  = d.cicloAtual || 1;
-      document.getElementById('cycle-num').textContent = cicloAtual;
-      document.getElementById('songs-per-cycle').value = regras.musicasPorCiclo;
-      document.getElementById('duets-per-cycle').value = regras.duetasPorCiclo;
-      document.getElementById('max-queue').value       = regras.maxFila;
+  // ── Sessão ────────────────────────────────────────────────
+  async function iniciarSessao() {
+    const codigo   = gerarCodigo();
+    const sessaoId = `${new Date().toISOString().slice(0,10)}-${codigo}`;
+
+    await db.collection('sessoes').doc(sessaoId).set({
+      codigo,
+      status:      'ativa',
+      filaAberta:  true,
+      regras,
+      cicloAtual:  1,
+      iniciadaEm:  firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    SESSAO_ID    = sessaoId;
+    sessaoCodigo = codigo;
+    localStorage.setItem('voxly_sessao_id', sessaoId);
+
+    ativarInterfaceSessao();
+    escutarFila();
+    escutarPresencas();
+    escutarConfirmacoes();
+
+    // Notifica player
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand(JSON.stringify({
+        cmd:     'sessao-iniciada',
+        codigo,
+        sessaoId,
+        appUrl:  APP_URL
+      }));
     }
   }
 
-  // ── Fila em tempo real ─────────────────────────────────
+  function ativarInterfaceSessao() {
+    document.getElementById('sessionBadge').textContent  = `● Sessão ${sessaoCodigo}`;
+    document.getElementById('sessionBadge').className    = 'session-badge ativa';
+    document.getElementById('startSessionBtn').style.display = 'none';
+    document.getElementById('startQueueBtn').style.display   = 'inline-block';
+    document.getElementById('stopSessionBtn').style.display  = 'inline-block';
+    document.getElementById('cycle-label').style.display     = 'inline';
+    document.getElementById('nextCycleBtn').style.display    = 'inline-block';
+    document.getElementById('cycle-num').textContent = cicloAtual;
+
+    // QR da sessão
+    const sessaoUrl = `${APP_URL}/profile.html?sessao=${sessaoCodigo}`;
+    gerarQR('qr-sessao', sessaoUrl);
+    document.getElementById('qr-sessao-url').textContent = `Código: ${sessaoCodigo}`;
+    document.getElementById('qr-sessao-box').style.opacity = '1';
+  }
+
+  async function iniciarFila() {
+    // Toca a primeira música da fila
+    if (filaData.length === 0) {
+      alert('A fila está vazia. Aguarde os cantores pedirem músicas.');
+      return;
+    }
+    const proxima = filaData[0];
+    await tocarMusica(proxima.id);
+    document.getElementById('startQueueBtn').style.display = 'none';
+  }
+
+  async function finalizarSessao() {
+    if (!confirm('Finalizar a sessão? Todos os cantores serão desconectados.')) return;
+
+    await db.collection('sessoes').doc(SESSAO_ID).update({
+      status:       'encerrada',
+      filaAberta:   false,
+      encerradaEm:  firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Marca todos offline
+    const presSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').get();
+    const batch = db.batch();
+    presSnap.forEach(d => batch.update(d.ref, { status: 'offline', saiuEm: new Date() }));
+    await batch.commit();
+
+    // Cancela fila pendente
+    const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+      .where('status', 'in', ['aguardando', 'tocando', 'confirmando']).get();
+    const batch2 = db.batch();
+    filaSnap.forEach(d => batch2.update(d.ref, { status: 'cancelada' }));
+    await batch2.commit();
+
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand('stop');
+      window.electronAPI.playerCommand('sessao-encerrada');
+    }
+
+    localStorage.removeItem('voxly_sessao_id');
+    SESSAO_ID    = null;
+    sessaoCodigo = null;
+
+    document.getElementById('sessionBadge').textContent = '● Sem Sessão';
+    document.getElementById('sessionBadge').className   = 'session-badge inativa';
+    document.getElementById('startSessionBtn').style.display = 'inline-block';
+    document.getElementById('startQueueBtn').style.display   = 'none';
+    document.getElementById('stopSessionBtn').style.display  = 'none';
+    document.getElementById('cycle-label').style.display     = 'none';
+    document.getElementById('nextCycleBtn').style.display    = 'none';
+    document.getElementById('qr-sessao-box').style.opacity   = '0.3';
+    document.getElementById('qr-sessao-url').textContent     = 'Inicie uma sessão';
+    document.getElementById('queue-list').innerHTML  = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
+    document.getElementById('users-list').innerHTML  = '<div class="empty">Nenhum cantor conectado.</div>';
+    document.getElementById('np-song').textContent   = '—';
+    document.getElementById('np-artist').textContent = '—';
+    document.getElementById('np-singer').textContent = '—';
+    currentSong = null;
+  }
+
+  // ── Fila ──────────────────────────────────────────────────
   function escutarFila() {
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', 'in', ['aguardando', 'tocando'])
+      .where('status', 'in', ['aguardando', 'tocando', 'confirmando'])
       .onSnapshot(snap => {
         filaData = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (a.ordemFila || 0) - (b.ordemFila || 0));
+          .filter(d => d.slot !== 'espera')
+          .sort((a, b) => {
+            if (a.status === 'tocando')   return -1;
+            if (b.status === 'tocando')   return 1;
+            if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
+            if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
+            return (a.ordemFila || 0) - (b.ordemFila || 0);
+          });
         renderQueue();
       });
   }
@@ -385,50 +443,36 @@
       el.innerHTML = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
       return;
     }
-
-    // Ordena: tocando primeiro, depois prioridade intercalada com normal
-    const tocando    = filaData.filter(i => i.status === 'tocando');
-    const prioridade = filaData.filter(i => i.status === 'aguardando' && i.tipo === 'prioridade');
-    const normal     = filaData.filter(i => i.status === 'aguardando' && i.tipo !== 'prioridade');
-
-    // Intercala prioridade com normal (café com leite)
-    const intercalada = [];
-    let pi = 0, ni = 0;
-    while (pi < prioridade.length || ni < normal.length) {
-      if (pi < prioridade.length) intercalada.push(prioridade[pi++]);
-      if (ni < normal.length)     intercalada.push(normal[ni++]);
-    }
-    const ordenada = [...tocando, ...intercalada];
-
-    el.innerHTML = ordenada.map((item, i) => {
+    el.innerHTML = filaData.map((item, i) => {
       const isPlaying    = item.status === 'tocando';
-      const isPrioridade = item.tipo === 'prioridade';
+      const isConfirming = item.status === 'confirmando';
+      const isPriority   = item.tipo   === 'prioridade';
       const isDuet       = !!item.duoNome;
 
       let cls = 'queue-item';
-      if (isPlaying)    cls += ' playing';
-      if (isDuet)       cls += ' duet';
+      if (isPlaying)  cls += ' playing';
+      if (isPriority) cls += ' priority';
 
       let badge = '';
-      if (isPlaying)         badge = '<span class="queue-badge playing">TOCANDO</span>';
-      else if (isPrioridade) badge = '<span class="queue-badge" style="background:var(--warn);color:#000">☕ PRIORIDADE</span>';
-      else if (isDuet)       badge = '<span class="queue-badge duet">DUETO</span>';
+      if (isPlaying)    badge = '<span class="queue-badge badge-playing">▶ TOCANDO</span>';
+      else if (isConfirming) badge = '<span class="queue-badge badge-priority">⏱ CONFIRMANDO</span>';
+      else if (isPriority)   badge = '<span class="queue-badge badge-priority">☕ PRIORIDADE</span>';
 
       const avatarHtml = item.photoURL
-        ? `<img src="${item.photoURL}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
-        : `<div style="width:32px;height:32px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0;">${getInitials(item.nomeArtistico||'?')}</div>`;
+        ? `<img src="${item.photoURL}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+        : `<div style="width:30px;height:30px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;">${getInitials(item.nomeArtistico)}</div>`;
 
-      const playBtn   = !isPlaying ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
-      const skipBtn   = isPlaying  ? `<button class="btn btn-warn btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
-      const removeBtn = `<button class="btn btn-danger btn-sm" onclick="removerMusica('${item.id}')">✕ Remover</button>`;
+      const playBtn   = !isPlaying && !isConfirming ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
+      const skipBtn   = isPlaying ? `<button class="btn btn-warn btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
+      const removeBtn = `<button class="btn btn-danger btn-sm" onclick="removerMusica('${item.id}')">✕</button>`;
 
       return `<div class="${cls}">
-        <div class="queue-pos">${isPlaying ? '▶' : i}</div>
+        <div class="queue-pos">${isPlaying ? '▶' : i + 1}</div>
         ${avatarHtml}
         <div class="queue-info">
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
-          <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico || '-')}${item.duoNome ? ' & ' + escHtml(item.duoNome) : ''}</div>
+          <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' & ' + escHtml(item.duoNome) : ''}</div>
           <div class="queue-actions">${playBtn}${skipBtn}${removeBtn}</div>
         </div>
         ${badge}
@@ -436,109 +480,100 @@
     }).join('');
   }
 
-  // ── Presenças em tempo real ────────────────────────────
+  // ── Presenças ─────────────────────────────────────────────
   function escutarPresencas() {
     db.collection('sessoes').doc(SESSAO_ID).collection('presencas')
       .onSnapshot(snap => {
-        presencasData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const agora = Date.now();
+        presencasData = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(d => {
+            if (d.status === 'offline') return false;
+            if (d.ultimoHeartbeat) {
+              const ultimo = d.ultimoHeartbeat.toDate ? d.ultimoHeartbeat.toDate().getTime() : 0;
+              if (agora - ultimo > 300000) return false; // 5 minutos
+            }
+            return true;
+          });
         renderUsers();
       });
-
-    // Listener de comandos do celular (play via app)
-    db.collection('sessoes').doc(SESSAO_ID).onSnapshot(snap => {
-      const data = snap.data();
-      if (!data || !data.comando) return;
-      const { acao, itemId } = data.comando;
-      if (acao === 'tocar' && itemId) {
-        tocarMusica(itemId);
-        db.collection('sessoes').doc(SESSAO_ID).update({ comando: null });
-      }
-    });
+    setInterval(renderUsers, 15000);
   }
 
   function renderUsers() {
     const el = document.getElementById('users-list');
     if (!presencasData.length) {
-      el.innerHTML = '<div class="empty">Nenhum cantor conectado ainda.</div>';
+      el.innerHTML = '<div class="empty">Nenhum cantor conectado.</div>';
       return;
     }
+    const agora = Date.now();
     el.innerHTML = presencasData.map(u => {
-      const online    = u.status === 'aqui';
-      const prioridade= !u.primeiraMusicaCantada;
-      const tagCls    = online ? 'tag tag-online' : 'tag tag-busy';
-      const tagLabel  = online ? '✅ Aqui' : '🕐 Volto já';
-      const avatarHtml= u.photoURL
-        ? `<img class="user-avatar" src="${u.photoURL}">`
-        : `<div class="user-avatar" style="background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;">${getInitials(u.nomeArtistico||'?')}</div>`;
+      const online = u.status === 'aqui';
+      const prioridade = !u.primeiraMusicaCantada;
+      const ultimo = u.ultimoHeartbeat?.toDate ? u.ultimoHeartbeat.toDate().getTime() : 0;
+      const ativo  = agora - ultimo < 300000;
+      const tagCls = online && ativo ? 'tag tag-online' : 'tag tag-away';
+      const tagTxt = online && ativo ? '✅ Aqui' : '🕐 Ausente';
+      const avatarHtml = u.photoURL
+        ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
+        : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
       return `<div class="user-item">
         ${avatarHtml}
         <div>
           <div class="user-name">${escHtml(u.nomeArtistico||'-')} ${prioridade ? '☕' : ''}</div>
-          <div class="user-status">${online ? 'Online' : 'Ausente'}</div>
+          <div class="user-status">${ativo ? 'Online' : 'Sem sinal'}</div>
         </div>
-        <span class="${tagCls} user-badge">${tagLabel}</span>
+        <span class="${tagCls} user-badge">${tagTxt}</span>
       </div>`;
     }).join('');
   }
 
-  // ── Ações da fila ──────────────────────────────────────
+  // ── Ações da fila ─────────────────────────────────────────
   async function tocarMusica(itemId) {
-    // Verifica se a fila foi iniciada pelo host
-    const sessSnap = await db.collection('sessoes').doc(SESSAO_ID).get();
-    if (!sessSnap.data()?.filaIniciada) {
-      alert('A fila ainda não foi iniciada pelo host.');
-      return;
-    }
-    // Marca como tocando no Firestore
     const batch = db.batch();
-
-    // Para qualquer música tocando
     const tocandoSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
       .where('status', '==', 'tocando').get();
     tocandoSnap.forEach(d => batch.update(d.ref, { status: 'aguardando' }));
-
-    // Marca a nova como tocando
     const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     batch.update(itemRef, { status: 'tocando' });
     await batch.commit();
 
-    // Busca dados da música e toca no player via Electron
     const itemSnap = await itemRef.get();
     const item = itemSnap.data();
     currentSong = { id: itemId, ...item };
 
-    // Atualiza now playing
-    document.getElementById('np-song').textContent   = item.musica  || '-';
-    document.getElementById('np-artist').textContent = item.artista || '-';
-    document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico || '-') + (item.duoNome ? ' & ' + item.duoNome : '');
+    document.getElementById('np-song').textContent   = item.musica  || '—';
+    document.getElementById('np-artist').textContent = item.artista || '—';
+    document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—') + (item.duoNome ? ' & ' + item.duoNome : '');
 
-    // Toca via Electron se tiver arquivo vinculado
     if (window.electronAPI) {
       const filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
       if (filePath) {
         window.electronAPI.playSong(filePath);
       } else {
-        alert(`Arquivo não encontrado para: ${item.musica} - ${item.artista}\n\nVincule o arquivo manualmente.`);
+        alert(`Arquivo não encontrado: ${item.musica}\nVincule manualmente.`);
       }
     }
   }
 
   async function pularMusica(itemId) {
-    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId).update({ status: 'pulada' });
-    // Salva no histórico
-    const itemSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId).get();
-    const item = itemSnap.data();
+    const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
+    const itemSnap = await itemRef.get();
+    const item     = itemSnap.data();
+    await itemRef.update({ status: 'pulada' });
     if (item?.cantorUid) {
-      await db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
-        sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
-        duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
-        status: 'pulada', data: firebase.firestore.FieldValue.serverTimestamp()
+      await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
+        cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
+        musica: item.musica, artista: item.artista,
+        status: 'pulada', horario: firebase.firestore.FieldValue.serverTimestamp()
       });
     }
-    document.getElementById('np-song').textContent   = '-';
-    document.getElementById('np-artist').textContent = '-';
-    document.getElementById('np-singer').textContent = '-';
+    if (window.electronAPI) window.electronAPI.playerCommand('stop');
+    document.getElementById('np-song').textContent   = '—';
+    document.getElementById('np-artist').textContent = '—';
+    document.getElementById('np-singer').textContent = '—';
     currentSong = null;
+    await iniciarConfirmacaoProxima();
   }
 
   async function removerMusica(itemId) {
@@ -546,152 +581,192 @@
     await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId).delete();
   }
 
+  function marcarCantadaAtual() {
+    if (currentSong) marcarCantada(currentSong.id);
+  }
+
   async function marcarCantada(itemId) {
     const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     const itemSnap = await itemRef.get();
     const item     = itemSnap.data();
-
     await itemRef.update({ status: 'cantada' });
 
     if (item?.cantorUid) {
-      // Salva no histórico
+      await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
+        cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
+        musica: item.musica, artista: item.artista,
+        duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
+        status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      // Salva no histórico global do cantor
       await db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
         sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
         duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
         status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
       });
-      // Marca primeira música cantada (remove café com leite)
       await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
         .update({ primeiraMusicaCantada: true });
 
-      // Promove música em espera para fila ativa
+      // Promove música em espera
       const esperaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
         .where('cantorUid', '==', item.cantorUid)
         .where('slot', '==', 'espera')
         .where('status', '==', 'aguardando')
         .limit(1).get();
-
       if (!esperaSnap.empty) {
         const filaSnap  = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
           .where('status', '==', 'aguardando').get();
-        const novaOrdem = filaSnap.size + 1;
-        await esperaSnap.docs[0].ref.update({ slot: 'ativa', ordemFila: novaOrdem });
+        await esperaSnap.docs[0].ref.update({ slot: 'ativa', ordemFila: filaSnap.size + 1 });
       }
     }
 
-    document.getElementById('np-song').textContent   = '-';
-    document.getElementById('np-artist').textContent = '-';
-    document.getElementById('np-singer').textContent = '-';
+    document.getElementById('np-song').textContent   = '—';
+    document.getElementById('np-artist').textContent = '—';
+    document.getElementById('np-singer').textContent = '—';
     currentSong = null;
+    await iniciarConfirmacaoProxima();
   }
 
-  // ── Regras ─────────────────────────────────────────────
+  // ── Confirmação próxima música ────────────────────────────
+  async function iniciarConfirmacaoProxima() {
+    if (!SESSAO_ID) return;
+    const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+      .where('status', '==', 'aguardando').get();
+    if (filaSnap.empty) return;
+
+    const items = filaSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(d => d.slot !== 'espera')
+      .sort((a, b) => {
+        if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
+        if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
+        return (a.ordemFila || 0) - (b.ordemFila || 0);
+      });
+
+    if (items.length === 0) return;
+    const proxima = items[0];
+    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
+      .update({ status: 'confirmando', confirmandoAte: Date.now() + 15000 });
+
+    let filePath = null;
+    if (window.electronAPI) {
+      filePath = await window.electronAPI.resolveMusicFile(proxima.musica, proxima.artista);
+    }
+
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand(JSON.stringify({
+        cmd: 'preview', filePath,
+        musica: proxima.musica, artista: proxima.artista,
+        cantor: proxima.nomeArtistico, itemId: proxima.id, segundos: 15
+      }));
+    }
+
+    proximaConfirmando = proxima;
+    clearTimeout(timerConfirmacao);
+    timerConfirmacao = setTimeout(async () => {
+      const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id).get();
+      if (snap.data()?.status === 'confirmando') {
+        await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
+          .update({ status: 'pulada' });
+        if (proxima?.cantorUid) {
+          await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
+            cantorUid: proxima.cantorUid, nomeArtistico: proxima.nomeArtistico,
+            musica: proxima.musica, artista: proxima.artista,
+            status: 'pulada', horario: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+        if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
+        await iniciarConfirmacaoProxima();
+      }
+    }, 15000);
+  }
+
+  function escutarConfirmacoes() {
+    db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+      .where('status', '==', 'confirmado')
+      .onSnapshot(async snap => {
+        for (const doc of snap.docs) {
+          const item = { id: doc.id, ...doc.data() };
+          clearTimeout(timerConfirmacao);
+          let filePath = null;
+          if (window.electronAPI) {
+            filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
+          }
+          if (filePath) {
+            await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
+              .update({ status: 'tocando' });
+            currentSong = item;
+            document.getElementById('np-song').textContent   = item.musica  || '—';
+            document.getElementById('np-artist').textContent = item.artista || '—';
+            document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—');
+            if (window.electronAPI) {
+              window.electronAPI.playerCommand(JSON.stringify({ cmd: 'play-confirmed', filePath }));
+            }
+          } else {
+            await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
+              .update({ status: 'aguardando' });
+          }
+        }
+      });
+  }
+
+  // ── Regras / Config ───────────────────────────────────────
   async function salvarRegras() {
     regras = {
-      musicasPorCiclo:    parseInt(document.getElementById('songs-per-cycle').value) || 1,
-      duetasPorCiclo:     parseInt(document.getElementById('duets-per-cycle').value) || 1,
-      maxFila:            parseInt(document.getElementById('max-queue').value) || 20,
+      musicasPorCiclo:     parseInt(document.getElementById('songs-per-cycle').value) || 1,
+      duetasPorCiclo:      parseInt(document.getElementById('duets-per-cycle').value) || 1,
+      maxFila:             parseInt(document.getElementById('max-queue').value) || 20,
       segundosConfirmacao: 15
     };
-    await db.collection('sessoes').doc(SESSAO_ID).update({ regras });
+    localStorage.setItem('voxly_regras', JSON.stringify(regras));
+    if (SESSAO_ID) await db.collection('sessoes').doc(SESSAO_ID).update({ regras });
     alert('Regras salvas!');
   }
 
   async function nextCycle() {
     cicloAtual++;
-    await db.collection('sessoes').doc(SESSAO_ID).update({ cicloAtual });
+    if (SESSAO_ID) await db.collection('sessoes').doc(SESSAO_ID).update({ cicloAtual });
     document.getElementById('cycle-num').textContent = cicloAtual;
   }
 
-  // ── Player controls ────────────────────────────────────
-  function playerCmd(cmd) {
-    if (window.electronAPI) window.electronAPI.playerCommand(cmd);
+  function openSettings() { alert('Em desenvolvimento'); }
+
+  // ── Player controls ───────────────────────────────────────
+  function playerCmd(cmd) { if (window.electronAPI) window.electronAPI.playerCommand(cmd); }
+  async function skipSong() {
+    if (currentSong) { pularMusica(currentSong.id); return; }
+    // Fallback: busca no Firestore a música tocando agora
+    if (!SESSAO_ID) return;
+    const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+      .where('status', '==', 'tocando').limit(1).get();
+    if (!snap.empty) pularMusica(snap.docs[0].id);
   }
-
-  function skipSong() {
-    if (currentSong) pularMusica(currentSong.id);
-  }
-
-
-  function openSettings() {
-    const salvar = confirm('Salvar regras atuais?');
-    if (salvar) salvarRegras();
-  }
-
-  // ── Helpers ────────────────────────────────────────────
-  function escHtml(t) { const d=document.createElement('div');d.textContent=t;return d.innerHTML; }
-  function getInitials(n) { return n.trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?'; }
+  function reabrirPlayer() { if (window.electronAPI) window.electronAPI.invoke('open-player'); }
 
   async function selectFolder() {
+    if (!window.electronAPI) return;
     const folder = await window.electronAPI.selectMusicFolder();
-    if (folder) {
-      document.getElementById('folder-path-display').textContent = folder;
-    }
+    if (folder) document.getElementById('folder-path-display').textContent = folder;
   }
 
   async function scanFolder() {
-    await window.electronAPI.scanMusicFolder();
-    alert('Varredura concluída! Catálogo atualizado.');
+    if (!window.electronAPI) return;
+    const n = await window.electronAPI.scanMusicFolder();
+    alert(`Varredura concluída: ${n} músicas encontradas.`);
   }
 
-  // Electron listeners
+  // ── Electron listeners ────────────────────────────────────
   if (window.electronAPI) {
-    window.electronAPI.onMusicFolderChanged(() => console.log('Pasta de músicas atualizada'));
-
-    // Iniciar sessão ao clicar no botão
-    const startBtn = document.getElementById('startSessionBtn');
-    const startQueueBtn = document.getElementById('startQueueBtn');
-    const codeSpan = document.getElementById('sessionCodeDisplay');
-    if (startBtn) {
-      startBtn.addEventListener('click', async () => {
-        const sess = await window.electronAPI.invoke('start-session');
-        if (sess && sess.code) {
-          codeSpan.textContent = `Código: ${sess.code}`;
-        } else {
-          alert('Erro ao iniciar sessão');
-        }
-      });
-    }
-    if (startQueueBtn) {
-      startQueueBtn.addEventListener('click', async () => {
-        try {
-          await db.collection('sessoes').doc(SESSAO_ID).update({ filaIniciada: true });
-          alert('Fila iniciada – cantores podem tocar suas músicas.');
-          startQueueBtn.disabled = true;
-        } catch (e) {
-          console.error(e);
-          alert('Falha ao iniciar fila.');
-        }
-      });
-    }
-  }
-</script>
-
-<!-- Botão Música Cantada no painel central -->
-<script>
-  // Adiciona botão "Cantada" nos controles do player
-  document.addEventListener('DOMContentLoaded', () => {
-    const controls = document.querySelector('.player-controls');
-    if (controls) {
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-primary';
-      btn.textContent = '✓ Cantada';
-      btn.onclick = () => { if (currentSong) marcarCantada(currentSong.id); };
-      controls.appendChild(btn);
-
-      // Botão salvar regras
-      const rulesSection = document.querySelector('.rules-section');
-      if (rulesSection) {
-        const saveBtn = document.createElement('button');
-        saveBtn.className = 'btn btn-secondary btn-sm';
-        saveBtn.style.marginTop = '10px';
-        saveBtn.style.width = '100%';
-        saveBtn.textContent = '💾 Salvar Regras';
-        saveBtn.onclick = salvarRegras;
-        rulesSection.appendChild(saveBtn);
+    window.electronAPI.onMusicFolderChanged(() => {
+      console.log('Pasta atualizada');
+    });
+    window.electronAPI.onSongEnded(async () => {
+      console.log('[HOST] Música terminou, currentSong:', currentSong?.id);
+      if (currentSong) {
+        await marcarCantada(currentSong.id);
       }
-    }
-  });
+    });
+  }
 </script>
 </body>
 </html>

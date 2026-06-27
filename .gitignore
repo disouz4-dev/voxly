@@ -16,3 +16,7 @@ Thumbs.db
 .env
 # Other temporary files
 *.log
+*.bak
+*.bak_*
+*.backup*
+home/

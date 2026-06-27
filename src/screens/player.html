@@ -5,187 +5,240 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #000; 
-      color: #fff; 
-      height: 100vh; 
-      overflow: hidden; 
-      display: flex; 
+      background: #000;
+      color: #fff;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
       flex-direction: column;
       font-family: 'Segoe UI', system-ui, sans-serif;
     }
     #video-player {
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       object-fit: contain;
-      flex: 1;
       display: none;
     }
     #idle-screen {
-      position: absolute;
-      inset: 0;
+      position: absolute; inset: 0;
       background: radial-gradient(ellipse at center, #1a0033 0%, #000 70%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      flex: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 20px;
     }
-    #idle-screen img {
-      height: 350px;
-      width: auto;
-      display: block;
-      margin-bottom: 12px;
+    #idle-screen img { height: 350px; width: auto; display: block; }
+    #idle-sub { font-size: 1.2rem; color: #ffffff80; }
+    .qr-corner {
+      position: absolute; bottom: 20px; z-index: 10;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
     }
-    #idle-sub {
-      font-size: 1.2rem;
-      color: #ffffff80;
+    .qr-corner-label {
+      font-size: 0.65rem; letter-spacing: 1.5px; text-transform: uppercase;
+      color: #ffffff70; font-weight: 700;
+      background: rgba(0,0,0,0.5); padding: 3px 8px; border-radius: 4px;
     }
-    /* QR code overlay (bottom-left) */
-    #qr-overlay {
-      position: absolute;
-      bottom: 25px;
-      left: 25px;
-      width: 140px;
-      height: 140px;
-      z-index: 10;
-      display: none;
+    .qr-corner img {
+      width: 130px; height: 130px;
+      background: #fff; padding: 4px; box-sizing: content-box;
+      border-radius: 4px;
     }
-    #qr-overlay img {
-      width: 100%;
-      height: 100%;
-      background: #fff;
-      padding: 4px;
-      box-sizing: content-box;
-    }
-    /* Footer with logo and credits */
+    #qr-app    { left: 20px; }
+    #qr-sessao { right: 20px; display: none; }
     .footer {
-      padding: 12px;
+      position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+      padding: 8px 16px;
+      color: #ffffff40; font-size: .7rem;
       text-align: center;
-      color: #ffffff60;
-      font-size: .75rem;
-      border-top: 1px solid #ffffff10;
-      flex-shrink: 0;
     }
-    .footer .logo {
-      height: 80px;
-      width: auto;
-      display: inline-block;
-      margin-bottom: 4px;
-    }
-    .footer .credits {
-      display: flex;
+    .footer strong { color: #e040fb; }
+    #preview-overlay {
+      display: none;
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.85);
       flex-direction: column;
-      gap: 2px;
-      align-items: center;
+      align-items: center; justify-content: center;
+      gap: 20px; z-index: 20;
     }
-    .footer .credits strong { color: #e040fb; }
+    #preview-overlay.active { display: flex; }
+    .preview-label { font-size: 0.9rem; color: #e040fb; letter-spacing: 2px; text-transform: uppercase; }
+    .preview-song  { font-size: 2rem; font-weight: 700; text-align: center; }
+    .preview-artist{ font-size: 1.2rem; color: #7a7a9d; }
+    .preview-singer{ font-size: 1rem; color: #e040fb; }
+    .timer-circle {
+      width: 100px; height: 100px;
+      border-radius: 50%;
+      border: 6px solid #7c4dff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.5rem; font-weight: 700;
+      position: relative;
+    }
+    .timer-circle.urgente { border-color: #ff1744; color: #ff1744; }
+    .preview-msg { font-size: 1rem; color: #ffffff80; text-align: center; }
   </style>
 </head>
 <body>
-  <!-- TELA DE ESPERA -->
+
   <div id="idle-screen">
-    <img src="../assets/logo/logo_voxly.png" alt="Voxly Logo">
+    <img src="../assets/logo/logo_voxly.png" alt="Voxly">
     <div id="idle-sub">Aguardando próxima música...</div>
   </div>
 
-  <!-- VÍDEO (quando houver reprodução) -->
   <video id="video-player" controls></video>
+  <audio id="preview-audio" style="display:none;"></audio>
 
-  <!-- QR CODE OVERLAY -->
-  <div id="qr-overlay">
-    <img id="qrImg" src="" alt="QR code">
+  <div id="preview-overlay">
+    <div class="preview-label">🎤 Próxima Música</div>
+    <div class="preview-song"  id="prev-song">—</div>
+    <div class="preview-artist" id="prev-artist">—</div>
+    <div class="preview-singer" id="prev-singer">—</div>
+    <div class="timer-circle" id="timer-circle">15</div>
+    <div class="preview-msg">Confirme no seu celular para cantar!</div>
   </div>
 
-  <!-- Input manual de código (oculto, usado pelo script) -->
-  <div style="display:none;">
-    <input type="text" id="sessionCodeInput" placeholder="Código da sessão" />
-    <button id="joinSessionBtn">Entrar</button>
+  <div class="qr-corner" id="qr-app">
+    <img id="qrImgApp" src="" alt="QR App">
+    <div class="qr-corner-label">📱 Acesse o App</div>
   </div>
 
-  <!-- RODAPÉ -->
+  <div class="qr-corner" id="qr-sessao">
+    <img id="qrImgSessao" src="" alt="QR Sessão">
+    <div class="qr-corner-label">🎤 Entre na Sessão</div>
+  </div>
+
   <footer class="footer">
-    <img src="../assets/logo/logo_voxly.png" alt="Voxly Logo" class="logo">
-    <div class="credits">
-      Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
-    </div>
+    Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
   </footer>
 
 <script>
-  const video   = document.getElementById("video-player");
-  // QR Code handling with session integration
-    const qrImg   = document.getElementById("qrImg");
-    const qrOverlay = document.getElementById("qr-overlay");
-    const codeInput = document.getElementById("sessionCodeInput");
-    const joinBtn = document.getElementById("joinSessionBtn");
+document.addEventListener("DOMContentLoaded", () => {
+  const video = document.getElementById("video-player");
+  const idle  = document.getElementById("idle-screen");
 
-    // Obtém URL base do app web
-    async function getWebAppUrl() {
-      // URL fixa do Firebase Hosting
-      return 'https://voxly-karaoke.web.app';
-    }
+  // Converte caminho de arquivo para URL segura (lida com espaços, [ ] e acentos)
+  function toFileUrl(filePath) {
+    return encodeURI("file://" + filePath);
+  }
 
-    // Atualiza QR Code incluindo código da sessão atual
-    async function updateQRCode() {
-      try {
-        const session = await window.electronAPI.invoke('get-current-session');
-        // Use apenas o código da sessão como dado do QR
-        const data = session ? session.code : '';
-        const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(data)}`;
-        qrImg.src = qrApi;
-        qrImg.title = data;
-        // Preenche campo de código manual para conveniência
-        if (session) codeInput.value = session.code;
-      } catch (e) {
-        console.error('Erro ao gerar QR code:', e);
-        qrImg.src = '';
-        qrImg.title = 'Erro ao gerar QR code';
-      }
-    }
+  // QR do app — sempre visível
+  const APP_URL = "https://voxly-karaoke.web.app";
+  document.getElementById("qrImgApp").src =
+    `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(APP_URL)}`;
 
-    // Attempt to join session using entered code
-    async function joinSession() {
-      const code = codeInput.value.trim();
-      const user = firebase.auth().currentUser; // Assume Firebase auth loaded in renderer
-      if (!user) { alert('Faça login antes de entrar na sessão'); return; }
-      const result = await window.electronAPI.invoke('join-session', { uid: user.uid, code, displayName: user.displayName });
-      if (result.success) {
-        alert('Entrou na sessão!');
-      } else {
-        alert('Falha ao entrar: ' + (result.error || 'Código inválido'));
-      }
-    }
-
-    joinBtn.addEventListener('click', joinSession);
-
-    // Carrega inicialmente e atualiza periodicamente
-    updateQRCode();
-    setInterval(updateQRCode, 15000);
-
-    // CONTROLE DE REPRODUÇÃO DE VÍDEO (recebido do processo principal)
-    window.electronAPI.onPlayVideo(filePath => {
-      idle.style.display  = "none";
-      video.style.display = "block";
-      video.src           = `file://${filePath}`;
-      video.play();
-    });
-
-  window.electronAPI.onPlayerCmd(cmd => {
-    if (cmd === "play")        video.play();
-    if (cmd === "pause")       video.pause();
-    if (cmd === "stop")        { 
-      video.pause(); 
-      video.src = ""; 
-      video.style.display = "none"; 
-      idle.style.display = "flex"; 
-    }
-    if (cmd === "fullscreen")  document.documentElement.requestFullscreen?.();
+  // Play video
+  window.electronAPI.onPlayVideo(filePath => {
+    console.log("[PLAYER] Recebeu:", filePath);
+    idle.style.display  = "none";
+    video.style.display = "block";
+    video.src = toFileUrl(filePath);
+    video.load();
+    video.play().catch(e => console.error("[PLAYER] Erro ao tocar:", e));
   });
 
+  const previewOverlay = document.getElementById("preview-overlay");
+  const previewAudio   = document.getElementById("preview-audio");
+  const timerCircle    = document.getElementById("timer-circle");
+  let timerInterval    = null;
+
+  function pararPreview() {
+    previewAudio.pause();
+    previewAudio.src = "";
+    previewOverlay.classList.remove("active");
+    clearInterval(timerInterval);
+  }
+
+  // Comandos do host
+  window.electronAPI.onPlayerCmd(cmd => {
+    console.log("[PLAYER] Comando:", cmd);
+
+    // Comando de preview (JSON)
+    if (cmd.startsWith("{")) {
+      try {
+        const dados = JSON.parse(cmd);
+        if (dados.cmd === "sessao-iniciada") {
+          const sessaoUrl = `${APP_URL}/profile.html?sessao=${dados.codigo}`;
+          document.getElementById("qrImgSessao").src =
+            `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(sessaoUrl)}`;
+          document.getElementById("qr-sessao").style.display = "flex";
+          return;
+        }
+        if (dados.cmd === "preview") {
+          // Mostra overlay
+          document.getElementById("prev-song").textContent   = dados.musica  || "—";
+          document.getElementById("prev-artist").textContent = dados.artista || "—";
+          document.getElementById("prev-singer").textContent = "🎤 " + (dados.cantor || "—");
+          previewOverlay.classList.add("active");
+
+          // Toca trecho da música (do segundo 30 ao 45)
+          if (dados.filePath) {
+            previewAudio.src    = toFileUrl(dados.filePath) + "#t=30";
+            previewAudio.volume = 0.3;
+            previewAudio.play().catch(e => console.log("Preview audio:", e));
+          }
+
+          // Timer
+          let segundos = dados.segundos || 15;
+          timerCircle.textContent = segundos;
+          timerCircle.classList.remove("urgente");
+          clearInterval(timerInterval);
+          timerInterval = setInterval(() => {
+            segundos--;
+            timerCircle.textContent = segundos;
+            if (segundos <= 5) timerCircle.classList.add("urgente");
+            if (segundos <= 0) {
+              clearInterval(timerInterval);
+              pararPreview();
+            }
+          }, 1000);
+        }
+        if (dados.cmd === "play-confirmed") {
+          pararPreview();
+          idle.style.display  = "none";
+          video.style.display = "block";
+          video.src = toFileUrl(dados.filePath);
+          video.load();
+          video.play().catch(e => console.error("[PLAYER] Erro:", e));
+        }
+      } catch(e) {
+        console.error("[PLAYER] Erro JSON cmd:", e);
+      }
+      return;
+    }
+
+    if (cmd === "play")             video.play();
+    if (cmd === "pause")            video.pause();
+    if (cmd === "stop-preview")     pararPreview();
+    if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
+    if (cmd === "sessao-encerrada") {
+      document.getElementById("qr-sessao").style.display = "none";
+      document.getElementById("qrImgSessao").src = "";
+    }
+    if (cmd === "stop") {
+      pararPreview();
+      video.pause();
+      video.src = "";
+      video.style.display = "none";
+      idle.style.display  = "flex";
+    }
+  });
+
+  // Ao terminar volta para idle e avisa o host
   video.addEventListener("ended", () => {
+    console.log("[PLAYER] ended disparou!");
     video.style.display = "none";
     idle.style.display  = "flex";
+    window.electronAPI.songEnded();
   });
+
+  // Fallback: monitora o tempo e avisa quando terminar
+  video.addEventListener("timeupdate", () => {
+    if (video.duration && video.currentTime >= video.duration - 0.5) {
+      if (video.style.display !== "none") {
+        console.log("[PLAYER] Fim detectado por timeupdate");
+        video.style.display = "none";
+        idle.style.display  = "flex";
+        window.electronAPI.songEnded();
+      }
+    }
+  });
+}); // DOMContentLoaded
 </script>
 </body>
 </html>
