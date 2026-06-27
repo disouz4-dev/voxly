@@ -983,10 +983,7 @@
 
   // ── Ações da fila ─────────────────────────────────────────
   async function tocarMusica(itemId) {
-    const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
-    const prevSnap = await itemRef.get();
-    const prevStatus = prevSnap.data()?.status;
-
+    const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     const batch = db.batch();
     const tocandoSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
       .where('status', 'in', ['tocando', 'pronto']).get();
@@ -1005,10 +1002,9 @@
     if (window.electronAPI) {
       const filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
       if (filePath) {
-        // Se o item já estava 'pronto' (intro já foi exibida), toca direto sem intro
-        const cmd = prevStatus === 'pronto' ? 'play-direct' : 'play-confirmed';
+        // Sempre exibe intro (4.5s + abertura) antes de tocar
         window.electronAPI.playerCommand(JSON.stringify({
-          cmd, filePath,
+          cmd: 'play-confirmed', filePath,
           musica: item.musica, artista: item.artista,
           cantor: item.nomeArtistico, duo: item.duoNome || null,
           photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
@@ -1278,18 +1274,10 @@
           const item = { id: doc.id, ...doc.data() };
           clearTimeout(timerConfirmacao);
           proximaConfirmando = null;
-          // Avança para 'pronto': exibe intro no player, host dá o play manualmente
+          // Marca como 'pronto': host vê o badge e pressiona ▶ Tocar quando quiser
           await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
             .update({ status: 'pronto' });
-          if (window.electronAPI) {
-            window.electronAPI.playerCommand(JSON.stringify({
-              cmd: 'play-intro',
-              musica: item.musica, artista: item.artista,
-              cantor: item.nomeArtistico, duo: item.duoNome || null,
-              photoURL: item.photoURL || null,
-              duoPhotoURL: item.duoPhotoURL || null
-            }));
-          }
+          // Player continua mostrando idle + intervalo até o host dar play
         }
       });
   }

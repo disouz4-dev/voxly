@@ -532,7 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const introOverlay  = document.getElementById("intro-overlay");
   const introProgress = document.getElementById("intro-progress");
 
-  const INTRO_DURATION = 5000;
+  const INTRO_DURATION = 4500;
   let introTimeout  = null;
   let particleTimer = null;
 
@@ -871,7 +871,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (dados.cmd === "preview") {
-          intervaloAudio.volume = 0.15; // abaixa durante o preview/voz
+          pararIntervalo();
           const cantor = dados.cantor || "—";
           const duo    = dados.duo    || null;
 
@@ -958,7 +958,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (cmd === "play")             video.play();
     if (cmd === "pause")            video.pause();
-    if (cmd === "stop-preview")     pararPreview();
+    if (cmd === "stop-preview")     { pararPreview(); idleAtivo = true; tocarIntervalo(); }
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); }
     if (cmd === "intervalo-off") { intervaloHabilitado = false; pararIntervalo(); }
