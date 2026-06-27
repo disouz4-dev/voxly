@@ -1145,45 +1145,50 @@
   }
 
   async function marcarCantada(itemId) {
-    const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
-    const itemSnap = await itemRef.get();
-    const item     = itemSnap.data();
-    await itemRef.update({ status: 'cantada' });
-
-    if (item?.cantorUid) {
-      await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
-        cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
-        musica: item.musica, artista: item.artista,
-        duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
-        status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      // Salva no histórico global do cantor
-      await db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
-        sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
-        duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
-        status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
-        .update({ primeiraMusicaCantada: true });
-
-      // Promove música em espera
-      const esperaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-        .where('cantorUid', '==', item.cantorUid)
-        .where('slot', '==', 'espera')
-        .where('status', '==', 'aguardando')
-        .limit(1).get();
-      if (!esperaSnap.empty) {
-        const filaSnap  = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-          .where('status', '==', 'aguardando').get();
-        await esperaSnap.docs[0].ref.update({ slot: 'ativa', ordemFila: filaSnap.size + 1 });
-      }
-    }
-
+    currentSong = null;
     document.getElementById('np-song').textContent   = '—';
     document.getElementById('np-artist').textContent = '—';
     document.getElementById('np-singer').textContent = '—';
-    currentSong = null;
-    await iniciarConfirmacaoProxima();
+
+    try {
+      const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
+      const itemSnap = await itemRef.get();
+      if (!itemSnap.exists) return;
+      const item = itemSnap.data();
+      await itemRef.update({ status: 'cantada' });
+
+      if (item?.cantorUid) {
+        await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
+          cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
+          musica: item.musica, artista: item.artista,
+          duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
+          status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
+          sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
+          duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
+          status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
+          .update({ primeiraMusicaCantada: true });
+
+        // Promove música em espera
+        const esperaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+          .where('cantorUid', '==', item.cantorUid)
+          .where('slot', '==', 'espera')
+          .where('status', '==', 'aguardando')
+          .limit(1).get();
+        if (!esperaSnap.empty) {
+          const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+            .where('status', '==', 'aguardando').get();
+          await esperaSnap.docs[0].ref.update({ slot: 'ativa', ordemFila: filaSnap.size + 1 });
+        }
+      }
+    } catch(e) {
+      console.error('[HOST] Erro em marcarCantada:', e);
+    } finally {
+      await iniciarConfirmacaoProxima();
+    }
   }
 
   // ── Confirmação próxima música ────────────────────────────
@@ -1569,10 +1574,18 @@
     window.electronAPI.onMusicFolderChanged(() => {
       console.log('Pasta atualizada');
     });
+    let processandoFim = false;
     window.electronAPI.onSongEnded(async () => {
-      console.log('[HOST] Música terminou, currentSong:', currentSong?.id);
-      if (currentSong) {
-        await marcarCantada(currentSong.id);
+      if (processandoFim) return;
+      processandoFim = true;
+      try {
+        if (currentSong) {
+          await marcarCantada(currentSong.id);
+        } else {
+          await iniciarConfirmacaoProxima();
+        }
+      } finally {
+        processandoFim = false;
       }
     });
   }
