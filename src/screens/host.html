@@ -147,7 +147,6 @@
     <button class="btn btn-ok btn-sm" id="startQueueBtn" onclick="iniciarFila()" style="display:none;">▶ Iniciar Fila</button>
     <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar Sessão</button>
     <button class="btn btn-secondary btn-sm" id="btnAdicionarCantor" onclick="abrirModalCantor()" style="display:none;">➕ Cantor</button>
-    <button class="btn btn-secondary btn-sm" id="btnAdicionarMusica" onclick="abrirModalMusica()" style="display:none;">🎵 Música</button>
     <button class="btn btn-ghost btn-sm" onclick="reabrirPlayer()">🖥 Player</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
@@ -421,7 +420,6 @@
     document.getElementById('nextCycleBtn').style.display       = 'inline-block';
     document.getElementById('cycle-num').textContent            = cicloAtual;
     document.getElementById('btnAdicionarCantor').style.display = 'inline-block';
-    document.getElementById('btnAdicionarMusica').style.display = 'inline-block';
 
     // QR da sessão
     const sessaoUrl = `${APP_URL}/profile.html?sessao=${sessaoCodigo}`;
@@ -483,7 +481,6 @@
     document.getElementById('cycle-label').style.display        = 'none';
     document.getElementById('nextCycleBtn').style.display       = 'none';
     document.getElementById('btnAdicionarCantor').style.display = 'none';
-    document.getElementById('btnAdicionarMusica').style.display = 'none';
     document.getElementById('qr-sessao-box').style.opacity      = '0.3';
     document.getElementById('qr-sessao-url').textContent     = 'Inicie uma sessão';
     document.getElementById('queue-list').innerHTML  = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
@@ -596,12 +593,15 @@
       const avatarHtml = u.photoURL
         ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
         : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
+      const uid  = JSON.stringify(u.id || u.uid || '');
+      const nome = JSON.stringify(u.nomeArtistico || '');
       return `<div class="user-item">
         ${avatarHtml}
-        <div>
+        <div style="flex:1;">
           <div class="user-name">${escHtml(u.nomeArtistico||'-')} ${prioridade ? '☕' : ''}</div>
-          <div class="user-status">${ativo ? 'Online' : 'Sem sinal'}</div>
+          <div class="user-status">${u.modo === 'manual' ? 'Manual' : (ativo ? 'Online' : 'Sem sinal')}</div>
         </div>
+        <button class="btn btn-secondary btn-sm" onclick="abrirModalMusica(${uid}, ${nome})" title="Adicionar música">🎵</button>
         <span class="${tagCls} user-badge">${tagTxt}</span>
       </div>`;
     }).join('');
@@ -888,7 +888,7 @@
   let musicaModalSelecionada = null;
   let buscaModalTimeout      = null;
 
-  function abrirModalMusica() {
+  function abrirModalMusica(preUid = '', preNome = '') {
     if (!SESSAO_ID) return;
     musicaModalSelecionada = null;
     document.getElementById('inputBuscaMusica').value = '';
@@ -906,6 +906,7 @@
       opt.dataset.uid  = p.id || p.uid;
       sel.appendChild(opt);
     });
+    if (preUid) sel.value = preUid;
     document.getElementById('modalMusica').classList.add('open');
     setTimeout(() => document.getElementById('inputBuscaMusica').focus(), 80);
   }
