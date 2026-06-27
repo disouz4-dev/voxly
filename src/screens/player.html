@@ -464,6 +464,7 @@
   <video id="video-player" controls></video>
   <audio id="preview-audio"   style="display:none;"></audio>
   <audio id="intervalo-audio" style="display:none;"></audio>
+  <audio id="abertura-audio"  style="display:none;" src="../assets/intervalo/Abertura do Cantor.mp3"></audio>
 
   <div id="preview-overlay">
     <div id="prev-waveform"></div>
@@ -611,12 +612,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ── Mostrar intro ────────────────────────────────────────
+  const aberturaAudio = document.getElementById("abertura-audio");
+
+  function tocarAbertura() {
+    aberturaAudio.currentTime = 0;
+    aberturaAudio.volume = 0.85;
+    aberturaAudio.play().catch(() => {});
+  }
+
+  function pararAbertura() {
+    aberturaAudio.pause();
+    aberturaAudio.currentTime = 0;
+  }
+
   function mostrarIntro(cantor, duo, musica, artista, photoURL, duoPhotoURL, onDone) {
     clearTimeout(introTimeout);
     clearInterval(particleTimer);
-    // Para música de espera assim que a intro começa
+    // Para música de espera e toca a abertura
     idleAtivo = false;
     pararIntervalo();
+    tocarAbertura();
 
     // Reinicia elementos com animação para disparar novamente
     const scanEl = document.getElementById("intro-scanline");
@@ -672,6 +687,7 @@ document.addEventListener("DOMContentLoaded", () => {
     introTimeout = setTimeout(() => {
       introOverlay.classList.remove("active");
       clearInterval(particleTimer);
+      pararAbertura();
       onDone();
     }, INTRO_DURATION);
   }
@@ -954,6 +970,7 @@ document.addEventListener("DOMContentLoaded", () => {
       pararPreview();
       clearTimeout(introTimeout);
       clearInterval(particleTimer);
+      pararAbertura();
       introOverlay.classList.remove("active");
       esconderPronto();
       video.pause();
