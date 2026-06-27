@@ -174,6 +174,22 @@
     }
     #intro-overlay.active { display: flex; }
 
+    #pronto-overlay {
+      display: none;
+      position: absolute; inset: 0; z-index: 25;
+      background: radial-gradient(ellipse at center, #1a0a2e 0%, #07020f 70%);
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 14px;
+    }
+    #pronto-overlay.active { display: flex; }
+    .pronto-mic  { font-size: 3.5rem; animation: pulse-mic 1.4s ease-in-out infinite; }
+    @keyframes pulse-mic { 0%,100%{transform:scale(1);} 50%{transform:scale(1.15);} }
+    .pronto-nome { font-size: 2.4rem; font-weight: 800; color: #fff; letter-spacing: .04em; }
+    .pronto-song { font-size: 1.4rem; color: #c084fc; margin-top: 2px; }
+    .pronto-msg  { font-size: 1rem; color: #ffffff55; margin-top: 18px; }
+    #pronto-avatares { display: flex; gap: 20px; margin-bottom: 8px; }
+
     /* Fundo gradiente pulsante */
     #intro-bg {
       position: absolute; inset: 0;
@@ -485,6 +501,15 @@
     <div id="intro-progress"></div>
   </div>
 
+  <!-- Overlay: aguardando host dar play -->
+  <div id="pronto-overlay">
+    <div id="pronto-avatares"></div>
+    <div class="pronto-mic">🎤</div>
+    <div class="pronto-nome" id="pronto-nome">—</div>
+    <div class="pronto-song" id="pronto-song">—</div>
+    <div class="pronto-msg">Aguardando o host iniciar a música...</div>
+  </div>
+
   <div class="qr-corner" id="qr-app">
     <img id="qrImgApp" src="" alt="QR App">
     <div class="qr-corner-label">📱 Acesse o App</div>
@@ -589,6 +614,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function mostrarIntro(cantor, duo, musica, artista, photoURL, duoPhotoURL, onDone) {
     clearTimeout(introTimeout);
     clearInterval(particleTimer);
+    // Para música de espera assim que a intro começa
+    idleAtivo = false;
+    pararIntervalo();
 
     // Reinicia elementos com animação para disparar novamente
     const scanEl = document.getElementById("intro-scanline");
@@ -769,15 +797,39 @@ document.addEventListener("DOMContentLoaded", () => {
     previewOverlay.classList.remove("active");
     clearInterval(timerInterval);
     if (window.speechSynthesis) speechSynthesis.cancel();
-    // reset arc
     timerArc.style.strokeDashoffset = 0;
     timerArc.classList.remove("urgente");
     timerCircle.classList.remove("urgente");
   }
 
+  // ── Estado "pronto": aguardando host iniciar ─────────────
+  const prontoOverlay = document.getElementById("pronto-overlay");
+
+  function avatarProntoHtml(nome, url) {
+    return url
+      ? `<div style="width:72px;height:72px;border-radius:50%;background-image:url('${url}');background-size:cover;border:3px solid #c084fc;"></div>`
+      : `<div style="width:72px;height:72px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:800;border:3px solid #c084fc;">${(nome||'?')[0].toUpperCase()}</div>`;
+  }
+
+  function mostrarPronto(cantor, duo, musica, artista, photoURL, duoPhotoURL) {
+    let avHtml = avatarProntoHtml(cantor, photoURL);
+    if (duo) avHtml += avatarProntoHtml(duo, duoPhotoURL);
+    document.getElementById("pronto-avatares").innerHTML = avHtml;
+    document.getElementById("pronto-nome").textContent = duo ? `${cantor} & ${duo}` : cantor;
+    document.getElementById("pronto-song").textContent = `${musica}${artista ? ' — ' + artista : ''}`;
+    prontoOverlay.classList.add("active");
+    idle.style.display  = "none";
+    video.style.display = "none";
+  }
+
+  function esconderPronto() {
+    prontoOverlay.classList.remove("active");
+  }
+
   function iniciarVideo(filePath) {
     idleAtivo = false;
     pararIntervalo();
+    esconderPronto();
     idle.style.display  = "none";
     video.style.display = "block";
     video.pause();
@@ -852,7 +904,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "play-confirmed") {
           pararPreview();
-          pararIntervalo();
           mostrarIntro(
             dados.cantor      || "Cantor",
             dados.duo         || null,
@@ -862,6 +913,26 @@ document.addEventListener("DOMContentLoaded", () => {
             dados.duoPhotoURL || null,
             () => iniciarVideo(dados.filePath)
           );
+        }
+
+        // Após confirmação: exibe intro, depois aguarda host dar play
+        if (dados.cmd === "play-intro") {
+          pararPreview();
+          mostrarIntro(
+            dados.cantor      || "Cantor",
+            dados.duo         || null,
+            dados.musica      || "",
+            dados.artista     || "",
+            dados.photoURL    || null,
+            dados.duoPhotoURL || null,
+            () => mostrarPronto(dados.cantor, dados.duo, dados.musica, dados.artista, dados.photoURL, dados.duoPhotoURL)
+          );
+        }
+
+        // Host deu play: toca direto sem intro
+        if (dados.cmd === "play-direct") {
+          esconderPronto();
+          iniciarVideo(dados.filePath);
         }
       } catch(e) {
         console.error("[PLAYER] Erro JSON cmd:", e);
@@ -884,6 +955,7 @@ document.addEventListener("DOMContentLoaded", () => {
       clearTimeout(introTimeout);
       clearInterval(particleTimer);
       introOverlay.classList.remove("active");
+      esconderPronto();
       video.pause();
       video.removeAttribute("src");
       video.load();

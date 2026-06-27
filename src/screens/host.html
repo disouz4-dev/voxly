@@ -132,6 +132,17 @@
       background: var(--ok); color: #001a09;
       box-shadow: 0 0 8px #00e67640;
     }
+    .badge-pronto {
+      background: #1a0d33;
+      color: #c084fc;
+      border: 1px solid #c084fc80;
+      animation: blink-pronto 1s ease-in-out infinite;
+    }
+    @keyframes blink-pronto {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.55; }
+    }
+    .queue-item.pronto { border-left: 3px solid #c084fc; }
     .badge-confirming {
       background: #1a1a2e;
       color: var(--warn);
@@ -840,14 +851,16 @@
   // ── Fila ──────────────────────────────────────────────────
   function escutarFila() {
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', 'in', ['aguardando', 'tocando', 'confirmando'])
+      .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])
       .onSnapshot(snap => {
         filaData = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(d => d.slot !== 'espera')
           .sort((a, b) => {
-            if (a.status === 'tocando')   return -1;
-            if (b.status === 'tocando')   return 1;
+            if (a.status === 'tocando') return -1;
+            if (b.status === 'tocando') return 1;
+            if (a.status === 'pronto')  return -1;
+            if (b.status === 'pronto')  return 1;
             if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
             if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
             return (a.ordemFila || 0) - (b.ordemFila || 0);
@@ -866,15 +879,18 @@
     el.innerHTML = filaData.map((item, i) => {
       const isPlaying    = item.status === 'tocando';
       const isConfirming = item.status === 'confirmando';
+      const isPronto     = item.status === 'pronto';
       const isPriority   = item.tipo   === 'prioridade';
       const isDuet       = !!item.duoNome;
 
       let cls = 'queue-item';
-      if (isPlaying)  cls += ' playing';
-      if (isPriority) cls += ' priority';
+      if (isPlaying) cls += ' playing';
+      if (isPronto)  cls += ' pronto';
+      if (isPriority && !isPlaying && !isPronto) cls += ' priority';
 
       let badge = '';
-      if (isPlaying)    badge = '<span class="queue-badge badge-playing">▶ TOCANDO</span>';
+      if (isPlaying)         badge = '<span class="queue-badge badge-playing">▶ TOCANDO</span>';
+      else if (isPronto)     badge = '<span class="queue-badge badge-pronto">🎤 PRONTO</span>';
       else if (isConfirming) badge = '<span class="queue-badge badge-confirming">⏱ CONFIRMANDO</span>';
       else if (isPriority)   badge = '<span class="queue-badge badge-priority">☕ PRIORIDADE</span>';
 
@@ -882,9 +898,9 @@
         ? `<img src="${item.photoURL}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
         : `<div style="width:30px;height:30px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;">${getInitials(item.nomeArtistico)}</div>`;
 
-      const isDraggable = !isPlaying && !isConfirming;
-      const playBtn   = isDraggable ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
-      const skipBtn   = isPlaying   ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
+      const isDraggable = !isPlaying && !isConfirming && !isPronto;
+      const playBtn   = (!isPlaying && !isConfirming) ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
+      const skipBtn   = (isPlaying || isPronto) ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
       const removeBtn = `<button class="btn btn-danger btn-sm" onclick="abrirModalExpulsar(${i})" title="Remover da fila">✕</button>`;
       const duoBtn    = isDraggable && !isDuet && regras.permitirDuo
         ? `<button class="btn btn-secondary btn-sm" onclick="abrirModalDuoFila(${i})" title="Adicionar parceiro duo">🎤 Duo</button>`
@@ -967,11 +983,14 @@
 
   // ── Ações da fila ─────────────────────────────────────────
   async function tocarMusica(itemId) {
+    const itemRef  = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
+    const prevSnap = await itemRef.get();
+    const prevStatus = prevSnap.data()?.status;
+
     const batch = db.batch();
     const tocandoSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', '==', 'tocando').get();
+      .where('status', 'in', ['tocando', 'pronto']).get();
     tocandoSnap.forEach(d => batch.update(d.ref, { status: 'aguardando' }));
-    const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     batch.update(itemRef, { status: 'tocando' });
     await batch.commit();
 
@@ -986,8 +1005,10 @@
     if (window.electronAPI) {
       const filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
       if (filePath) {
+        // Se o item já estava 'pronto' (intro já foi exibida), toca direto sem intro
+        const cmd = prevStatus === 'pronto' ? 'play-direct' : 'play-confirmed';
         window.electronAPI.playerCommand(JSON.stringify({
-          cmd: 'play-confirmed', filePath,
+          cmd, filePath,
           musica: item.musica, artista: item.artista,
           cantor: item.nomeArtistico, duo: item.duoNome || null,
           photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
@@ -1241,17 +1262,10 @@
     timerConfirmacao = setTimeout(async () => {
       const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id).get();
       if (snap.data()?.status === 'confirmando') {
+        // Auto-confirma após 15s: cantor sobe independente de confirmar no celular
         await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
-          .update({ status: 'pulada' });
-        if (proxima?.cantorUid) {
-          await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
-            cantorUid: proxima.cantorUid, nomeArtistico: proxima.nomeArtistico,
-            musica: proxima.musica, artista: proxima.artista,
-            status: 'pulada', horario: firebase.firestore.FieldValue.serverTimestamp()
-          });
-        }
+          .update({ status: 'confirmado' });
         if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
-        await iniciarConfirmacaoProxima();
       }
     }, 15000);
   }
@@ -1263,29 +1277,18 @@
         for (const doc of snap.docs) {
           const item = { id: doc.id, ...doc.data() };
           clearTimeout(timerConfirmacao);
-          let filePath = null;
+          proximaConfirmando = null;
+          // Avança para 'pronto': exibe intro no player, host dá o play manualmente
+          await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
+            .update({ status: 'pronto' });
           if (window.electronAPI) {
-            filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
-          }
-          if (filePath) {
-            await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
-              .update({ status: 'tocando' });
-            currentSong = item;
-            document.getElementById('np-song').textContent   = item.musica  || '—';
-            document.getElementById('np-artist').textContent = item.artista || '—';
-            document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—');
-            if (window.electronAPI) {
-              window.electronAPI.playerCommand(JSON.stringify({
-                cmd: 'play-confirmed', filePath,
-                musica: item.musica, artista: item.artista,
-                cantor: item.nomeArtistico, duo: item.duoNome || null,
-                photoURL: item.photoURL || null,
-                duoPhotoURL: item.duoPhotoURL || null
-              }));
-            }
-          } else {
-            await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
-              .update({ status: 'aguardando' });
+            window.electronAPI.playerCommand(JSON.stringify({
+              cmd: 'play-intro',
+              musica: item.musica, artista: item.artista,
+              cantor: item.nomeArtistico, duo: item.duoNome || null,
+              photoURL: item.photoURL || null,
+              duoPhotoURL: item.duoPhotoURL || null
+            }));
           }
         }
       });
