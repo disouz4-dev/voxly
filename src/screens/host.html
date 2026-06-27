@@ -865,6 +865,16 @@
             if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
             return (a.ordemFila || 0) - (b.ordemFila || 0);
           });
+
+        // Restaura currentSong após reinício do app
+        const tocandoItem = filaData.find(d => d.status === 'tocando');
+        if (tocandoItem && !currentSong) {
+          currentSong = { ...tocandoItem };
+          document.getElementById('np-song').textContent   = tocandoItem.musica  || '—';
+          document.getElementById('np-artist').textContent = tocandoItem.artista || '—';
+          document.getElementById('np-singer').textContent = '🎤 ' + (tocandoItem.nomeArtistico || '—') + (tocandoItem.duoNome ? ' & ' + tocandoItem.duoNome : '');
+        }
+
         renderQueue();
         salvarBackupLocal();
       });
