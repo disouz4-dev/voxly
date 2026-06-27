@@ -994,14 +994,16 @@
 
     const itemSnap = await itemRef.get();
     const item = itemSnap.data();
-    currentSong = { id: itemId, ...item };
+    const filePath = window.electronAPI
+      ? await window.electronAPI.resolveMusicFile(item.musica, item.artista)
+      : null;
+    currentSong = { id: itemId, ...item, filePath };
 
     document.getElementById('np-song').textContent   = item.musica  || '—';
     document.getElementById('np-artist').textContent = item.artista || '—';
     document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—') + (item.duoNome ? ' & ' + item.duoNome : '');
 
     if (window.electronAPI) {
-      const filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
       if (filePath) {
         // Sempre exibe intro (4.5s + abertura) antes de tocar
         window.electronAPI.playerCommand(JSON.stringify({
@@ -1016,8 +1018,22 @@
     }
   }
 
-  function reiniciarMusica() {
-    if (window.electronAPI) window.electronAPI.playerCommand('restart');
+  async function reiniciarMusica() {
+    if (!window.electronAPI || !currentSong) return;
+    // Garante que o player está aberto
+    window.electronAPI.invoke('open-player');
+    // Resolve filePath se não estiver cacheado
+    const filePath = currentSong.filePath
+      || await window.electronAPI.resolveMusicFile(currentSong.musica, currentSong.artista);
+    if (!filePath) { alert('Arquivo não encontrado para reiniciar.'); return; }
+    // Toca do início sem exibir a intro novamente
+    setTimeout(() => {
+      window.electronAPI.playerCommand(JSON.stringify({
+        cmd: 'play-direct', filePath,
+        musica: currentSong.musica, artista: currentSong.artista,
+        cantor: currentSong.nomeArtistico, duo: currentSong.duoNome || null
+      }));
+    }, 600); // aguarda o player abrir
   }
 
   async function pularMusica(itemId) {
