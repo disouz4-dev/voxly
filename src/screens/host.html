@@ -524,6 +524,20 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalDuoFila">
+  <div class="modal-box">
+    <h2>🎤 Adicionar Parceiro Duo</h2>
+    <label class="modal-label">Cantor da fila</label>
+    <div id="duoFilaCantorNome" style="padding:8px;border-radius:6px;background:var(--surface2);font-size:.85rem;margin-bottom:10px;"></div>
+    <label class="modal-label">Parceiro duo</label>
+    <select class="modal-select" id="selectDuoFila"><option value="">— Selecionar cantor —</option></select>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalDuoFila()">Cancelar</button>
+      <button class="btn btn-ok" id="btnConfirmarDuoFila" onclick="confirmarDuoFila()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
@@ -824,6 +838,12 @@
       const playBtn   = !isPlaying && !isConfirming ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
       const skipBtn   = isPlaying ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
       const removeBtn = `<button class="btn btn-danger btn-sm" onclick="removerMusica('${item.id}')" title="Remover da fila">✕</button>`;
+      const duoBtn    = !isPlaying && !isConfirming && !isDuet && regras.permitirDuo
+        ? `<button class="btn btn-secondary btn-sm" onclick="abrirModalDuoFila(${i})" title="Adicionar parceiro duo">🎤 Duo</button>`
+        : '';
+      const duoRemBtn = !isPlaying && !isConfirming && isDuet
+        ? `<button class="btn btn-ghost btn-sm" onclick="removerDuoFila('${item.id}')" title="Remover parceiro duo" style="color:#ff6b6b;">✕ Duo</button>`
+        : '';
 
       return `<div class="${cls}">
         <div class="queue-pos">${isPlaying ? '▶' : i + 1}</div>
@@ -831,8 +851,8 @@
         <div class="queue-info">
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
-          <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' & ' + escHtml(item.duoNome) : ''}</div>
-          <div class="queue-actions">${playBtn}${skipBtn}${removeBtn}</div>
+          <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
+          <div class="queue-actions">${playBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}</div>
         </div>
         ${badge}
       </div>`;
@@ -1216,6 +1236,60 @@
   function fecharModalMusica() {
     document.getElementById('modalMusica').classList.remove('open');
     musicaModalSelecionada = null;
+  }
+
+  let duoFilaItemIdx = null;
+
+  function abrirModalDuoFila(i) {
+    const item = filaData[i];
+    if (!item) return;
+    duoFilaItemIdx = i;
+    document.getElementById('duoFilaCantorNome').textContent = item.nomeArtistico;
+    const sel = document.getElementById('selectDuoFila');
+    sel.innerHTML = '<option value="">— Selecionar cantor —</option>';
+    presencasData
+      .filter(p => (p.id || p.uid) !== item.cantorUid)
+      .forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id || p.uid;
+        opt.textContent = p.nomeArtistico;
+        sel.appendChild(opt);
+      });
+    document.getElementById('modalDuoFila').classList.add('open');
+  }
+
+  function fecharModalDuoFila() {
+    document.getElementById('modalDuoFila').classList.remove('open');
+    duoFilaItemIdx = null;
+  }
+
+  async function confirmarDuoFila() {
+    const item = filaData[duoFilaItemIdx];
+    if (!item) return;
+    const sel     = document.getElementById('selectDuoFila');
+    const duoUid  = sel.value;
+    if (!duoUid) { mostrarToast('Selecione um cantor.'); return; }
+    const duoNome = sel.options[sel.selectedIndex].textContent;
+    if (modoOffline) {
+      item.duoUid = duoUid; item.duoNome = duoNome;
+      fecharModalDuoFila(); renderQueue(); salvarBackupLocal();
+    } else {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
+        .update({ duoUid, duoNome });
+      fecharModalDuoFila();
+    }
+    mostrarToast(`Duo: ${item.nomeArtistico} & ${duoNome}`);
+  }
+
+  async function removerDuoFila(itemId) {
+    if (modoOffline) {
+      const it = filaData.find(d => d.id === itemId);
+      if (it) { it.duoUid = null; it.duoNome = null; }
+      renderQueue(); salvarBackupLocal();
+    } else {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
+        .update({ duoUid: null, duoNome: null });
+    }
   }
 
   function buscarCatalogoModal() {
