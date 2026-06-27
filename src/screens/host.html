@@ -529,6 +529,18 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modalExpulsarCantor">
+  <div class="modal-box">
+    <h2>⚠️ Expulsar da Sessão</h2>
+    <p style="margin:12px 0 6px;font-size:.9rem;">Expulsar <strong id="expulsarCantorNome" style="color:var(--accent)"></strong> da sessão?</p>
+    <p style="font-size:.78rem;color:var(--danger);margin-bottom:16px;">O cantor será removido da lista e suas músicas na fila serão apagadas.</p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalExpulsarCantor()">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarExpulsaoCantor()">Expulsar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalExpulsar">
   <div class="modal-box">
     <h2>⚠️ Remover da Fila</h2>
@@ -938,6 +950,7 @@
           <div class="user-status">${u.modo === 'manual' ? 'Manual' : (ativo ? 'Online' : 'Sem sinal')}</div>
         </div>
         <button class="btn btn-secondary btn-sm" onclick="abrirModalMusicaIdx(${i})" title="Adicionar música" style="min-width:30px;">🎵</button>
+        <button class="btn btn-danger btn-sm" onclick="abrirModalExpulsarCantor(${i})" title="Expulsar da sessão" style="min-width:30px;">✕</button>
         <span class="${tagCls} user-badge">${tagTxt}</span>
       </div>`;
     }).join('');
@@ -964,7 +977,12 @@
     if (window.electronAPI) {
       const filePath = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
       if (filePath) {
-        window.electronAPI.playSong(filePath);
+        window.electronAPI.playerCommand(JSON.stringify({
+          cmd: 'play-confirmed', filePath,
+          musica: item.musica, artista: item.artista,
+          cantor: item.nomeArtistico, duo: item.duoNome || null,
+          photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
+        }));
       } else {
         alert(`Arquivo não encontrado: ${item.musica}\nVincule manualmente.`);
       }
@@ -999,6 +1017,45 @@
       });
     }
     await iniciarConfirmacaoProxima();
+  }
+
+  // ── Expulsar cantor da sessão ────────────────────────────
+  let expulsarCantorIdx = null;
+
+  function abrirModalExpulsarCantor(i) {
+    const u = presencasData[i];
+    if (!u) return;
+    expulsarCantorIdx = i;
+    document.getElementById('expulsarCantorNome').textContent = u.nomeArtistico;
+    document.getElementById('modalExpulsarCantor').classList.add('open');
+  }
+
+  function fecharModalExpulsarCantor() {
+    document.getElementById('modalExpulsarCantor').classList.remove('open');
+    expulsarCantorIdx = null;
+  }
+
+  async function confirmarExpulsaoCantor() {
+    const u = presencasData[expulsarCantorIdx];
+    fecharModalExpulsarCantor();
+    if (!u) return;
+    const uid = u.id || u.uid;
+    if (modoOffline) {
+      presencasData.splice(expulsarCantorIdx, 1);
+      filaData = filaData.filter(d => d.cantorUid !== uid);
+      renderUsers(); renderQueue(); salvarBackupLocal();
+    } else {
+      // Remove presença
+      await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(uid)
+        .update({ status: 'offline' });
+      // Remove músicas da fila
+      const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .where('cantorUid', '==', uid)
+        .where('status', 'in', ['aguardando', 'confirmando']).get();
+      const batch = db.batch();
+      filaSnap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
   }
 
   // ── Expulsar da fila ─────────────────────────────────────
