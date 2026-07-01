@@ -15,39 +15,147 @@ let catalogoLocal   = [];
 let servidorCatalogo= null;
 
 // ── Catálogo local ─────────────────────────────────────────
+
+// Retorna lista de fullPaths de arquivos com extensão em `exts`, recursivamente
+function listarArquivosRecursivo(dir, exts) {
+  const resultado = [];
+  try {
+    for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entrada.name);
+      if (entrada.isDirectory()) {
+        resultado.push(...listarArquivosRecursivo(fullPath, exts));
+      } else if (entrada.isFile() && exts.includes(path.extname(entrada.name).toLowerCase())) {
+        resultado.push(fullPath);
+      }
+    }
+  } catch(e) {
+    console.warn(`[FS] Erro ao ler ${dir}:`, e.message);
+  }
+  return resultado;
+}
+
 function construirCatalogo(folder) {
   if (!folder || !fs.existsSync(folder)) return [];
   const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
-  return fs.readdirSync(folder)
-    .filter(f => exts.includes(path.extname(f).toLowerCase()))
-    .map(f => {
-      const base   = path.basename(f, path.extname(f)).replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
-      const partes = base.split(" - ");
-      return {
-        artista:   partes.length >= 2 ? partes[0].trim() : "Desconhecido",
-        musica:    partes.length >= 2 ? partes.slice(1).join(" - ").trim() : base,
-        arquivo:   f,
-        disponivel: true
-      };
-    });
+  return listarArquivosRecursivo(folder, exts).map(fullPath => {
+    const base   = path.basename(fullPath, path.extname(fullPath)).replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
+    const partes = base.split(" - ");
+    return {
+      artista:   partes.length >= 2 ? partes[0].trim() : "Desconhecido",
+      musica:    partes.length >= 2 ? partes.slice(1).join(" - ").trim() : base,
+      arquivo:   path.relative(folder, fullPath),
+      disponivel: true
+    };
+  });
 }
+
+// ── Fotos de artistas ──────────────────────────────────────
+
+function pastaArtistas(folder) {
+  return path.join(folder, "artistas");
+}
+
+function fotoArtistaPath(folder, nome) {
+  const nomeSafe = nome.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "_";
+  return path.join(pastaArtistas(folder), nomeSafe, "photo.jpg");
+}
+
+let _fotoQueue        = [];
+let _fotoQueueRunning = false;
+
+async function processarFilaFotos(folder) {
+  if (_fotoQueueRunning) return;
+  _fotoQueueRunning = true;
+  while (_fotoQueue.length) {
+    const nome = _fotoQueue.shift();
+    await baixarFotoArtista(nome, folder);
+    await new Promise(r => setTimeout(r, 400));
+  }
+  _fotoQueueRunning = false;
+  console.log("[ARTISTA] Download de fotos concluído.");
+}
+
+async function baixarFotoArtista(nome, folder) {
+  const dest = fotoArtistaPath(folder, nome);
+  if (fs.existsSync(dest)) return;
+  try {
+    const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=musicArtist&limit=3`;
+    const searchResp = await net.fetch(searchUrl);
+    if (!searchResp.ok) return;
+    const data = await searchResp.json();
+    const results = data.results || [];
+    const match = results.find(r => r.artistName?.toLowerCase() === nome.toLowerCase()) || results[0];
+    if (!match?.artworkUrl100) return;
+
+    const imgUrl = match.artworkUrl100.replace("100x100bb", "600x600bb");
+    const imgResp = await net.fetch(imgUrl);
+    if (!imgResp.ok) return;
+
+    const buf = Buffer.from(await imgResp.arrayBuffer());
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, buf);
+    console.log(`[ARTISTA] ✓ ${nome}`);
+  } catch(e) {
+    console.warn(`[ARTISTA] Erro ${nome}:`, e.message);
+  }
+}
+
+function agendarDownloadFotos(folder) {
+  if (!folder || !fs.existsSync(folder)) return;
+  const artistas = [...new Set(catalogoLocal.map(s => s.artista).filter(Boolean))];
+  _fotoQueue = artistas.filter(nome => !fs.existsSync(fotoArtistaPath(folder, nome)));
+  if (_fotoQueue.length) {
+    console.log(`[ARTISTA] ${_fotoQueue.length} fotos para baixar`);
+    processarFilaFotos(folder);
+  }
+}
+
+// ── Servidor HTTP ──────────────────────────────────────────
 
 function iniciarServidorCatalogo() {
   if (servidorCatalogo) return;
   servidorCatalogo = http.createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    // Preflight para Private Network Access (Chrome/Firefox)
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
     if (req.url === "/catalogo") {
+      res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(catalogoLocal));
+
     } else if (req.url === "/ping") {
+      res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ ok: true, total: catalogoLocal.length }));
+
+    } else if (req.url.startsWith("/artista-foto/")) {
+      const folder = store.get("musicFolder", null);
+      if (!folder) { res.statusCode = 404; res.end(""); return; }
+      const nome = decodeURIComponent(req.url.slice("/artista-foto/".length));
+      const filePath = fotoArtistaPath(folder, nome);
+      if (fs.existsSync(filePath)) {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "max-age=86400");
+        fs.createReadStream(filePath).pipe(res);
+      } else {
+        res.statusCode = 404; res.end("");
+      }
+
     } else {
       res.statusCode = 404;
+      res.setHeader("Content-Type", "application/json");
       res.end("{}");
     }
   });
-  servidorCatalogo.listen(7432, "127.0.0.1", () => {
-    console.log(`[CATALOGO] Servidor HTTP local: http://127.0.0.1:7432 — ${catalogoLocal.length} músicas`);
+  servidorCatalogo.listen(7432, "0.0.0.0", () => {
+    console.log(`[CATALOGO] Servidor HTTP: 0.0.0.0:7432 — ${catalogoLocal.length} músicas`);
   });
 }
 
@@ -115,6 +223,7 @@ app.whenReady().then(() => {
   if (folder && fs.existsSync(folder)) {
     catalogoLocal = construirCatalogo(folder);
     startWatcher(folder);
+    agendarDownloadFotos(folder);
   }
   iniciarServidorCatalogo();
 });
@@ -134,6 +243,7 @@ ipcMain.handle("select-music-folder", async () => {
     store.set("musicFolder", folder);
     catalogoLocal = construirCatalogo(folder);
     startWatcher(folder);
+    agendarDownloadFotos(folder);
     console.log(`[CATALOGO] ${catalogoLocal.length} músicas carregadas de ${folder}`);
     return folder;
   }
@@ -146,6 +256,7 @@ ipcMain.handle("scan-music-folder", () => {
   const folder = store.get("musicFolder", null);
   if (folder) {
     catalogoLocal = construirCatalogo(folder);
+    agendarDownloadFotos(folder);
     console.log(`[CATALOGO] Varredura: ${catalogoLocal.length} músicas`);
     if (hostWindow) hostWindow.webContents.send("music-folder-changed");
   }
@@ -156,9 +267,10 @@ ipcMain.handle("list-music-files", () => {
   const folder = store.get("musicFolder", null);
   if (!folder || !fs.existsSync(folder)) return [];
   const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
-  return fs.readdirSync(folder)
-    .filter(f => exts.includes(path.extname(f).toLowerCase()))
-    .map(f => ({ name: f, fullPath: path.join(folder, f) }));
+  return listarArquivosRecursivo(folder, exts).map(fullPath => ({
+    name:     path.relative(folder, fullPath),
+    fullPath
+  }));
 });
 
 // ── IPC: Resolver arquivo ──────────────────────────────────
@@ -166,7 +278,7 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
   const folder = store.get("musicFolder", null);
   if (!folder) return null;
   const exts  = [".mp4", ".mkv", ".avi", ".webm"];
-  const files = fs.readdirSync(folder).filter(f => exts.includes(path.extname(f).toLowerCase()));
+  const files = listarArquivosRecursivo(folder, exts);
 
   // Links manuais primeiro
   const links = store.get("musicLinks", {});
@@ -180,8 +292,8 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
   }
 
   let melhor = null, melhorScore = 0;
-  for (const f of files) {
-    const base   = path.basename(f, path.extname(f)).replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
+  for (const fullPath of files) {
+    const base   = path.basename(fullPath, path.extname(fullPath)).replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
     const partes = base.split(" - ");
     let scoreArtista = 0, scoreMusica = 0;
     if (partes.length >= 2) {
@@ -192,7 +304,7 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
       scoreMusica  = similaridade(songName, base);
     }
     const score = (scoreArtista * 0.4) + (scoreMusica * 0.6);
-    if (score > melhorScore && score > 0.5) { melhorScore = score; melhor = path.join(folder, f); }
+    if (score > melhorScore && score > 0.5) { melhorScore = score; melhor = fullPath; }
   }
   console.log(`[RESOLVE] "${artist} - ${songName}" score=${melhorScore.toFixed(2)} → ${melhor}`);
   return melhor;
@@ -266,6 +378,30 @@ ipcMain.handle("fetch-image", async (_, url) => {
   } catch(e) {
     return null;
   }
+});
+
+// ── IPC: SoundTouch source para AudioWorklet ───────────────
+ipcMain.handle("get-soundtouch-src", () => {
+  try {
+    const p = require.resolve("soundtouchjs/dist/soundtouch.js");
+    // Remove export {} para funcionar em contexto não-módulo do AudioWorklet
+    return fs.readFileSync(p, "utf8").replace(/^export\s*\{[^}]*\};\s*$/m, "");
+  } catch(e) {
+    console.error("[MAIN] soundtouchjs não encontrado:", e.message);
+    return "";
+  }
+});
+
+// ── IPC: IP local da máquina ───────────────────────────────
+ipcMain.handle("get-local-ip", () => {
+  const { networkInterfaces } = require("os");
+  const nets = networkInterfaces();
+  for (const ifaces of Object.values(nets)) {
+    for (const iface of ifaces) {
+      if (iface.family === "IPv4" && !iface.internal) return iface.address;
+    }
+  }
+  return "127.0.0.1";
 });
 
 // ── IPC: QR Code ───────────────────────────────────────────

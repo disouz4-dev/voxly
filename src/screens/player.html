@@ -548,54 +548,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let compNode   = null;
   let currentSemitons = 0;
 
-  const PITCH_WORKLET_CODE = `
-const GRAIN=2048,HOP=512,BUF=32768;
-class PitchProcessor extends AudioWorkletProcessor{
-  constructor(){
-    super();
-    this._r=1.0;
-    this._st=[0,1].map(()=>({inB:new Float32Array(BUF),outB:new Float32Array(BUF),wr:BUF>>1,gr:(BUF>>1)-GRAIN,gwo:(BUF>>1)+GRAIN,ord:BUF>>1}));
-    this._win=new Float32Array(GRAIN);
-    for(let i=0;i<GRAIN;i++)this._win[i]=0.5*(1-Math.cos(2*Math.PI*i/(GRAIN-1)));
-    this.port.onmessage=e=>{if(e.data.ratio!=null)this._r=e.data.ratio;};
-  }
-  _ch(s,inp,out){
-    const n=inp.length,M=BUF,w=this._win;
-    for(let i=0;i<n;i++)s.inB[(s.wr+i)&(M-1)]=inp[i];
-    s.wr+=n;
-    if(s.wr-s.gr>M>>2)s.gr=s.wr-GRAIN;
-    if(s.wr-Math.floor(s.gr)<GRAIN){out.fill(0);return;}
-    while(s.gwo<=s.ord+GRAIN){
-      const g0=Math.floor(s.gr);
-      if(s.wr-g0<GRAIN)break;
-      for(let k=0;k<GRAIN;k++)s.outB[(s.gwo+k)&(M-1)]+=s.inB[(g0+k)&(M-1)]*w[k];
-      s.gr+=HOP*this._r;s.gwo+=HOP;
-    }
-    for(let i=0;i<n;i++)out[i]=s.outB[(s.ord+i)&(M-1)];
-    for(let i=0;i<n;i++)s.outB[(s.ord+i)&(M-1)]=0;
-    s.ord+=n;
-  }
-  process(inputs,outputs){
-    const nch=Math.min((inputs[0]||[]).length,(outputs[0]||[]).length,2);
-    for(let c=0;c<nch;c++)if(inputs[0][c]&&outputs[0][c])this._ch(this._st[c],inputs[0][c],outputs[0][c]);
-    return true;
-  }
-}
-registerProcessor('pitch-processor',PitchProcessor);
-`;
 
   async function initAudio() {
     if (audioCtx) { audioCtx.resume(); return; }
     audioCtx = new AudioContext();
 
-    const blob = new Blob([PITCH_WORKLET_CODE], { type: 'application/javascript' });
-    const url  = URL.createObjectURL(blob);
-    try { await audioCtx.audioWorklet.addModule(url); } catch(e) { console.warn('[AUDIO] worklet:', e); }
-    URL.revokeObjectURL(url);
-
-    pitchNode = new AudioWorkletNode(audioCtx, 'pitch-processor', {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]
-    });
+    const workletUrl = new URL('./rubberband-processor.js', window.location.href).href;
+    try { await audioCtx.audioWorklet.addModule(workletUrl); } catch(e) { console.warn('[AUDIO] rubberband worklet:', e); }
 
     compNode = audioCtx.createDynamicsCompressor();
     compNode.threshold.value = -16;
@@ -603,18 +562,38 @@ registerProcessor('pitch-processor',PitchProcessor);
     compNode.ratio.value     = 8;
     compNode.attack.value    = 0.005;
     compNode.release.value   = 0.1;
-
-    pitchNode.connect(compNode);
     compNode.connect(audioCtx.destination);
 
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
     srcNode = audioCtx.createMediaElementSource(video);
+    pitchNode = criarRubberbandNode();
     srcNode.connect(pitchNode);
+    pitchNode.connect(compNode);
+  }
+
+  function criarRubberbandNode() {
+    const node = new AudioWorkletNode(audioCtx, 'rubberband-processor', {
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]
+    });
+    node.port.postMessage(JSON.stringify(["tempo", 1.0]));
+    node.port.postMessage(JSON.stringify(["quality", true]));
+    node.port.postMessage(JSON.stringify(["pitch", Math.pow(2, currentSemitons / 12)]));
+    return node;
+  }
+
+  function resetarPitchNode() {
+    if (!pitchNode || !srcNode || !compNode || !audioCtx) return;
+    try { srcNode.disconnect(pitchNode); } catch(e) {}
+    try { pitchNode.disconnect(compNode); } catch(e) {}
+    try { pitchNode.port.postMessage(JSON.stringify(["close"])); } catch(e) {}
+    pitchNode = criarRubberbandNode();
+    srcNode.connect(pitchNode);
+    pitchNode.connect(compNode);
   }
 
   function setSemitons(n) {
     currentSemitons = n || 0;
-    if (pitchNode) pitchNode.port.postMessage({ ratio: Math.pow(2, currentSemitons / 12) });
+    if (pitchNode) pitchNode.port.postMessage(JSON.stringify(["pitch", Math.pow(2, currentSemitons / 12)]));
   }
 
   function toFileUrl(filePath) {
@@ -781,6 +760,12 @@ registerProcessor('pitch-processor',PitchProcessor);
     "../assets/intervalo/Pausa de Karaokê.mp3"
   ];
   let intervaloIdx    = Math.floor(Math.random() * intervaloFaixas.length);
+  function proximaFaixaIntervalo() {
+    if (intervaloFaixas.length <= 1) return;
+    let next;
+    do { next = Math.floor(Math.random() * intervaloFaixas.length); } while (next === intervaloIdx);
+    intervaloIdx = next;
+  }
   let intervaloHabilitado = true;
   let idleAtivo = true; // true enquanto idle screen estiver visível
 
@@ -797,7 +782,7 @@ registerProcessor('pitch-processor',PitchProcessor);
   }
 
   intervaloAudio.addEventListener("ended", () => {
-    intervaloIdx = (intervaloIdx + 1) % intervaloFaixas.length;
+    proximaFaixaIntervalo();
     tocarIntervalo();
   });
 
@@ -948,6 +933,7 @@ registerProcessor('pitch-processor',PitchProcessor);
     video.removeAttribute("src");
     video.load();
     await initAudio();
+    resetarPitchNode();
     setSemitons(semitons !== undefined ? semitons : currentSemitons);
     video.src = toFileUrl(filePath);
     video.load();
@@ -990,7 +976,7 @@ registerProcessor('pitch-processor',PitchProcessor);
           // Música de fundo a partir do segundo 30 — volume moderado
           if (dados.filePath) {
             previewAudio.src    = toFileUrl(dados.filePath) + "#t=30";
-            previewAudio.volume = 0.80;
+            previewAudio.volume = 1.0;
             previewAudio.play().catch(() => {});
 
             // barra de progresso da música (15s visíveis)

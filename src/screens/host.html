@@ -494,11 +494,15 @@
     </div>
   </div>
 
-  <!-- PAINEL DIREITO: CANTORES -->
+  <!-- PAINEL DIREITO: CANTORES + HISTÓRICO -->
   <div class="panel">
     <div class="panel-header">Cantores Online</div>
-    <div class="panel-body" id="users-list">
+    <div class="panel-body" id="users-list" style="flex:1;min-height:0;">
       <div class="empty">Nenhum cantor conectado.</div>
+    </div>
+    <div class="panel-header" style="border-top:1px solid #ffffff12;">Histórico da Sessão</div>
+    <div class="panel-body" id="historico-sessao-list" style="max-height:260px;">
+      <div class="empty">Nenhuma música ainda.</div>
     </div>
   </div>
 
@@ -703,6 +707,8 @@
           escutarFila();
           escutarPresencas();
           escutarConfirmacoes();
+          escutarHistorico();
+          sincronizarCatalogoGlobal();
           return;
         }
       } catch(e) {
@@ -748,6 +754,8 @@
     escutarFila();
     escutarPresencas();
     escutarConfirmacoes();
+    escutarHistorico();
+    sincronizarCatalogoGlobal();
 
     // Notifica player
     if (window.electronAPI) {
@@ -921,6 +929,14 @@
         : '';
       const dragHandle = isDraggable ? `<span class="drag-handle" title="Arrastar para reordenar">⠿</span>` : '';
 
+      const sem = item.semitons || 0;
+      const semLabel = sem === 0 ? 'Original' : (sem > 0 ? `+${sem}` : `${sem}`) + ' st';
+      const pitchCtrl = `<div style="display:flex;align-items:center;gap:3px;margin-left:4px;">
+        <button class="btn btn-ghost btn-sm" onclick="ajustarPitchFila(${i},-1)" style="padding:1px 7px;font-size:.85rem;">−</button>
+        <span style="font-size:.75rem;font-weight:700;color:var(--accent);min-width:54px;text-align:center;">${semLabel}</span>
+        <button class="btn btn-ghost btn-sm" onclick="ajustarPitchFila(${i},+1)" style="padding:1px 7px;font-size:.85rem;">+</button>
+      </div>`;
+
       const dragAttrs = isDraggable
         ? `draggable="true" ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,${i})" ondragend="onDragEnd()"`
         : '';
@@ -933,7 +949,7 @@
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
-          <div class="queue-actions">${playBtn}${restartBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}</div>
+          <div class="queue-actions">${playBtn}${restartBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
         </div>
         ${badge}
       </div>`;
@@ -944,22 +960,12 @@
   function escutarPresencas() {
     db.collection('sessoes').doc(SESSAO_ID).collection('presencas')
       .onSnapshot(snap => {
-        const agora = Date.now();
         presencasData = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(d => {
-            if (d.status === 'offline') return false;
-            if (d.modo === 'manual') return true;
-            if (d.ultimoHeartbeat) {
-              const ultimo = d.ultimoHeartbeat.toDate ? d.ultimoHeartbeat.toDate().getTime() : 0;
-              if (agora - ultimo > 300000) return false; // 5 minutos
-            }
-            return true;
-          });
+          .filter(d => d.status !== 'offline');
         renderUsers();
         salvarBackupLocal();
       });
-    setInterval(renderUsers, 15000);
   }
 
   function renderUsers() {
@@ -968,14 +974,10 @@
       el.innerHTML = '<div class="empty">Nenhum cantor conectado.</div>';
       return;
     }
-    const agora = Date.now();
     el.innerHTML = presencasData.map((u, i) => {
-      const online = u.status === 'aqui';
       const prioridade = !u.primeiraMusicaCantada;
-      const ultimo = u.ultimoHeartbeat?.toDate ? u.ultimoHeartbeat.toDate().getTime() : 0;
-      const ativo  = agora - ultimo < 300000;
-      const tagCls = u.modo === 'manual' ? 'tag tag-manual' : (online && ativo ? 'tag tag-online' : 'tag tag-away');
-      const tagTxt = u.modo === 'manual' ? '👤 Manual' : (online && ativo ? '✅ Aqui' : '🕐 Ausente');
+      const tagCls = u.modo === 'manual' ? 'tag tag-manual' : 'tag tag-online';
+      const tagTxt = u.modo === 'manual' ? '👤 Manual' : '✅ Online';
       const avatarHtml = u.photoURL
         ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
         : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
@@ -983,7 +985,7 @@
         ${avatarHtml}
         <div style="flex:1;">
           <div class="user-name">${escHtml(u.nomeArtistico||'-')} ${prioridade ? '☕' : ''}</div>
-          <div class="user-status">${u.modo === 'manual' ? 'Manual' : (ativo ? 'Online' : 'Sem sinal')}</div>
+          <div class="user-status">${u.modo === 'manual' ? 'Manual' : 'Online'}</div>
         </div>
         <button class="btn btn-secondary btn-sm" onclick="abrirModalMusicaIdx(${i})" title="Adicionar música" style="min-width:30px;">🎵</button>
         <button class="btn btn-danger btn-sm" onclick="abrirModalExpulsarCantor(${i})" title="Expulsar da sessão" style="min-width:30px;">✕</button>
@@ -1073,11 +1075,12 @@
 
     await itemRef.update({ status: 'pulada' });
     if (item?.cantorUid) {
-      await db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
+      db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
         cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
         musica: item.musica, artista: item.artista,
         status: 'pulada', horario: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      }).catch(e => console.error('[HOST] Erro histórico pulada:', e));
+      await promoverEspera(item.cantorUid);
     }
     await iniciarConfirmacaoProxima();
   }
@@ -1111,12 +1114,14 @@
       // Remove presença
       await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(uid)
         .update({ status: 'offline' });
-      // Remove músicas da fila
+      // Remove músicas da fila (query campo único para evitar índice composto)
       const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-        .where('cantorUid', '==', uid)
-        .where('status', 'in', ['aguardando', 'confirmando']).get();
+        .where('cantorUid', '==', uid).get();
       const batch = db.batch();
-      filaSnap.docs.forEach(d => batch.delete(d.ref));
+      filaSnap.docs.forEach(d => {
+        const s = d.data().status;
+        if (!['cantada', 'pulada', 'cancelada'].includes(s)) batch.delete(d.ref);
+      });
       await batch.commit();
     }
   }
@@ -1225,7 +1230,8 @@
       await itemRef.update({ status: 'cantada' });
 
       if (item?.cantorUid) {
-        const [,, esperaSnap] = await Promise.all([
+        // Histórico — fire and forget, não bloqueia promoção de espera
+        Promise.all([
           db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
             cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
             musica: item.musica, artista: item.artista,
@@ -1237,24 +1243,32 @@
             duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
             status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
           }),
-          db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-            .where('cantorUid', '==', item.cantorUid)
-            .where('slot', '==', 'espera')
-            .where('status', '==', 'aguardando')
-            .limit(1).get(),
           db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
             .update({ primeiraMusicaCantada: true }),
-        ]);
+        ]).catch(e => console.error('[HOST] Erro histórico:', e));
 
-        // Promove música em espera
-        if (!esperaSnap.empty) {
-          const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-            .where('status', '==', 'aguardando').get();
-          await esperaSnap.docs[0].ref.update({ slot: 'ativa', ordemFila: filaSnap.size + 1 });
-        }
+        // Promoção de espera — executa independente dos writes de histórico
+        await promoverEspera(item.cantorUid);
       }
     } catch(e) {
       console.error('[HOST] Erro em marcarCantada:', e);
+    }
+  }
+
+  // ── Promover música em espera → fila principal ───────────
+  async function promoverEspera(cantorUid) {
+    if (!cantorUid || !SESSAO_ID) return;
+    try {
+      const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .where('cantorUid', '==', cantorUid).get();
+      const doc = snap.docs.find(d => d.data().slot === 'espera' && d.data().status === 'aguardando');
+      if (!doc) return;
+      const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .where('status', '==', 'aguardando').get();
+      await doc.ref.update({ slot: 'ativa', ordemFila: filaSnap.size + 1 });
+      console.log('[HOST] Música em espera promovida para fila principal.');
+    } catch(e) {
+      console.error('[HOST] Erro ao promover espera:', e);
     }
   }
 
@@ -1297,12 +1311,18 @@
     clearTimeout(timerConfirmacao);
     timerConfirmacao = setTimeout(async () => {
       const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id).get();
-      if (snap.data()?.status === 'confirmando') {
-        // Auto-confirma após 15s: cantor sobe independente de confirmar no celular
+      const statusAtual = snap.data()?.status;
+      if (statusAtual === 'confirmando') {
+        // Auto-confirma: cantor não respondeu, sobe mesmo assim
         await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
           .update({ status: 'confirmado' });
         if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
+      } else if (statusAtual === 'aguardando') {
+        // Cantor recusou e voltou para a fila — para o preview e avança para o próximo
+        if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
+        await iniciarConfirmacaoProxima();
       }
+      // Se 'pronto', 'tocando', 'cancelada': não faz nada
     }, 15000);
   }
 
@@ -1403,6 +1423,25 @@
     const el = document.getElementById('tom-display');
     if (el) el.textContent = 'Original';
   }
+
+  async function ajustarPitchFila(idx, delta) {
+    const item = filaData[idx];
+    if (!item) return;
+    const novoSem = Math.max(-6, Math.min(6, (item.semitons || 0) + delta));
+    try {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
+        .update({ semitons: novoSem });
+    } catch(e) {
+      console.error('[HOST] Erro ao ajustar pitch na fila:', e); return;
+    }
+    if (item.status === 'tocando') {
+      tomAtual = novoSem;
+      const td = document.getElementById('tom-display');
+      if (td) td.textContent = novoSem === 0 ? 'Original' : (novoSem > 0 ? `+${novoSem}` : `${novoSem}`) + ' st';
+      if (window.electronAPI)
+        window.electronAPI.playerCommand(JSON.stringify({ cmd: 'set-pitch', semitons: novoSem }));
+    }
+  }
   async function skipSong() {
     if (!SESSAO_ID) return;
     if (currentSong) { await pularMusica(currentSong.id); return; }
@@ -1419,6 +1458,40 @@
     t.textContent = msg;
     t.classList.add('show');
     setTimeout(() => t.classList.remove('show'), dur);
+  }
+
+  // ── Histórico da sessão ───────────────────────────────────
+  function escutarHistorico() {
+    if (!SESSAO_ID) return;
+    db.collection('sessoes').doc(SESSAO_ID).collection('historico')
+      .onSnapshot(snap => {
+        const el = document.getElementById('historico-sessao-list');
+        if (!el) return;
+        if (snap.empty) {
+          el.innerHTML = '<div class="empty">Nenhuma música ainda.</div>';
+          return;
+        }
+        const items = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const ta = a.horario?.toDate ? a.horario.toDate().getTime() : 0;
+            const tb = b.horario?.toDate ? b.horario.toDate().getTime() : 0;
+            return tb - ta; // mais recente primeiro
+          });
+        el.innerHTML = items.map(d => {
+          const hora = d.horario?.toDate
+            ? d.horario.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            : '—';
+          const isCantada = d.status === 'cantada';
+          return `<div style="padding:7px 10px;border-bottom:1px solid #ffffff08;font-size:.76rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+              <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escHtml(d.musica||'—')}</span>
+              <span style="flex-shrink:0;font-size:.68rem;font-weight:700;color:${isCantada ? 'var(--ok)' : 'var(--warn)'};">${isCantada ? '✓' : '✗'}</span>
+            </div>
+            <div style="color:var(--muted);font-size:.7rem;margin-top:2px;">${escHtml(d.nomeArtistico||'—')} · ${hora}</div>
+          </div>`;
+        }).join('');
+      });
   }
 
   // ── Backup local ─────────────────────────────────────────
@@ -1662,12 +1735,39 @@
     if (!window.electronAPI) return;
     const n = await window.electronAPI.scanMusicFolder();
     alert(`Varredura concluída: ${n} músicas encontradas.`);
+    sincronizarCatalogoGlobal();
+  }
+
+  async function sincronizarCatalogoGlobal() {
+    try {
+      const resp = await fetch('http://127.0.0.1:7432/catalogo');
+      if (!resp.ok) return;
+      const songs = await resp.json();
+      if (!songs.length) return;
+      // Verifica se mudou antes de escrever
+      const meta = await db.collection('configuracoes').doc('catalogo').get();
+      if (meta.exists && meta.data().total === songs.length) return;
+      // Guarda só os campos necessários para o catálogo (reduz tamanho)
+      const mini = songs.map(s => ({
+        artista:   s.artista   || '',
+        musica:    s.musica    || '',
+        disponivel: s.disponivel !== false
+      }));
+      await db.collection('configuracoes').doc('catalogo').set({
+        songs: mini,
+        total: songs.length,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      console.log(`[HOST] Catálogo global sincronizado: ${songs.length} músicas`);
+    } catch(e) {
+      console.warn('[HOST] Erro ao sincronizar catálogo global:', e);
+    }
   }
 
   // ── Electron listeners ────────────────────────────────────
   if (window.electronAPI) {
     window.electronAPI.onMusicFolderChanged(() => {
-      console.log('Pasta atualizada');
+      sincronizarCatalogoGlobal();
     });
     let processandoFim = false;
     window.electronAPI.onSongEnded(async () => {
