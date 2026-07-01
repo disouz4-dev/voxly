@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voxly - Cadastro</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #000; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .container { background: rgba(0,0,0,0.7); padding: 30px; border-radius: 15px; max-width: 500px; width: 100%; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+    .logo-container { display: flex; justify-content: center; margin-bottom: 20px; height: 100px; }
+    .logo-container img { max-height: 100%; display: block; }
+
+    /* Avatar preview */
+    .avatar-preview {
+      display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;
+    }
+    .avatar-circle {
+      width: 90px; height: 90px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; font-weight: 700; color: #fff;
+      margin-bottom: 8px; overflow: hidden; border: 3px solid #333;
+    }
+    .avatar-circle img { width: 100%; height: 100%; object-fit: cover; }
+    .avatar-label { font-size: 0.8rem; color: #888; }
+
+    h2 { text-align: center; margin-bottom: 20px; font-size: 1.3rem; }
+    .field { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; color: #bbb; font-size: 0.9rem; }
+    input[type=text], input[type=date], select {
+      width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #555;
+      background: rgba(255,255,255,0.05); color: #fff; font-size: 1rem;
+    }
+    input[type=text]:focus, input[type=date]:focus, select:focus { outline: none; border-color: #e040fb; }
+    select option { background: #222; }
+    .genre-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
+    .genre-btn {
+      background: #333; color: #fff; border: 1px solid #555;
+      border-radius: 20px; padding: 7px 14px; cursor: pointer;
+      font-size: 0.85rem; transition: all 0.2s;
+    }
+    .genre-btn:hover { background: #444; }
+    .genre-btn.selected { background: #4285f4; border-color: #4285f4; }
+    .genre-count { font-size: 0.78rem; color: #888; margin-top: 5px; }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; color: #bbb; cursor: pointer; }
+    .checkbox-label input { width: auto; }
+    .btn { width: 100%; padding: 12px; background: #4285f4; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; margin-top: 10px; transition: background 0.2s; }
+    .btn:hover { background: #3367d6; }
+    .btn.back { background: #555; }
+    .btn.back:hover { background: #444; }
+    .error { color: #ff5555; margin-top: 5px; font-size: 0.85rem; }
+    .footer { margin-top: 20px; text-align: center; font-size: 0.85rem; color: #777; }
+    .footer a { color: #e040fb; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-container">
+      <img src="assets/logo/logo_voxly.png" alt="Voxly Logo">
+    </div>
+    <h2>Criar Perfil de Cantor(a)</h2>
+
+    <div class="avatar-preview">
+      <div class="avatar-circle" id="avatarCircle">?</div>
+      <span class="avatar-label" id="avatarLabel">Sua foto aparecerá aqui</span>
+    </div>
+
+    <div class="field">
+      <label for="nome">Nome Completo</label>
+      <input type="text" id="nome" placeholder="Seu nome completo">
+    </div>
+    <div class="field">
+      <label for="nomeArtistico">Nome Artístico</label>
+      <input type="text" id="nomeArtistico" placeholder="Como quer ser chamado(a) no palco">
+    </div>
+
+    <div class="field">
+      <label>Gêneros Musicais <span style="color:#888;font-size:0.8rem;">(máx. 5)</span></label>
+      <div class="genre-container" id="genreContainer">
+        <button type="button" class="genre-btn" data-genre="Pop">Pop</button>
+        <button type="button" class="genre-btn" data-genre="Rock">Rock</button>
+        <button type="button" class="genre-btn" data-genre="Samba">Samba</button>
+        <button type="button" class="genre-btn" data-genre="MPB">MPB</button>
+        <button type="button" class="genre-btn" data-genre="Funk">Funk</button>
+        <button type="button" class="genre-btn" data-genre="Sertanejo">Sertanejo</button>
+        <button type="button" class="genre-btn" data-genre="Pagode">Pagode</button>
+        <button type="button" class="genre-btn" data-genre="Forró">Forró</button>
+        <button type="button" class="genre-btn" data-genre="Axé">Axé</button>
+        <button type="button" class="genre-btn" data-genre="Eletrônica">Eletrônica</button>
+        <button type="button" class="genre-btn" data-genre="Hip-Hop">Hip-Hop</button>
+        <button type="button" class="genre-btn" data-genre="Jazz">Jazz</button>
+        <button type="button" class="genre-btn" data-genre="Reggaeton">Reggaeton</button>
+        <button type="button" class="genre-btn" data-genre="Country">Country</button>
+        <button type="button" class="genre-btn" data-genre="Blues">Blues</button>
+        <button type="button" class="genre-btn" data-genre="R&B">R&B</button>
+        <button type="button" class="genre-btn" data-genre="Soul">Soul</button>
+        <button type="button" class="genre-btn" data-genre="Clássico">Clássico</button>
+        <button type="button" class="genre-btn" data-genre="Reggae">Reggae</button>
+        <button type="button" class="genre-btn" data-genre="Metal">Metal</button>
+        <button type="button" class="genre-btn" data-genre="Gospel">Gospel</button>
+        <button type="button" class="genre-btn" data-genre="Outros">Outros</button>
+      </div>
+      <div class="genre-count" id="genreCount">0 de 5 selecionados</div>
+      <div id="genreError" class="error"></div>
+    </div>
+
+    <div class="field">
+      <label for="genderIdentity">Identidade de Gênero</label>
+      <select id="genderIdentity">
+        <option value="">Prefiro não informar</option>
+        <option value="homem">Homem</option>
+        <option value="mulher">Mulher</option>
+        <option value="nao-binario">Não-Binário</option>
+        <option value="transgenero-masc">Homem Transgênero</option>
+        <option value="transgenero-fem">Mulher Transgênero</option>
+        <option value="genero-fluido">Gênero Fluido</option>
+        <option value="outro">Outro</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="birthdate">Data de Nascimento</label>
+      <input type="date" id="birthdate">
+    </div>
+    <div class="field">
+      <label class="checkbox-label">
+        <input type="checkbox" id="showAge"> Mostrar idade no perfil
+      </label>
+    </div>
+
+    <button id="cadastrar" class="btn">Cadastrar</button>
+    <button id="voltar" class="btn back">Voltar</button>
+    <div id="msg" class="error" style="text-align:center;margin-top:10px;"></div>
+
+    <footer class="footer">
+      <a href="https://github.com/dim-dev/voxly-karaoke" target="_blank">Código Fonte</a> • © 2026 Voxly
+    </footer>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyB5sPKpmPVWDDhwprU8TB0Bn0N0WSiafoI",
+      authDomain: "voxly-karaoke.firebaseapp.com",
+      projectId: "voxly-karaoke",
+      storageBucket: "voxly-karaoke.firebasestorage.app",
+      messagingSenderId: "689541919299",
+      appId: "1:689541919299:web:92e70bbd3a1a2709d5daf6"
+    });
+
+    const auth = firebase.auth();
+    const db   = firebase.firestore();
+
+    // Cores para avatar por iniciais
+    const avatarColors = ['#e040fb','#7c4dff','#4285f4','#00bcd4','#00e676','#ff9100','#ff5252'];
+    function getAvatarColor(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      return avatarColors[Math.abs(hash) % avatarColors.length];
+    }
+    function getInitials(name) {
+      return name.trim().split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || '?';
+    }
+
+    // Atualiza preview do avatar
+    let currentUser = null;
+    auth.onAuthStateChanged(u => {
+      if (!u) { window.location.href = '/index.html'; return; }
+      currentUser = u;
+      updateAvatarPreview('');
+    });
+
+    const nomeArtisticoInput = document.getElementById('nomeArtistico');
+    nomeArtisticoInput.addEventListener('input', () => updateAvatarPreview(nomeArtisticoInput.value));
+
+    function updateAvatarPreview(nomeArtistico) {
+      const circle = document.getElementById('avatarCircle');
+      const label  = document.getElementById('avatarLabel');
+
+      if (currentUser && currentUser.photoURL) {
+        circle.innerHTML = `<img src="${currentUser.photoURL}" alt="foto">`;
+        label.textContent = 'Foto do Google';
+      } else if (nomeArtistico.trim()) {
+        const initials = getInitials(nomeArtistico);
+        const color    = getAvatarColor(nomeArtistico);
+        circle.innerHTML = initials;
+        circle.style.background = color;
+        label.textContent = 'Avatar com suas iniciais';
+      } else {
+        circle.innerHTML = '?';
+        circle.style.background = '#333';
+        label.textContent = 'Digite seu nome artístico';
+      }
+    }
+
+    // Gêneros musicais
+    const genreContainer = document.getElementById('genreContainer');
+    const genreError     = document.getElementById('genreError');
+    const genreCount     = document.getElementById('genreCount');
+
+    genreContainer.addEventListener('click', e => {
+      if (!e.target.classList.contains('genre-btn')) return;
+      const btn = e.target;
+      const selected = document.querySelectorAll('.genre-btn.selected');
+      if (btn.classList.contains('selected')) {
+        btn.classList.remove('selected');
+        genreError.textContent = '';
+      } else if (selected.length < 5) {
+        btn.classList.add('selected');
+        genreError.textContent = '';
+      } else {
+        genreError.textContent = 'Selecione no máximo 5 gêneros.';
+      }
+      genreCount.textContent = document.querySelectorAll('.genre-btn.selected').length + ' de 5 selecionados';
+    });
+
+    // Cadastrar
+    document.getElementById('cadastrar').addEventListener('click', async () => {
+      const nome          = document.getElementById('nome').value.trim();
+      const nomeArtistico = nomeArtisticoInput.value.trim();
+      const gender        = document.getElementById('genderIdentity').value;
+      const birthdate     = document.getElementById('birthdate').value;
+      const showAge       = document.getElementById('showAge').checked;
+      const msg           = document.getElementById('msg');
+      const selectedGenres= [...document.querySelectorAll('.genre-btn.selected')].map(b => b.dataset.genre);
+
+      if (!nome || !nomeArtistico || !birthdate) {
+        msg.textContent = 'Nome, nome artístico e data de nascimento são obrigatórios.';
+        return;
+      }
+      if (selectedGenres.length === 0) {
+        genreError.textContent = 'Selecione ao menos um gênero musical.';
+        return;
+      }
+
+      const user = auth.currentUser;
+      if (!user) { msg.textContent = 'Usuário não autenticado.'; return; }
+
+      // Define photoURL: foto Google ou avatar em base64
+      let photoURL = user.photoURL || null;
+      if (!photoURL) {
+        // Gera avatar SVG com iniciais
+        const initials = getInitials(nomeArtistico);
+        const color    = getAvatarColor(nomeArtistico);
+        photoURL = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" rx="50" fill="${encodeURIComponent(color)}"/><text x="50" y="50" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="40" font-weight="bold" fill="white">${initials}</text></svg>`;
+      }
+
+      const btn = document.getElementById('cadastrar');
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+
+      try {
+        await db.collection('cantores').doc(user.uid).set({
+          nomeCompleto:   nome,
+          nomeArtistico:  nomeArtistico,
+          generos:        selectedGenres,
+          genderIdentity: gender,
+          birthDate:      firebase.firestore.Timestamp.fromDate(new Date(birthdate)),
+          showAge:        showAge,
+          photoURL:       photoURL,
+          email:          user.email,
+          createdAt:      firebase.firestore.FieldValue.serverTimestamp()
+        });
+        window.location.href = '/profile.html';
+      } catch(e) {
+        console.error(e);
+        msg.textContent = e.message || 'Falha ao cadastrar.';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Cadastrar';
+      }
+    });
+
+    document.getElementById('voltar').addEventListener('click', () => {
+      window.location.href = '/index.html';
+    });
+  </script>
+</body>
+</html>

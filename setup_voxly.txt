@@ -1,0 +1,1525 @@
+# ============================================================
+# Voxly - Script de Setup Completo
+# Para rodar no Antigravity (PowerShell)
+# ============================================================
+# PRE-REQUISITOS (instalar antes de rodar este script):
+#   - Node.js 18+ (https://nodejs.org)
+#   - Git (https://git-scm.com)
+#   - Uma conta no Firebase (https://console.firebase.google.com)
+# ============================================================
+
+param(
+    [string]$ProjectPath = "$env:USERPROFILE\Voxly"
+)
+
+$ErrorActionPreference = "Stop"
+
+function Write-Step($msg) {
+    Write-Host "`n>>> $msg" -ForegroundColor Cyan
+}
+
+function Write-OK($msg) {
+    Write-Host "  [OK] $msg" -ForegroundColor Green
+}
+
+function Write-Warn($msg) {
+    Write-Host "  [!] $msg" -ForegroundColor Yellow
+}
+
+# ============================================================
+# 1. CRIAR ESTRUTURA DE PASTAS
+# ============================================================
+Write-Step "Criando estrutura do projeto em $ProjectPath"
+
+$dirs = @(
+    "$ProjectPath",
+    "$ProjectPath\app",
+    "$ProjectPath\app\src",
+    "$ProjectPath\app\src\screens",
+    "$ProjectPath\app\src\components",
+    "$ProjectPath\app\src\firebase",
+    "$ProjectPath\app\src\assets",
+    "$ProjectPath\app\src\assets\fonts",
+    "$ProjectPath\app\src\assets\icons",
+    "$ProjectPath\web",
+    "$ProjectPath\web\public",
+    "$ProjectPath\web\src",
+    "$ProjectPath\musicas"
+)
+
+foreach ($dir in $dirs) {
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+}
+Write-OK "Pastas criadas"
+
+# ============================================================
+# 2. package.json DO APP ELECTRON
+# ============================================================
+Write-Step "Criando package.json do app Electron"
+
+@'
+{
+  "name": "voxly",
+  "version": "1.0.0",
+  "description": "Voxly - Sistema de fila para karaoke com QR Code",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "firebase": "^10.12.0",
+    "qrcode": "^1.5.3",
+    "chokidar": "^3.5.3",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.voxly.app",
+    "productName": "Voxly",
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icons/icon.ico"
+    },
+    "files": ["src/**/*", "package.json"],
+    "extraResources": [
+      { "from": "musicas", "to": "musicas", "filter": ["**/*"] }
+    ]
+  }
+}
+'@ | Set-Content -Path "$ProjectPath\app\package.json" -Encoding UTF8
+
+Write-OK "package.json criado"
+
+# ============================================================
+# 3. MAIN PROCESS (main.js) - Electron
+# ============================================================
+Write-Step "Criando main.js (processo principal Electron)"
+
+@'
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const path = require("path");
+const Store = require("electron-store");
+const chokidar = require("chokidar");
+const fs = require("fs");
+
+const store = new Store();
+
+let hostWindow = null;
+let playerWindow = null;
+let musicWatcher = null;
+
+// --- Criar janela HOST ----------------------------------------
+function createHostWindow() {
+  hostWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 1024,
+    minHeight: 700,
+    title: "Voxly - Gerencia",
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+  hostWindow.loadFile(path.join(__dirname, "screens", "host.html"));
+  hostWindow.on("closed", () => {
+    hostWindow = null;
+    app.quit();
+  });
+}
+
+// --- Criar janela PLAYER --------------------------------------
+function createPlayerWindow() {
+  playerWindow = new BrowserWindow({
+    width: 1920,
+    height: 1080,
+    title: "Voxly - Palco",
+    fullscreenable: true,
+    frame: false,
+    backgroundColor: "#000000",
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+  playerWindow.loadFile(path.join(__dirname, "screens", "player.html"));
+  playerWindow.on("closed", () => { playerWindow = null; });
+}
+
+app.whenReady().then(() => {
+  createHostWindow();
+  createPlayerWindow();
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
+
+// --- IPC: Selecionar pasta de musicas -------------------------
+ipcMain.handle("select-music-folder", async () => {
+  const result = await dialog.showOpenDialog(hostWindow, {
+    properties: ["openDirectory"],
+    title: "Selecionar pasta de musicas",
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    const folder = result.filePaths[0];
+    store.set("musicFolder", folder);
+    startWatcher(folder);
+    return folder;
+  }
+  return null;
+});
+
+ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
+
+// --- IPC: Listar musicas na pasta -----------------------------
+ipcMain.handle("list-music-files", () => {
+  const folder = store.get("musicFolder", null);
+  if (!folder || !fs.existsSync(folder)) return [];
+  const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
+  return fs.readdirSync(folder)
+    .filter(f => exts.includes(path.extname(f).toLowerCase()))
+    .map(f => ({ name: f, fullPath: path.join(folder, f) }));
+});
+
+// --- IPC: Resolver arquivo de uma musica ----------------------
+ipcMain.handle("resolve-music-file", (_, songName, artist) => {
+  const folder = store.get("musicFolder", null);
+  if (!folder) return null;
+  const exts = [".mp4", ".mkv", ".avi", ".webm"];
+  const files = fs.readdirSync(folder);
+  const query = `${songName} ${artist}`.toLowerCase().replace(/\s+/g, "");
+  for (const f of files) {
+    const base = path.basename(f, path.extname(f)).toLowerCase().replace(/\s+/g, "");
+    if (base.includes(query) || query.includes(base)) {
+      return path.join(folder, f);
+    }
+  }
+  return null;
+});
+
+// --- IPC: Vincular arquivo manualmente a uma musica -----------
+ipcMain.handle("link-music-file", async (_, songId) => {
+  const result = await dialog.showOpenDialog(hostWindow, {
+    properties: ["openFile"],
+    title: "Selecionar arquivo da musica",
+    filters: [
+      { name: "Videos", extensions: ["mp4", "mkv", "avi", "webm"] },
+      { name: "Todos os arquivos", extensions: ["*"] },
+    ],
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    const links = store.get("musicLinks", {});
+    links[songId] = result.filePaths[0];
+    store.set("musicLinks", links);
+    return result.filePaths[0];
+  }
+  return null;
+});
+
+ipcMain.handle("get-music-links", () => store.get("musicLinks", {}));
+
+// --- IPC: Reproduzir musica na janela player ------------------
+ipcMain.handle("play-song", (_, filePath) => {
+  if (playerWindow) {
+    playerWindow.webContents.send("play-video", filePath);
+  }
+});
+
+ipcMain.handle("player-command", (_, cmd) => {
+  if (playerWindow) playerWindow.webContents.send("player-cmd", cmd);
+});
+
+// --- IPC: QR Code config -------------------------------------
+ipcMain.handle("get-webapp-url", () => store.get("webAppUrl", ""));
+ipcMain.handle("set-webapp-url", (_, url) => store.set("webAppUrl", url));
+
+// --- Watcher de pasta de musicas ------------------------------
+function startWatcher(folder) {
+  if (musicWatcher) musicWatcher.close();
+  musicWatcher = chokidar.watch(folder, { ignoreInitial: true });
+  musicWatcher.on("add", () => {
+    if (hostWindow) hostWindow.webContents.send("music-folder-changed");
+  });
+  musicWatcher.on("unlink", () => {
+    if (hostWindow) hostWindow.webContents.send("music-folder-changed");
+  });
+}
+
+// Retomar watch ao iniciar se pasta ja estava configurada
+app.whenReady().then(() => {
+  const folder = store.get("musicFolder");
+  if (folder && fs.existsSync(folder)) startWatcher(folder);
+});
+'@ | Set-Content -Path "$ProjectPath\app\src\main.js" -Encoding UTF8
+
+Write-OK "main.js criado"
+
+# ============================================================
+# 4. PRELOAD.JS
+# ============================================================
+Write-Step "Criando preload.js"
+
+@'
+const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("electronAPI", {
+  selectMusicFolder:  () => ipcRenderer.invoke("select-music-folder"),
+  getMusicFolder:     () => ipcRenderer.invoke("get-music-folder"),
+  listMusicFiles:     () => ipcRenderer.invoke("list-music-files"),
+  resolveMusicFile:   (song, artist) => ipcRenderer.invoke("resolve-music-file", song, artist),
+  linkMusicFile:      (songId) => ipcRenderer.invoke("link-music-file", songId),
+  getMusicLinks:      () => ipcRenderer.invoke("get-music-links"),
+  playSong:           (filePath) => ipcRenderer.invoke("play-song", filePath),
+  playerCommand:      (cmd) => ipcRenderer.invoke("player-command", cmd),
+  getWebAppUrl:       () => ipcRenderer.invoke("get-webapp-url"),
+  setWebAppUrl:       (url) => ipcRenderer.invoke("set-webapp-url", url),
+
+  onMusicFolderChanged: (cb) => ipcRenderer.on("music-folder-changed", cb),
+  onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp) => cb(fp)),
+  onPlayerCmd:          (cb) => ipcRenderer.on("player-cmd", (_e, cmd) => cb(cmd)),
+});
+'@ | Set-Content -Path "$ProjectPath\app\src\preload.js" -Encoding UTF8
+
+Write-OK "preload.js criado"
+
+# ============================================================
+# 5. TELA HOST (host.html)
+# ============================================================
+Write-Step "Criando tela host.html"
+
+@'
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Voxly - Gerencia</title>
+<style>
+  :root {
+    --bg:       #0d0d1a;
+    --surface:  #1a1a2e;
+    --surface2: #16213e;
+    --accent:   #e040fb;
+    --accent2:  #7c4dff;
+    --danger:   #ff1744;
+    --warn:     #ff9100;
+    --ok:       #00e676;
+    --text:     #e8e8ff;
+    --muted:    #7a7a9d;
+    --radius:   10px;
+    --font:     'Segoe UI', system-ui, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* -- HEADER ----------------------------------- */
+  header {
+    background: var(--surface2);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #ffffff18;
+  }
+  header h1 { font-size: 1.2rem; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; }
+  .header-controls { display: flex; gap: 10px; align-items: center; }
+
+  /* -- LAYOUT ------------------------------------ */
+  .layout { display: grid; grid-template-columns: 340px 1fr 320px; gap: 0; flex: 1; overflow: hidden; }
+
+  .panel {
+    background: var(--surface);
+    border-right: 1px solid #ffffff10;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel:last-child { border-right: none; }
+  .panel-header {
+    padding: 14px 16px;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    border-bottom: 1px solid #ffffff10;
+    flex-shrink: 0;
+  }
+  .panel-body { flex: 1; overflow-y: auto; padding: 12px; }
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-thumb { background: #ffffff20; border-radius: 2px; }
+
+  /* -- FILA -------------------------------------- */
+  .queue-item {
+    background: var(--surface2);
+    border: 1px solid #ffffff12;
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    position: relative;
+    cursor: default;
+    transition: border-color .2s;
+  }
+  .queue-item:hover { border-color: var(--accent2); }
+  .queue-item.playing { border-color: var(--ok); background: #00e67610; }
+  .queue-item.missing { border-color: var(--danger); background: #ff174410; }
+  .queue-item.duet { border-color: var(--warn); }
+
+  .queue-pos {
+    min-width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent2);
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .queue-item.playing .queue-pos { background: var(--ok); color: #000; }
+  .queue-item.missing .queue-pos { background: var(--danger); }
+
+  .queue-info { flex: 1; }
+  .queue-song { font-size: .95rem; font-weight: 600; margin-bottom: 2px; }
+  .queue-artist { font-size: .8rem; color: var(--muted); }
+  .queue-singer { font-size: .78rem; color: var(--accent); margin-top: 4px; }
+  .queue-badge {
+    font-size: .65rem; font-weight: 700; letter-spacing: 1px;
+    padding: 2px 7px; border-radius: 99px;
+    background: var(--danger); color: #fff;
+    position: absolute; top: 8px; right: 8px;
+  }
+  .queue-badge.duet { background: var(--warn); color: #000; }
+  .queue-badge.playing { background: var(--ok); color: #000; }
+
+  .queue-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+  /* -- CENTRO - PLAYER CONTROLS ------------------ */
+  .center-panel { border-right: 1px solid #ffffff10; }
+  .now-playing {
+    margin: 16px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 1px solid var(--ok);
+  }
+  .np-label { font-size: .7rem; letter-spacing: 1.5px; color: var(--ok); text-transform: uppercase; margin-bottom: 8px; }
+  .np-song { font-size: 1.4rem; font-weight: 700; }
+  .np-artist { color: var(--muted); font-size: .9rem; margin-top: 4px; }
+  .np-singer { color: var(--accent); font-size: .85rem; margin-top: 6px; }
+
+  .player-controls {
+    display: flex; gap: 12px; align-items: center;
+    margin: 0 16px 16px;
+    flex-wrap: wrap;
+  }
+
+  /* -- REGRAS / CONFIG ---------------------------- */
+  .rules-section { padding: 16px; }
+  .rules-section h3 { font-size: .75rem; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px; }
+  .rule-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: .88rem; }
+  .rule-row label { color: var(--text); }
+  .rule-input {
+    width: 60px; padding: 4px 8px;
+    background: var(--surface2); border: 1px solid #ffffff20;
+    border-radius: 6px; color: var(--text); text-align: center; font-size: .9rem;
+  }
+
+  /* -- BUTTONS ----------------------------------- */
+  .btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: .82rem;
+    font-weight: 600;
+    letter-spacing: .5px;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:hover { opacity: .85; }
+  .btn-primary   { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--accent2); color: #fff; }
+  .btn-ok        { background: var(--ok); color: #000; }
+  .btn-danger    { background: var(--danger); color: #fff; }
+  .btn-ghost     { background: transparent; border: 1px solid #ffffff25; color: var(--text); }
+  .btn-warn      { background: var(--warn); color: #000; }
+  .btn-sm        { padding: 4px 10px; font-size: .75rem; border-radius: 6px; }
+
+  /* -- QR CODE ------------------------------------ */
+  .qr-container { text-align: center; padding: 16px; }
+  #qr-canvas { border-radius: 10px; background: #fff; padding: 8px; }
+  .qr-url { font-size: .7rem; color: var(--muted); margin-top: 8px; word-break: break-all; }
+
+  /* -- USERS LIST --------------------------------- */
+  .user-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    margin-bottom: 6px;
+    background: var(--surface2);
+  }
+  .user-avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    object-fit: cover; background: var(--accent2);
+    flex-shrink: 0;
+  }
+  .user-name { font-size: .88rem; font-weight: 500; }
+  .user-status { font-size: .72rem; color: var(--muted); }
+  .user-badge { margin-left: auto; }
+
+  /* -- MISC -------------------------------------- */
+  .empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 30px 0; }
+  .tag { font-size: .65rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+  .tag-online { background: #00e67620; color: var(--ok); }
+  .tag-busy   { background: #ff910020; color: var(--warn); }
+
+  .folder-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid #ffffff10;
+    font-size: .8rem;
+  }
+  .folder-path { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .cycle-bar {
+    padding: 8px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid #ffffff10;
+    display: flex; align-items: center; gap: 12px; font-size: .82rem;
+  }
+  .cycle-num { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+
+  input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>? Voxly</h1>
+  <div class="header-controls">
+    <span id="cycle-label" style="font-size:.8rem;color:var(--muted)">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
+    <button class="btn btn-secondary btn-sm" onclick="nextCycle()">Proximo Ciclo</button>
+    <button class="btn btn-ghost btn-sm" onclick="openSettings()">? Config</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- -- PAINEL ESQUERDO: FILA -------------------- -->
+  <div class="panel">
+    <div class="panel-header">Fila de Musicas</div>
+    <div class="folder-row">
+      <span class="folder-path" id="folder-path-display">Nenhuma pasta selecionada</span>
+      <button class="btn btn-ghost btn-sm" onclick="selectFolder()">? Pasta</button>
+    </div>
+    <div class="panel-body" id="queue-list">
+      <div class="empty">A fila esta vazia.<br>Aguarde solicitacoes.</div>
+    </div>
+  </div>
+
+  <!-- -- PAINEL CENTRAL: CONTROLES --------------- -->
+  <div class="panel center-panel">
+    <div class="panel-header">Controle do Palco</div>
+    <div class="panel-body">
+
+      <div class="now-playing" id="now-playing-box">
+        <div class="np-label">> Tocando agora</div>
+        <div class="np-song" id="np-song">-</div>
+        <div class="np-artist" id="np-artist">-</div>
+        <div class="np-singer" id="np-singer">-</div>
+      </div>
+
+      <div class="player-controls">
+        <button class="btn btn-ok"      onclick="playerCmd('play')">> Play</button>
+        <button class="btn btn-warn"    onclick="playerCmd('pause')">|| Pausa</button>
+        <button class="btn btn-danger"  onclick="skipSong()">>> Pular</button>
+        <button class="btn btn-ghost"   onclick="playerCmd('fullscreen')">? Fullscreen</button>
+      </div>
+
+      <!-- QR CODE -->
+      <div class="qr-container">
+        <div class="panel-header" style="margin-bottom:12px">QR Code - Acesso dos Cantores</div>
+        <canvas id="qr-canvas" width="180" height="180"></canvas>
+        <div class="qr-url" id="qr-url-display">-</div>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+          <input id="webapp-url-input" type="text" placeholder="https://seu-app.web.app"
+            style="flex:1;padding:6px 10px;background:var(--surface2);border:1px solid #ffffff20;border-radius:6px;color:var(--text);font-size:.8rem" />
+          <button class="btn btn-primary btn-sm" onclick="saveWebUrl()">Salvar</button>
+        </div>
+      </div>
+
+      <!-- REGRAS DO HOST -->
+      <div class="rules-section">
+        <h3>Regras do Ciclo</h3>
+        <div class="rule-row">
+          <label>Musicas por ciclo (solicitacao)</label>
+          <input class="rule-input" type="number" id="rule-songs-per-cycle" value="1" min="1" max="10" onchange="saveRules()" />
+        </div>
+        <div class="rule-row">
+          <label>Participacoes em dueto por ciclo</label>
+          <input class="rule-input" type="number" id="rule-duets-per-cycle" value="1" min="0" max="10" onchange="saveRules()" />
+        </div>
+        <div class="rule-row">
+          <label>Max. cantores na fila simultaneamente</label>
+          <input class="rule-input" type="number" id="rule-max-queue" value="20" min="1" max="99" onchange="saveRules()" />
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- -- PAINEL DIREITO: CANTORES ----------------- -->
+  <div class="panel">
+    <div class="panel-header">Cantores Presentes</div>
+    <div class="panel-body" id="users-list">
+      <div class="empty">Nenhum cantor conectado ainda.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================================ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getFirestore, collection, onSnapshot, doc, updateDoc, deleteDoc, orderBy, query, serverTimestamp, getDoc, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+// -- SUBSTITUA AQUI COM SEU firebaseConfig ----------------------------------
+const firebaseConfig = {
+  apiKey:            "COLOQUE_AQUI",
+  authDomain:        "COLOQUE_AQUI",
+  projectId:         "COLOQUE_AQUI",
+  storageBucket:     "COLOQUE_AQUI",
+  messagingSenderId: "COLOQUE_AQUI",
+  appId:             "COLOQUE_AQUI",
+};
+// ----------------------------------------------------------------------------
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
+// -- Estado local ------------------------------------------------------------
+let queueData   = [];
+let usersData   = [];
+let currentSong = null;
+let cycleNumber = parseInt(localStorage.getItem("cycleNumber") || "1");
+let rules       = JSON.parse(localStorage.getItem("rules") || '{"songsPerCycle":1,"duetsPerCycle":1,"maxQueue":20}');
+
+document.getElementById("cycle-num").textContent = cycleNumber;
+document.getElementById("rule-songs-per-cycle").value  = rules.songsPerCycle;
+document.getElementById("rule-duets-per-cycle").value  = rules.duetsPerCycle;
+document.getElementById("rule-max-queue").value        = rules.maxQueue;
+
+// -- QR Code -----------------------------------------------------------------
+async function loadQrCode() {
+  const QRCode = (await import("https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm")).default;
+  const url = await window.electronAPI.getWebAppUrl();
+  if (url) {
+    document.getElementById("webapp-url-input").value = url;
+    document.getElementById("qr-url-display").textContent = url;
+    QRCode.toCanvas(document.getElementById("qr-canvas"), url, { width: 180, margin: 1 });
+  }
+}
+loadQrCode();
+
+window.saveWebUrl = async function() {
+  const url = document.getElementById("webapp-url-input").value.trim();
+  if (!url) return;
+  await window.electronAPI.setWebAppUrl(url);
+  document.getElementById("qr-url-display").textContent = url;
+  const QRCode = (await import("https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm")).default;
+  QRCode.toCanvas(document.getElementById("qr-canvas"), url, { width: 180, margin: 1 });
+};
+
+// -- Pasta de musicas ---------------------------------------------------------
+async function initFolder() {
+  const f = await window.electronAPI.getMusicFolder();
+  if (f) document.getElementById("folder-path-display").textContent = f;
+}
+initFolder();
+
+window.selectFolder = async function() {
+  const f = await window.electronAPI.selectMusicFolder();
+  if (f) {
+    document.getElementById("folder-path-display").textContent = f;
+    await refreshQueueFiles();
+  }
+};
+
+window.electronAPI.onMusicFolderChanged(() => refreshQueueFiles());
+
+async function refreshQueueFiles() {
+  const links = await window.electronAPI.getMusicLinks();
+  for (const item of queueData) {
+    if (links[item.id]) {
+      item._resolvedFile = links[item.id];
+      item._missing = false;
+    } else {
+      const fp = await window.electronAPI.resolveMusicFile(item.song, item.artist);
+      item._resolvedFile = fp;
+      item._missing = !fp;
+    }
+  }
+  renderQueue();
+}
+
+// -- Firestore: fila em tempo real -------------------------------------------
+onSnapshot(
+  query(collection(db, "queue"), orderBy("requestedAt", "asc")),
+  async (snap) => {
+    const links = await window.electronAPI.getMusicLinks();
+    queueData = await Promise.all(snap.docs.map(async d => {
+      const data = { id: d.id, ...d.data() };
+      if (links[d.id]) {
+        data._resolvedFile = links[d.id];
+        data._missing = false;
+      } else {
+        const fp = await window.electronAPI.resolveMusicFile(data.song, data.artist);
+        data._resolvedFile = fp;
+        data._missing = !fp;
+      }
+      return data;
+    }));
+    renderQueue();
+  }
+);
+
+// -- Firestore: usuarios em tempo real ---------------------------------------
+onSnapshot(collection(db, "users"), snap => {
+  usersData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderUsers();
+});
+
+// -- Render fila --------------------------------------------------------------
+function renderQueue() {
+  const el = document.getElementById("queue-list");
+  if (!queueData.length) { el.innerHTML = '<div class="empty">A fila esta vazia.<br>Aguarde solicitacoes.</div>'; return; }
+  el.innerHTML = queueData.map((item, i) => {
+    const isPlaying = currentSong?.id === item.id;
+    const isMissing = item._missing;
+    const isDuet    = item.duetWith?.length > 0;
+    let cls = "queue-item";
+    if (isPlaying) cls += " playing";
+    if (isMissing) cls += " missing";
+    if (isDuet)    cls += " duet";
+
+    let badge = "";
+    if (isPlaying) badge = '<span class="queue-badge playing">TOCANDO</span>';
+    else if (isMissing) badge = '<span class="queue-badge">SEM ARQUIVO</span>';
+    else if (isDuet)    badge = '<span class="queue-badge duet">DUETO</span>';
+
+    const duetNames = isDuet ? `<div style="font-size:.72rem;color:var(--warn);margin-top:2px">? Dueto: ${item.duetWith.join(", ")}</div>` : "";
+
+    const actions = isMissing
+      ? `<button class="btn btn-warn btn-sm" onclick="linkFile('${item.id}')">? Vincular Arquivo</button>`
+      : "";
+
+    const playBtn = (!isPlaying && !isMissing)
+      ? `<button class="btn btn-ok btn-sm" onclick="playSong('${item.id}')">> Tocar</button>` : "";
+
+    const removeBtn = `<button class="btn btn-danger btn-sm" onclick="removeSong('${item.id}')">? Remover</button>`;
+
+    return `<div class="${cls}">
+      <div class="queue-pos">${i + 1}</div>
+      <div class="queue-info">
+        <div class="queue-song">${escHtml(item.song)}</div>
+        <div class="queue-artist">${escHtml(item.artist)}</div>
+        <div class="queue-singer">? ${escHtml(item.singerName || "-")}</div>
+        ${duetNames}
+        <div class="queue-actions">${playBtn}${actions}${removeBtn}</div>
+      </div>
+      ${badge}
+    </div>`;
+  }).join("");
+}
+
+// -- Render cantores ----------------------------------------------------------
+function renderUsers() {
+  const el = document.getElementById("users-list");
+  if (!usersData.length) { el.innerHTML = '<div class="empty">Nenhum cantor conectado ainda.</div>'; return; }
+  el.innerHTML = usersData.map(u => {
+    const hasSung   = (u.songsThisCycle || 0) >= (rules.songsPerCycle);
+    const hasDueted = (u.duetsThisCycle || 0) >= (rules.duetsPerCycle);
+    const statusCls = hasSung ? "user-status" : "user-status";
+    const tagCls    = hasSung ? "tag tag-busy" : "tag tag-online";
+    const tagLabel  = hasSung ? "Aguardando" : "Pode cantar";
+    return `<div class="user-item">
+      <img class="user-avatar" src="${u.photoURL || 'data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\'><rect width=\\'34\\' height=\\'34\\' fill=\\'%237c4dff\\'/></svg>'}" />
+      <div>
+        <div class="user-name">${escHtml(u.displayName || u.email)}</div>
+        <div class="user-status">? ${u.songsThisCycle || 0}/${rules.songsPerCycle} &nbsp;? ${u.duetsThisCycle || 0}/${rules.duetsPerCycle}</div>
+      </div>
+      <span class="${tagCls} user-badge">${tagLabel}</span>
+    </div>`;
+  }).join("");
+}
+
+// -- Acoes --------------------------------------------------------------------
+window.playSong = async function(id) {
+  const item = queueData.find(q => q.id === id);
+  if (!item || !item._resolvedFile) return;
+  currentSong = item;
+  await window.electronAPI.playSong(item._resolvedFile);
+  document.getElementById("np-song").textContent   = item.song;
+  document.getElementById("np-artist").textContent = item.artist;
+  document.getElementById("np-singer").textContent = item.singerName || "-";
+  await updateDoc(doc(db, "queue", id), { status: "playing" });
+  renderQueue();
+};
+
+window.skipSong = async function() {
+  if (!currentSong) return;
+  const id = currentSong.id;
+  // Incrementa contador do cantor
+  await updateDoc(doc(db, "users", currentSong.userId), {
+    songsThisCycle: (currentSong._singerSongsCount || 0) + 1
+  });
+  // Remove da fila
+  await deleteDoc(doc(db, "queue", id));
+  currentSong = null;
+  document.getElementById("np-song").textContent   = "-";
+  document.getElementById("np-artist").textContent = "-";
+  document.getElementById("np-singer").textContent = "-";
+  window.electronAPI.playerCommand("stop");
+};
+
+window.removeSong = async function(id) {
+  if (!confirm("Remover essa musica da fila?")) return;
+  await deleteDoc(doc(db, "queue", id));
+};
+
+window.linkFile = async function(id) {
+  const fp = await window.electronAPI.linkMusicFile(id);
+  if (fp) await refreshQueueFiles();
+};
+
+window.playerCmd = function(cmd) {
+  window.electronAPI.playerCommand(cmd);
+};
+
+window.nextCycle = async function() {
+  if (!confirm("Avancar para o proximo ciclo? Isso vai resetar os contadores de todos os cantores.")) return;
+  cycleNumber++;
+  localStorage.setItem("cycleNumber", cycleNumber);
+  document.getElementById("cycle-num").textContent = cycleNumber;
+  const batch = writeBatch(db);
+  usersData.forEach(u => {
+    batch.update(doc(db, "users", u.id), { songsThisCycle: 0, duetsThisCycle: 0 });
+  });
+  await batch.commit();
+};
+
+window.saveRules = function() {
+  rules = {
+    songsPerCycle:  parseInt(document.getElementById("rule-songs-per-cycle").value),
+    duetsPerCycle:  parseInt(document.getElementById("rule-duets-per-cycle").value),
+    maxQueue:       parseInt(document.getElementById("rule-max-queue").value),
+  };
+  localStorage.setItem("rules", JSON.stringify(rules));
+  renderUsers();
+};
+
+window.openSettings = function() { alert("Settings - em breve"); };
+
+function escHtml(s) {
+  if (!s) return "";
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
+'@ | Set-Content -Path "$ProjectPath\app\src\screens\host.html" -Encoding UTF8
+
+Write-OK "host.html criado"
+
+# ============================================================
+# 6. TELA PLAYER (player.html)
+# ============================================================
+Write-Step "Criando tela player.html"
+
+@'
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; color: #fff; height: 100vh; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #video-player { width: 100%; height: 100%; object-fit: contain; }
+  #idle-screen {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, #1a0033 0%, #000 70%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px;
+  }
+  #idle-title {
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 4rem; font-weight: 900; letter-spacing: 6px;
+    color: transparent;
+    background: linear-gradient(135deg, #e040fb, #7c4dff, #40c4ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    text-transform: uppercase;
+  }
+  #idle-sub { font-size: 1.2rem; color: #ffffff60; letter-spacing: 3px; }
+  .pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .6; } 50% { opacity: 1; } }
+</style>
+</head>
+<body>
+  <div id="idle-screen">
+    <div id="idle-title" class="pulse">? Voxly</div>
+    <div id="idle-sub">Aguardando proxima musica...</div>
+  </div>
+  <video id="video-player" style="display:none" controls></video>
+
+<script>
+  const video   = document.getElementById("video-player");
+  const idle    = document.getElementById("idle-screen");
+
+  window.electronAPI.onPlayVideo(filePath => {
+    idle.style.display  = "none";
+    video.style.display = "block";
+    video.src = `file://${filePath}`;
+    video.play();
+  });
+
+  window.electronAPI.onPlayerCmd(cmd => {
+    if (cmd === "play")        video.play();
+    if (cmd === "pause")       video.pause();
+    if (cmd === "stop")        { video.pause(); video.src = ""; video.style.display = "none"; idle.style.display = "flex"; }
+    if (cmd === "fullscreen")  document.documentElement.requestFullscreen?.();
+  });
+
+  video.addEventListener("ended", () => {
+    video.style.display = "none";
+    idle.style.display  = "flex";
+  });
+</script>
+</body>
+</html>
+'@ | Set-Content -Path "$ProjectPath\app\src\screens\player.html" -Encoding UTF8
+
+Write-OK "player.html criado"
+
+# ============================================================
+# 7. WEB APP (pagina do cantor via QR Code)
+# ============================================================
+Write-Step "Criando Web App (pagina do cantor)"
+
+@'
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Voxly - Cantores</title>
+<style>
+  :root {
+    --bg:      #0d0d1a;
+    --surface: #1a1a2e;
+    --accent:  #e040fb;
+    --accent2: #7c4dff;
+    --ok:      #00e676;
+    --danger:  #ff1744;
+    --warn:    #ff9100;
+    --text:    #e8e8ff;
+    --muted:   #7a7a9d;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100dvh; padding-bottom: 40px; }
+
+  /* -- AUTH SCREEN -------- */
+  #auth-screen {
+    min-height: 100dvh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; gap: 20px;
+  }
+  #auth-screen h1 { font-size: 2rem; font-weight: 900; letter-spacing: 4px; color: var(--accent); text-transform: uppercase; }
+  #auth-screen p  { color: var(--muted); font-size: .9rem; text-align: center; }
+  .auth-card {
+    background: var(--surface); border-radius: 16px; padding: 28px;
+    width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .auth-card h2 { font-size: 1rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  /* -- MAIN APP ------------ */
+  #app-screen { display: none; padding: 16px; max-width: 480px; margin: 0 auto; }
+  #app-screen header { display: flex; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid #ffffff15; margin-bottom: 16px; }
+  .user-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--accent2); }
+  .user-info .name  { font-weight: 700; font-size: 1rem; }
+  .user-info .email { font-size: .78rem; color: var(--muted); }
+
+  /* -- PROFILE SETUP ------- */
+  #profile-screen { display: none; padding: 20px; max-width: 400px; margin: 0 auto; }
+  #profile-screen h2 { font-size: 1.1rem; margin-bottom: 20px; }
+
+  /* -- SECTIONS ------------ */
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: .72rem; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
+
+  /* -- REQUEST FORM ------- */
+  .request-form {
+    background: var(--surface); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .field label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: 5px; }
+  .field input {
+    width: 100%; padding: 12px 14px;
+    background: #ffffff0a; border: 1px solid #ffffff20; border-radius: 10px;
+    color: var(--text); font-size: .95rem; outline: none;
+    transition: border-color .2s;
+  }
+  .field input:focus { border-color: var(--accent); }
+
+  /* -- STATUS ------------- */
+  .status-box {
+    background: var(--surface); border-radius: 12px; padding: 16px;
+    border-left: 3px solid var(--ok);
+  }
+  .status-box.waiting  { border-color: var(--warn); }
+  .status-box.playing  { border-color: var(--ok); }
+  .status-box.blocked  { border-color: var(--muted); }
+
+  /* -- DUET SELECTOR ------- */
+  .duet-list { display: flex; flex-direction: column; gap: 8px; }
+  .duet-item {
+    background: var(--surface); border-radius: 10px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    border: 1px solid transparent; transition: border-color .2s;
+  }
+  .duet-item.selected { border-color: var(--accent2); background: #7c4dff18; }
+  .duet-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--accent2); flex-shrink: 0; }
+  .duet-name   { font-size: .9rem; font-weight: 500; }
+  .duet-status { font-size: .72rem; color: var(--muted); }
+
+  /* -- QUEUE MINI ----------- */
+  .queue-mini { display: flex; flex-direction: column; gap: 8px; }
+  .queue-mini-item {
+    background: var(--surface); border-radius: 10px; padding: 10px 14px;
+    font-size: .85rem; display: flex; justify-content: space-between; align-items: center;
+  }
+  .pos-badge { width: 24px; height: 24px; border-radius: 50%; background: var(--accent2); color: #fff; font-size: .72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* -- BUTTON --------------- */
+  .btn {
+    padding: 14px; border-radius: 12px; border: none; cursor: pointer;
+    font-size: .95rem; font-weight: 700; letter-spacing: .5px;
+    transition: opacity .15s, transform .1s; width: 100%;
+  }
+  .btn:active  { transform: scale(.97); }
+  .btn:hover   { opacity: .85; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn-google  { background: #fff; color: #333; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .btn-ghost   { background: transparent; border: 1px solid #ffffff25; color: var(--text); }
+  .btn-sm      { padding: 8px 16px; font-size: .82rem; border-radius: 8px; width: auto; }
+
+  input[type=file] { display: none; }
+  .avatar-picker {
+    width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
+    background: var(--accent2); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; margin: 0 auto 16px;
+  }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--surface); border-radius: 10px; padding: 12px 20px;
+    font-size: .85rem; color: var(--text); box-shadow: 0 4px 24px #00000060;
+    z-index: 999; opacity: 0; transition: opacity .3s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div style="font-size:3rem">?</div>
+  <h1>Voxly</h1>
+  <p>Faca login para solicitar musicas e entrar na fila</p>
+  <div class="auth-card">
+    <h2>Entrar</h2>
+    <button class="btn btn-google" onclick="loginGoogle()">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.3 30.2 0 24 0 14.7 0 6.7 5.5 2.7 13.5l7.8 6C12.4 13.1 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17z"/><path fill="#FBBC05" d="M10.5 28.5A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.1.7-4.5l-7.8-6A23.8 23.8 0 0 0 0 24c0 3.8.9 7.4 2.5 10.5l8-6z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.3 0-11.6-3.7-13.5-8.9l-8 6C6.7 42.5 14.7 48 24 48z"/></svg>
+      Entrar com Google
+    </button>
+    <div style="text-align:center;color:var(--muted);font-size:.8rem">ou</div>
+    <div class="field"><label>Email</label><input type="email" id="email-input" placeholder="seu@email.com" /></div>
+    <div class="field"><label>Senha</label><input type="password" id="pass-input" placeholder="********" /></div>
+    <button class="btn btn-primary" onclick="loginEmail()">Entrar</button>
+    <button class="btn btn-ghost" onclick="registerEmail()">Criar conta</button>
+  </div>
+</div>
+
+<!-- PROFILE SETUP -->
+<div id="profile-screen">
+  <h2>Complete seu perfil</h2>
+  <img class="avatar-picker" id="avatar-preview" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><text y='50' font-size='40'>?</text></svg>" onclick="document.getElementById('avatar-file').click()" />
+  <input type="file" id="avatar-file" accept="image/*" onchange="previewAvatar(event)" />
+  <div class="field"><label>Nome</label><input type="text" id="profile-first" placeholder="Seu nome" /></div>
+  <div style="height:10px"></div>
+  <div class="field"><label>Sobrenome</label><input type="text" id="profile-last" placeholder="Sobrenome" /></div>
+  <div style="height:16px"></div>
+  <button class="btn btn-primary" onclick="saveProfile()">Salvar e continuar</button>
+</div>
+
+<!-- MAIN APP -->
+<div id="app-screen">
+  <header>
+    <img class="user-avatar" id="app-avatar" src="" />
+    <div class="user-info">
+      <div class="name"  id="app-name">-</div>
+      <div class="email" id="app-email">-</div>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-left:auto;width:auto" onclick="logout()">Sair</button>
+  </header>
+
+  <!-- Status do ciclo -->
+  <div class="section">
+    <div class="section-title">Minha Situacao</div>
+    <div class="status-box" id="user-status-box">
+      <div id="status-text">Verificando...</div>
+    </div>
+  </div>
+
+  <!-- Solicitar musica -->
+  <div class="section" id="request-section">
+    <div class="section-title">Solicitar Musica</div>
+    <div class="request-form">
+      <div class="field"><label>Nome da Musica</label><input type="text" id="req-song" placeholder="Ex: Bohemian Rhapsody" /></div>
+      <div class="field"><label>Artista</label><input type="text" id="req-artist" placeholder="Ex: Queen" /></div>
+      <button class="btn btn-primary" onclick="requestSong()">? Solicitar</button>
+    </div>
+  </div>
+
+  <!-- Selecionar dueto -->
+  <div class="section" id="duet-section" style="display:none">
+    <div class="section-title">Convidar para Dueto</div>
+    <div class="duet-list" id="duet-list"></div>
+    <div style="margin-top:10px">
+      <button class="btn btn-primary btn-sm" onclick="sendDuetInvite()">Enviar Convite de Dueto</button>
+    </div>
+  </div>
+
+  <!-- Mini fila -->
+  <div class="section">
+    <div class="section-title">Fila Atual</div>
+    <div class="queue-mini" id="queue-mini-list">
+      <div style="color:var(--muted);font-size:.85rem">Carregando fila...</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- -- FIREBASE WEB SDK ------------------------------------------------------ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getFirestore, collection, onSnapshot, addDoc, query, orderBy, doc,
+  getDoc, setDoc, updateDoc, serverTimestamp, where, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  getAuth, onAuthStateChanged, signOut,
+  GoogleAuthProvider, signInWithPopup,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+// -- SUBSTITUA com seu firebaseConfig -----------------------------------------
+const firebaseConfig = {
+  apiKey:            "COLOQUE_AQUI",
+  authDomain:        "COLOQUE_AQUI",
+  projectId:         "COLOQUE_AQUI",
+  storageBucket:     "COLOQUE_AQUI",
+  messagingSenderId: "COLOQUE_AQUI",
+  appId:             "COLOQUE_AQUI",
+};
+// ----------------------------------------------------------------------------
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db      = getFirestore(firebaseApp);
+const auth    = getAuth(firebaseApp);
+const storage = getStorage(firebaseApp);
+
+let currentUser     = null;
+let userData        = null;
+let selectedDuetIds = [];
+let rules           = { songsPerCycle: 1, duetsPerCycle: 1, maxQueue: 20 };
+let queueData       = [];
+let avatarFile      = null;
+
+function toast(msg, dur = 3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), dur);
+}
+
+// -- Auth ---------------------------------------------------------------------
+onAuthStateChanged(auth, async user => {
+  if (user) {
+    currentUser = user;
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists() || !snap.data().firstName) {
+      // Pre-preencher se veio do Google
+      if (user.displayName) {
+        const parts = user.displayName.split(" ");
+        document.getElementById("profile-first").value = parts[0] || "";
+        document.getElementById("profile-last").value  = parts.slice(1).join(" ") || "";
+      }
+      if (user.photoURL) document.getElementById("avatar-preview").src = user.photoURL;
+      showScreen("profile");
+    } else {
+      userData = snap.data();
+      showApp();
+    }
+  } else {
+    showScreen("auth");
+  }
+});
+
+window.loginGoogle = async function() {
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch(e) { toast("Erro: " + e.message); }
+};
+
+window.loginEmail = async function() {
+  const email = document.getElementById("email-input").value.trim();
+  const pass  = document.getElementById("pass-input").value;
+  try { await signInWithEmailAndPassword(auth, email, pass); }
+  catch(e) { toast("Erro: " + e.message); }
+};
+
+window.registerEmail = async function() {
+  const email = document.getElementById("email-input").value.trim();
+  const pass  = document.getElementById("pass-input").value;
+  if (pass.length < 6) { toast("Senha deve ter pelo menos 6 caracteres"); return; }
+  try { await createUserWithEmailAndPassword(auth, email, pass); }
+  catch(e) { toast("Erro: " + e.message); }
+};
+
+window.logout = async function() {
+  await signOut(auth);
+};
+
+// -- Profile -------------------------------------------------------------------
+window.previewAvatar = function(e) {
+  avatarFile = e.target.files[0];
+  if (!avatarFile) return;
+  const reader = new FileReader();
+  reader.onload = ev => document.getElementById("avatar-preview").src = ev.target.result;
+  reader.readAsDataURL(avatarFile);
+};
+
+window.saveProfile = async function() {
+  const first = document.getElementById("profile-first").value.trim();
+  const last  = document.getElementById("profile-last").value.trim();
+  if (!first || !last) { toast("Preencha nome e sobrenome"); return; }
+
+  let photoURL = currentUser.photoURL || "";
+  if (avatarFile) {
+    const ref = storageRef(storage, `avatars/${currentUser.uid}`);
+    await uploadBytes(ref, avatarFile);
+    photoURL = await getDownloadURL(ref);
+  }
+
+  const displayName = `${first} ${last}`;
+  await setDoc(doc(db, "users", currentUser.uid), {
+    firstName: first, lastName: last, displayName,
+    email: currentUser.email, photoURL,
+    songsThisCycle: 0, duetsThisCycle: 0,
+    createdAt: serverTimestamp(),
+  });
+  userData = { firstName: first, lastName: last, displayName, email: currentUser.email, photoURL, songsThisCycle: 0, duetsThisCycle: 0 };
+  showApp();
+};
+
+// -- App -----------------------------------------------------------------------
+function showScreen(name) {
+  ["auth-screen","profile-screen","app-screen"].forEach(id => {
+    document.getElementById(id).style.display = id.startsWith(name) ? (name === "app" ? "block" : "flex") : "none";
+  });
+  if (name === "app") document.getElementById("app-screen").style.display = "block";
+}
+
+function showApp() {
+  showScreen("app");
+  document.getElementById("app-name").textContent  = userData.displayName || "-";
+  document.getElementById("app-email").textContent = userData.email || currentUser.email;
+  if (userData.photoURL) document.getElementById("app-avatar").src = userData.photoURL;
+  subscribeQueue();
+  subscribeUsers();
+  subscribeMyStatus();
+}
+
+// -- Fila em tempo real --------------------------------------------------------
+function subscribeQueue() {
+  onSnapshot(query(collection(db, "queue"), orderBy("requestedAt","asc")), snap => {
+    queueData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderMiniQueue();
+    updateStatus();
+  });
+}
+
+function renderMiniQueue() {
+  const el = document.getElementById("queue-mini-list");
+  if (!queueData.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.85rem">Fila vazia</div>'; return; }
+  el.innerHTML = queueData.map((item, i) => `
+    <div class="queue-mini-item">
+      <span class="pos-badge">${i+1}</span>
+      <div style="flex:1;margin-left:10px">
+        <div style="font-weight:600">${escHtml(item.song)}</div>
+        <div style="font-size:.75rem;color:var(--muted)">${escHtml(item.artist)} . ${escHtml(item.singerName||"")}</div>
+      </div>
+      ${item.duetWith?.length ? '<span style="font-size:.7rem;color:var(--warn)">DUETO</span>' : ""}
+    </div>`).join("");
+}
+
+// -- Meu status ----------------------------------------------------------------
+function subscribeMyStatus() {
+  if (!currentUser) return;
+  onSnapshot(doc(db, "users", currentUser.uid), snap => {
+    if (!snap.exists()) return;
+    userData = snap.data();
+    updateStatus();
+  });
+}
+
+function updateStatus() {
+  if (!userData || !currentUser) return;
+  const songsUsed  = userData.songsThisCycle  || 0;
+  const duetsUsed  = userData.duetsThisCycle  || 0;
+  const canSing    = songsUsed  < rules.songsPerCycle;
+  const canDuet    = duetsUsed  < rules.duetsPerCycle;
+  const myInQueue  = queueData.some(q => q.userId === currentUser.uid);
+
+  const box = document.getElementById("user-status-box");
+  const txt = document.getElementById("status-text");
+  const req = document.getElementById("request-section");
+  const dut = document.getElementById("duet-section");
+
+  if (myInQueue) {
+    const pos = queueData.findIndex(q => q.userId === currentUser.uid) + 1;
+    box.className = "status-box waiting";
+    txt.innerHTML = `? Voce esta na fila na posicao <strong>${pos}</strong>.<br><span style="font-size:.78rem;color:var(--muted)">Aguarde ser chamado!</span>`;
+    req.style.display = "none";
+    dut.style.display = canDuet ? "block" : "none";
+  } else if (!canSing) {
+    box.className = "status-box blocked";
+    txt.innerHTML = `? Voce ja cantou neste ciclo.<br><span style="font-size:.78rem;color:var(--muted)">${canDuet ? "Voce ainda pode participar de um dueto." : "Aguarde o proximo ciclo."}</span>`;
+    req.style.display = "none";
+    dut.style.display = canDuet ? "block" : "none";
+  } else {
+    box.className = "status-box playing";
+    txt.innerHTML = `? Voce pode solicitar uma musica!<br><span style="font-size:.78rem;color:var(--muted)">Musicas: ${songsUsed}/${rules.songsPerCycle} . Duetos: ${duetsUsed}/${rules.duetsPerCycle}</span>`;
+    req.style.display = "block";
+    dut.style.display = canDuet ? "block" : "none";
+  }
+}
+
+// -- Cantores online (para dueto) ----------------------------------------------
+function subscribeUsers() {
+  onSnapshot(collection(db, "users"), snap => {
+    const others = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.id !== currentUser?.uid);
+    renderDuetList(others);
+  });
+}
+
+function renderDuetList(users) {
+  const el = document.getElementById("duet-list");
+  if (!users.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.85rem">Nenhum outro cantor presente.</div>'; return; }
+  el.innerHTML = users.map(u => `
+    <div class="duet-item ${selectedDuetIds.includes(u.id)?"selected":""}" onclick="toggleDuet('${u.id}', this)">
+      <img class="duet-avatar" src="${u.photoURL||"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'><rect width='36' height='36' fill='%237c4dff'/></svg>"}" />
+      <div>
+        <div class="duet-name">${escHtml(u.displayName||u.email)}</div>
+        <div class="duet-status">${(u.songsThisCycle||0) >= rules.songsPerCycle ? "Ja cantou neste ciclo" : "Disponivel"}</div>
+      </div>
+    </div>`).join("");
+}
+
+window.toggleDuet = function(uid, el) {
+  const idx = selectedDuetIds.indexOf(uid);
+  if (idx > -1) { selectedDuetIds.splice(idx,1); el.classList.remove("selected"); }
+  else           { selectedDuetIds.push(uid);     el.classList.add("selected"); }
+};
+
+// -- Solicitar musica ----------------------------------------------------------
+window.requestSong = async function() {
+  const song   = document.getElementById("req-song").value.trim();
+  const artist = document.getElementById("req-artist").value.trim();
+  if (!song || !artist) { toast("Preencha o nome da musica e do artista"); return; }
+  if (!currentUser) return;
+
+  const myInQueue = queueData.some(q => q.userId === currentUser.uid);
+  if (myInQueue) { toast("Voce ja esta na fila!"); return; }
+
+  const songsUsed = userData?.songsThisCycle || 0;
+  if (songsUsed >= rules.songsPerCycle) { toast("Voce atingiu o limite de musicas deste ciclo"); return; }
+
+  if (queueData.length >= rules.maxQueue) { toast("A fila esta cheia. Aguarde."); return; }
+
+  await addDoc(collection(db, "queue"), {
+    song, artist,
+    userId:      currentUser.uid,
+    singerName:  userData?.displayName || currentUser.email,
+    singerPhoto: userData?.photoURL || "",
+    duetWith:    [],
+    requestedAt: serverTimestamp(),
+    status:      "waiting",
+  });
+
+  document.getElementById("req-song").value   = "";
+  document.getElementById("req-artist").value = "";
+  toast("Musica adicionada a fila! ?");
+};
+
+// -- Convidar para dueto -------------------------------------------------------
+window.sendDuetInvite = async function() {
+  if (!selectedDuetIds.length) { toast("Selecione pelo menos uma pessoa para o dueto"); return; }
+  const myEntry = queueData.find(q => q.userId === currentUser.uid);
+  if (!myEntry) { toast("Voce precisa ter uma musica na fila para convidar para dueto"); return; }
+
+  const names = selectedDuetIds.map(id => {
+    const snap = document.querySelector(`.duet-item.selected .duet-name`);
+    return snap?.textContent || id;
+  });
+
+  await updateDoc(doc(db, "queue", myEntry.id), { duetWith: names });
+  toast("Convite de dueto enviado! ?");
+  selectedDuetIds = [];
+  document.querySelectorAll(".duet-item.selected").forEach(el => el.classList.remove("selected"));
+};
+
+function escHtml(s) {
+  if (!s) return "";
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+</script>
+</body>
+</html>
+'@ | Set-Content -Path "$ProjectPath\web\public\index.html" -Encoding UTF8
+
+Write-OK "Web App (index.html) criado"
+
+# ============================================================
+# 8. INSTALAR DEPENDENCIAS
+# ============================================================
+Write-Step "Instalando dependencias Node.js do app Electron"
+
+Push-Location "$ProjectPath\app"
+try {
+    npm install
+    Write-OK "Dependencias instaladas"
+} catch {
+    Write-Warn "Erro ao instalar dependencias. Rode 'npm install' manualmente em $ProjectPath\app"
+} finally {
+    Pop-Location
+}
+
+# ============================================================
+# 9. INSTRUCOES FINAIS
+# ============================================================
+
+$instructions = @"
+============================================================
+  Voxly - SETUP CONCLUIDO
+============================================================
+
+ESTRUTURA CRIADA:
+  $ProjectPath\
+  +-- app\               ? App Electron (host + player)
+  |   +-- src\
+  |       +-- main.js          ? Processo principal
+  |       +-- preload.js       ? Bridge Electron ? renderer
+  |       +-- screens\
+  |           +-- host.html    ? Tela do host/gerencia
+  |           +-- player.html  ? Tela do palco (video)
+  +-- web\
+  |   +-- public\
+  |       +-- index.html       ? Web App do cantor (via QR)
+  +-- musicas\             ? Coloque os videos aqui (ou configure a pasta)
+
+============================================================
+  PROXIMOS PASSOS (EM ORDEM)
+============================================================
+
+1. CRIAR PROJETO NO FIREBASE
+   ? https://console.firebase.google.com
+   ? Criar projeto > Adicionar app Web
+   ? Copiar o firebaseConfig gerado
+   ? Ativar: Authentication (Email + Google), Firestore, Storage
+
+2. COLAR O FIREBASECONFIG EM DOIS LUGARES:
+   ? $ProjectPath\app\src\screens\host.html  (linha ~120)
+   ? $ProjectPath\web\public\index.html      (linha ~315)
+   (Procure por "COLOQUE_AQUI")
+
+3. REGRAS DO FIRESTORE (no console Firebase ? Firestore ? Regras):
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /users/{uid} {
+         allow read: if request.auth != null;
+         allow write: if request.auth != null && request.auth.uid == uid;
+       }
+       match /queue/{id} {
+         allow read: if request.auth != null;
+         allow create: if request.auth != null;
+         allow update, delete: if request.auth != null;
+       }
+     }
+   }
+
+4. FAZER DEPLOY DO WEB APP (para gerar a URL do QR Code):
+   ? Instale Firebase CLI: npm install -g firebase-tools
+   ? No terminal: firebase login
+   ? cd "$ProjectPath\web"
+   ? firebase init hosting  (selecione seu projeto, pasta public)
+   ? firebase deploy
+   ? Anote a URL gerada (ex: https://SEU-PROJETO.web.app)
+
+5. RODAR O APP ELECTRON:
+   ? cd "$ProjectPath\app"
+   ? npm start
+
+6. NO APP (host.html):
+   ? Cole a URL do Web App no campo de QR Code e clique Salvar
+   ? Aponte a pasta de musicas com o botao ? Pasta
+   ? Imprima ou mostre o QR Code na TV para os cantores escanearem
+
+============================================================
+  FLUXO DE USO
+============================================================
+  Cantor escaneia QR ? Cadastra nome/foto ? Solicita musica
+  Host ve fila ? Clica > Tocar ? Video abre na tela do palco
+  Host clica >> Pular ? Contador do cantor incrementa
+  Musica sem arquivo ? fica VERMELHA ? host vincula manualmente
+  Fim do ciclo ? Host clica "Proximo Ciclo" ? contadores resetam
+
+============================================================
+"@
+
+Write-Host $instructions -ForegroundColor White
+
+# Salvar instrucoes em arquivo
+$instructions | Set-Content -Path "$ProjectPath\LEIA-ME.txt" -Encoding UTF8
+Write-OK "Instrucoes salvas em $ProjectPath\LEIA-ME.txt"

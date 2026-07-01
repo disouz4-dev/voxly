@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /cantores/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /sessoes/{sessaoId} {
+      allow read, write: if true;
+      match /fila/{itemId} {
+        allow read, write: if true;
+      }
+      match /presencas/{uid} {
+        allow read, write: if true;
+      }
+      match /convites/{id} {
+        allow read, write: if true;
+      }
+      match /historico/{id} {
+        allow read, write: if true;
+      }
+      match /meta/{doc} {
+        allow read, write: if true;
+      }
+    }
+    match /historico/{uid}/apresentacoes/{id} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /catalogo/{itemId} {
+      allow read, write: if true;
+    }
+    match /configuracoes/{doc} {
+      allow read, write: if true;
+    }
+    match /artistas/{slug} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,22 +1,11 @@
-# Node modules
-node_modules/
-# Build output
-dist/
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-# OS files
-.DS_Store
-Thumbs.db
-# IDE files
-.vscode/
-.idea/
-# Environment files
-.env
-# Other temporary files
-*.log
+app/node_modules/
+web/node_modules/
+web/.agents/
+web/skills-lock.json
+musicas/
+firebase_config.json
+web/public/firebase_config.js
 *.bak
-*.bak_*
 *.backup*
-home/
+web/public/profile.html.bak_sessao
+.claude/
