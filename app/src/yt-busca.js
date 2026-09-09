@@ -21,6 +21,10 @@ const TERMOS_INDESEJADOS = [
   "official video", "video oficial", "videoclipe", "clipe oficial",
   "ao vivo", "live session", "acustico", "reaction", "react",
   "cover ", "making of", "bastidores", "entrevista", "podcast",
+  // Reportagem sobre karaoke passa no filtro (tem a palavra no titulo) mas nao
+  // e faixa para cantar. Penaliza em vez de excluir: o verbo sozinho nao e
+  // prova suficiente para descartar um titulo legitimo.
+  "veja ", "assista", "confira", "reportagem", "materia sobre",
 ];
 
 function normalizar(txt) {

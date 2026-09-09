@@ -81,6 +81,18 @@ test("o cantor nao digita karaoke: a tag entra sozinha na consulta", () => {
   assert.ok(r[0].motivos.includes("titulo bate com a musica"));
 });
 
+test("reportagem sobre karaoke fica atras da faixa de verdade", () => {
+  const r = ordenarCandidatos([
+    video({ id: "noticia", title: "Veja karaokê de Evidências no Rock in Rio", channel: "Jornal O Globo", duration: 432 }),
+    video({ id: "faixa",   title: "Evidências - Chitãozinho & Xororó (Karaokê)", channel: "Karaokê Show" }),
+  ], PEDIDO, { agora: AGORA });
+
+  assert.strictEqual(r[0].id, "faixa");
+  const noticia = r.find(v => v.id === "noticia");
+  assert.ok(noticia.motivos.includes("parece nao ser karaoke"));
+  assert.ok(noticia.pontos < r[0].pontos);
+});
+
 test("entre dois karaokes iguais, o mais recente sobe", () => {
   const base = { title: "Evidências Karaoke", channel: "Karaoke Br", view_count: 5000 };
   const r = ordenarCandidatos([
