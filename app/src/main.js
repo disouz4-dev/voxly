@@ -681,6 +681,34 @@ ipcMain.handle("get-local-webapp-url", () => servidorLocal ? servidorLocal.urlWe
 
 // ── IPC: YouTube Download ───────────────────────────────────
 const { spawn } = require("child_process");
+const os = require("os");
+
+// Apps abertos pelo Finder/Launchpad nao herdam o PATH do shell: o launchd
+// entrega so /usr/bin:/bin:/usr/sbin:/sbin, sem /usr/local/bin (Homebrew Intel)
+// nem /opt/homebrew/bin (Apple Silicon). Chamar spawn("yt-dlp") direto so
+// funcionava com o app iniciado de um terminal; no .app instalado dava
+// "spawn yt-dlp ENOENT" e derrubava o processo.
+const PASTAS_BIN = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  path.join(os.homedir(), ".local", "bin"),
+  "/usr/bin",
+  "/bin",
+];
+
+function resolverBinario(nome) {
+  const salvo = store.get(`bin.${nome}`);
+  if (salvo && fs.existsSync(salvo)) return salvo;
+  for (const dir of PASTAS_BIN) {
+    const alvo = path.join(dir, nome);
+    try {
+      fs.accessSync(alvo, fs.constants.X_OK);
+      return alvo;
+    } catch { /* segue procurando */ }
+  }
+  return null; // nao encontrado: quem chama decide o que dizer ao KJ
+}
+
 const YT_ARCHIVE_FILE = path.join(app.getPath("userData"), "yt-archive.txt");
 const YT_DB_FILE = path.join(app.getPath("userData"), "yt-db.json");
 
@@ -761,6 +789,15 @@ Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
 
 async function baixarUrl(opts) {
   const { urls, pasta, qualidade, renomear, organizar, cookies, navegador } = opts;
+
+  const ytDlp = resolverBinario("yt-dlp");
+  if (!ytDlp) {
+    throw new Error(
+      "yt-dlp nao encontrado. Instale com \"brew install yt-dlp ffmpeg\" " +
+      "ou aponte o caminho em Configuracoes."
+    );
+  }
+
   ytCancelado = false;
   const archive = ytArchiveLoad();
   const db = ytDbLoad();
@@ -785,9 +822,16 @@ async function baixarUrl(opts) {
       args.push("--cookies-from-browser", navegador);
     }
 
+    // As opcoes de video usam bestvideo+bestaudio, que o yt-dlp so consegue
+    // juntar com ffmpeg — e ele tambem nao acha o binario pelo PATH aqui.
+    const ffmpeg = resolverBinario("ffmpeg");
+    if (ffmpeg) args.push("--ffmpeg-location", path.dirname(ffmpeg));
+
     // yt-dlp com progress hooks
-    const child = spawn("yt-dlp", [...args, url], { windowsHide: true });
+    const child = spawn(ytDlp, [...args, url], { windowsHide: true });
     ytProcessoAtivo = child;
+    let erroSpawn = null;
+    child.on("error", (e) => { erroSpawn = e; });
 
     let arquivoBaixado = null;
     let infoVideo = {};
@@ -821,7 +865,13 @@ async function baixarUrl(opts) {
         ytProcessoAtivo = null;
         resolve(code);
       });
+      child.on("error", () => {
+        ytProcessoAtivo = null;
+        resolve(-1);
+      });
     });
+
+    if (erroSpawn) throw new Error(`Falha ao executar o yt-dlp: ${erroSpawn.message}`);
 
     if (ytCancelado) break;
 
@@ -850,10 +900,10 @@ async function baixarUrl(opts) {
     // Extrai metadados do yt-dlp (rodar novamente só para info)
     let meta = {};
     try {
-      const metaChild = spawn("yt-dlp", ["--skip-download", "--print-json", url], { windowsHide: true });
+      const metaChild = spawn(ytDlp, ["--skip-download", "--print-json", url], { windowsHide: true });
       let metaOut = "";
       metaChild.stdout.on("data", d => metaOut += d.toString());
-      await new Promise(r => metaChild.on("close", r));
+      await new Promise(r => { metaChild.on("close", r); metaChild.on("error", r); });
       meta = JSON.parse(metaOut.trim().split("\n")[0]);
       infoVideo.titulo = meta.title || "";
       infoVideo.uploader = meta.uploader || "";

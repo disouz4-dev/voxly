@@ -2042,7 +2042,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       } else if (info && info.cancelado) {
         document.getElementById('yt-status').textContent = '⏹ Cancelado';
       } else {
-        document.getElementById('yt-status').textContent = '❌ Erro no download';
+        // Mostra o motivo real: "yt-dlp nao encontrado" pede uma acao do KJ,
+        // e o texto generico escondia isso.
+        const motivo = (info && info.erro) ? info.erro : 'Erro no download';
+        document.getElementById('yt-status').textContent = '❌ ' + motivo;
+        logYt(motivo, 'erro');
       }
     });
     window.electronAPI.onYtEditRequest(info => {
