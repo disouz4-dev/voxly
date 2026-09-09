@@ -11,7 +11,7 @@ const PEDIDO = { musica: "Evidências", artista: "Chitãozinho & Xororó" };
 
 function video(over) {
   return Object.assign({
-    id: "abc123", title: "titulo", channel: "canal",
+    id: "abc123", title: "Evidências Karaoke", channel: "Karaoke Br",
     duration: 240, upload_date: "20240101", view_count: 1000,
   }, over);
 }
@@ -44,17 +44,41 @@ test("descarta o que nao serve para uma fila de karaoke", () => {
   assert.strictEqual(descartar(video()), null);
 });
 
+test("so entra karaoke: sem sinal no titulo nem no canal, cai fora", () => {
+  assert.strictEqual(
+    descartar(video({ title: "Evidências - Chitãozinho & Xororó", channel: "Som Livre" })),
+    "nao e karaoke");
+  // O sinal pode vir so do canal...
+  assert.strictEqual(descartar(video({ title: "Evidências", channel: "Karaoke Brasil" })), null);
+  // ...ou so do titulo.
+  assert.strictEqual(descartar(video({ title: "Evidências Playback", channel: "Canal do Ze" })), null);
+});
+
 test("karaoke com titulo certo vence o clipe oficial", () => {
   const r = ordenarCandidatos([
     video({ id: "oficial", title: "Evidências - Chitãozinho & Xororó (Vídeo Oficial)", channel: "Som Livre", view_count: 90000000 }),
     video({ id: "kar", title: "Evidências - Chitãozinho & Xororó (Karaoke)", channel: "Karaoke Brasil" }),
   ], PEDIDO, { agora: AGORA });
 
+  // O clipe oficial nao e mais penalizado: ele simplesmente nao entra na lista.
+  assert.strictEqual(r.length, 1);
   assert.strictEqual(r[0].id, "kar");
   assert.ok(r[0].motivos.includes("titulo de karaoke"));
   assert.ok(r[0].motivos.includes("canal de karaoke"));
-  // Nem 90 milhoes de views salvam o clipe oficial.
-  assert.ok(r[0].pontos > r[1].pontos);
+});
+
+test("o cantor nao digita karaoke: a tag entra sozinha na consulta", () => {
+  // O termo vem do cantor, so com musica e artista.
+  const consulta = montarConsulta({ musica: "Evidências", artista: "Chitãozinho & Xororó" });
+  assert.ok(/karaoke$/i.test(consulta));
+  assert.ok(consulta.includes("Evidências"));
+
+  // E a cobertura de titulo nao exige a palavra karaoke vinda do cantor.
+  const r = ordenarCandidatos([
+    video({ id: "ok", title: "Evidências - Chitãozinho & Xororó (Karaoke)", channel: "Karaoke Br" }),
+  ], { musica: "Evidências", artista: "Chitãozinho & Xororó" }, { agora: AGORA });
+  assert.strictEqual(r.length, 1);
+  assert.ok(r[0].motivos.includes("titulo bate com a musica"));
 });
 
 test("entre dois karaokes iguais, o mais recente sobe", () => {

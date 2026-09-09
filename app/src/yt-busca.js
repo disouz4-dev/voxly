@@ -104,6 +104,15 @@ function descartar(video) {
   if (!Number.isFinite(d) || d <= 0) return "sem duracao";
   if (d < DURACAO_MIN) return "curto demais";
   if (d > DURACAO_MAX) return "longo demais";
+
+  // A fila e de karaoke: sem sinal de karaoke no titulo ou no canal, o video
+  // nao entra. Antes isso era so uma penalidade, entao um clipe original ainda
+  // podia sobrar na lista quando a busca rendia pouco.
+  const titulo = normalizar(video.title);
+  const canal  = normalizar(video.channel || video.uploader);
+  if (!contemAlgum(titulo, TERMOS_KARAOKE) && !contemAlgum(canal, TERMOS_KARAOKE)) {
+    return "nao e karaoke";
+  }
   return null;
 }
 
