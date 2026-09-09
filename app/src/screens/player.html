@@ -213,34 +213,130 @@ body {
 #publico-painel { display:none; }
 body.modo-publico #publico-painel {
   display:flex; position:absolute; inset:0; z-index:15;
+  flex-direction:column;
+}
+body.modo-publico #idle-screen { display:none; }
+body.modo-publico #entrada-publica { display:flex; }
+
+/* Layout de 3 colunas: vídeo no centro, cantor atual à esquerda, fila à direita */
+.pub-layout {
+  display:grid;
+  grid-template-columns: 380px 1fr 380px;
+  height:100%;
+  gap:0;
+}
+
+/* Coluna esquerda: Cantor atual */
+.pub-left {
+  display:flex; flex-direction:column;
+  background:linear-gradient(180deg, rgba(11,12,17,.95), rgba(11,12,17,.85));
+  border-right:1px solid var(--linha);
+  padding:clamp(20px,4vh,40px) clamp(24px,4vw,48px);
+  overflow-y:auto;
+}
+.pub-left-header {
+  font-family:'Space Mono', monospace; font-size:.7rem; letter-spacing:.5em;
+  text-transform:uppercase; color:var(--ambar);
+  display:flex; align-items:center; gap:10px; margin-bottom:clamp(20px,4vh,36px);
+}
+.pub-left-header .pub-dot { width:9px; height:9px; border-radius:50%; background:var(--perigo); box-shadow:0 0 0 0 rgba(255,107,107,.6); animation:vivoPulse 1.6s infinite; }
+.pub-singer-name {
+  font-family:'Unbounded'; font-weight:800;
+  font-size:clamp(1.8rem, 5vw, 3.5rem); line-height:1.05; letter-spacing:.01em;
+  color:var(--texto); text-shadow:0 8px 32px rgba(0,0,0,.5); margin-bottom:8px;
+}
+.pub-duo-name { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1rem,2.5vw,1.8rem); margin-bottom:clamp(16px,3vh,28px); }
+.pub-song-title { font-family:'Unbounded'; font-weight:600; font-size:clamp(1.1rem,2.8vw,2.2rem); color:var(--ambar); line-height:1.2; margin-bottom:6px; }
+.pub-song-artist { font-family:'Space Mono', monospace; font-size:clamp(.75rem,1.6vw,1.1rem); letter-spacing:.2em; text-transform:uppercase; color:var(--mudo); }
+
+/* Coluna central: Vídeo */
+.pub-center {
+  position:relative;
+  background:#000;
+  display:flex; align-items:center; justify-content:center;
+}
+.pub-center video { width:100%; height:100%; object-fit:contain; }
+.pub-center-idle {
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:radial-gradient(120% 90% at 50% 30%, rgba(23,17,34,.97) 0%, rgba(7,8,12,.98) 75%);
+  text-align:center; padding:0 8vw; z-index:5;
+}
+.pub-center-idle img { height:clamp(180px,25vw,300px); width:auto; opacity:.9; filter:drop-shadow(0 14px 40px rgba(0,0,0,.55)); margin-bottom:24px; }
+.pub-center-idle-text { font-family:'Space Mono', monospace; font-size:clamp(.85rem,2vw,1.1rem); letter-spacing:.35em; text-transform:uppercase; color:var(--mudo); }
+
+/* Coluna direita: Fila de próximos */
+.pub-right {
+  display:flex; flex-direction:column;
+  background:linear-gradient(180deg, rgba(11,12,17,.95), rgba(11,12,17,.85));
+  border-left:1px solid var(--linha);
+  padding:clamp(20px,4vh,40px) clamp(24px,4vw,48px);
+  overflow-y:auto;
+}
+.pub-right-header {
+  font-family:'Space Mono', monospace; font-size:.7rem; letter-spacing:.5em;
+  text-transform:uppercase; color:var(--azul);
+  display:flex; align-items:center; gap:10px; margin-bottom:clamp(16px,3vh,28px); padding-bottom:12px; border-bottom:1px solid var(--linha);
+}
+.pub-right-header .pub-dot { width:9px; height:9px; border-radius:50%; background:var(--azul); box-shadow:0 0 0 0 rgba(88,196,221,.6); animation:vivoPulse 1.6s infinite; }
+.pub-queue { display:flex; flex-direction:column; gap:clamp(12px,2vh,20px); }
+.pub-queue-item {
+  background:rgba(255,255,255,.03); border:1px solid var(--linha); border-radius:12px;
+  padding:clamp(12px,2vh,16px) clamp(16px,3vw,20px); transition:all .2s ease;
+}
+.pub-queue-item:hover { border-color:rgba(88,196,221,.5); background:rgba(88,196,221,.05); }
+.pub-queue-num {
+  font-family:'Space Mono', monospace; font-size:.7rem; font-weight:700; color:var(--azul);
+  letter-spacing:.1em; margin-bottom:6px; display:block;
+}
+.pub-queue-singer {
+  font-family:'Unbounded'; font-weight:700; font-size:clamp(1rem,2.2vw,1.4rem); color:var(--texto); margin-bottom:4px;
+}
+.pub-queue-duo { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(.85rem,1.8vw,1.2rem); margin-bottom:4px; }
+.pub-queue-song { font-family:'Unbounded'; font-weight:600; font-size:clamp(.9rem,2vw,1.3rem); color:var(--ambar); line-height:1.2; margin-bottom:2px; }
+.pub-queue-artist { font-family:'Space Mono', monospace; font-size:clamp(.65rem,1.3vw,0.9rem); letter-spacing:.15em; text-transform:uppercase; color:var(--mudo); }
+
+/* Responsivo para telas menores */
+@media (max-width: 1400px) {
+  .pub-layout { grid-template-columns: 320px 1fr 320px; }
+}
+@media (max-width: 1200px) {
+  .pub-layout { grid-template-columns: 280px 1fr 280px; }
+}
+@media (max-width: 1000px) {
+  .pub-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+  .pub-left { border-right:none; border-bottom:1px solid var(--linha); order:1; }
+  .pub-center { order:2; min-height:50vh; }
+  .pub-right { border-left:none; border-top:1px solid var(--linha); order:3; max-height:40vh; }
+}
+
+/* Entrada pública (QR central + tutoriais) no modo público quando idle */
+body.modo-publico #entrada-publica {
+  display:none; position:absolute; inset:0; z-index:10;
   flex-direction:column; align-items:center; justify-content:center;
   text-align:center; padding:0 8vw;
 }
-body.modo-publico #idle-screen { display:none; }
-
-.pub-kicker {
-  font-family:'Space Mono', monospace; font-size:.72rem; letter-spacing:.55em;
-  text-transform:uppercase; color:var(--ambar);
-  display:flex; align-items:center; gap:12px; margin-bottom:clamp(16px,3.5vh,34px);
-}
-.pub-dot { width:9px; height:9px; border-radius:50%; background:var(--perigo); box-shadow:0 0 0 0 rgba(255,107,107,.6); animation:vivoPulse 1.6s infinite; }
-@keyframes vivoPulse { 0%{ box-shadow:0 0 0 0 rgba(255,107,107,.55);} 70%{ box-shadow:0 0 0 14px rgba(255,107,107,0);} 100%{ box-shadow:0 0 0 0 rgba(255,107,107,0);} }
-
-.pub-singer {
-  font-family:'Unbounded'; font-weight:800;
-  font-size:clamp(2.6rem, 9vw, 8.5rem); line-height:.98; letter-spacing:.01em;
-  color:var(--texto); text-shadow:0 18px 60px rgba(0,0,0,.6);
-}
-.pub-duo { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1.2rem,3vw,2.4rem); margin-top:10px; }
-.pub-song   { margin-top:clamp(22px,4.5vh,46px); font-family:'Unbounded'; font-weight:600; font-size:clamp(1.3rem,3.4vw,3rem); color:var(--ambar); }
-.pub-artist { margin-top:10px; font-family:'Space Mono', monospace; font-size:clamp(.8rem,1.8vw,1.3rem); letter-spacing:.28em; text-transform:uppercase; color:var(--mudo); }
-.pub-tom { margin-top:34px; font-family:'Space Mono', monospace; font-size:.72rem; letter-spacing:.3em; color:var(--azul); border:1px solid var(--linha); padding:8px 16px; border-radius:999px; background:rgba(9,10,14,.5); }
+body.modo-publico #entrada-publica.visivel { display:flex; }
 
 body.modo-publico .qr-corner { bottom:34px; }
 body.modo-publico .qr-corner img { width:150px; height:150px; }
 body.modo-publico #qr-app    { left:34px; }
 body.modo-publico #qr-sessao { right:34px; }
 body.modo-publico .footer { display:none; }
+
+/* Tutoriais na tela de entrada */
+.tutorial-grid {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:16px; margin-top:28px; width:100%; max-width:720px;
+}
+.tutorial-card {
+  background:rgba(18,20,27,.7); border:1px solid var(--linha); border-radius:12px;
+  padding:18px 16px; text-align:left;
+}
+.tutorial-card h4 {
+  font-family:'Unbounded'; font-weight:600; font-size:.9rem; color:var(--ambar);
+  margin-bottom:8px; display:flex; align-items:center; gap:8px;
+}
+.tutorial-card p { font-size:.78rem; color:var(--mudo); line-height:1.5; margin:0; }
 
 /* ── Contagem regressiva para o início do show ──────────── */
 .show-countdown {
@@ -358,12 +454,48 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
     <div class="pub-tom"    id="pub-tom">TOM ORIGINAL</div>
   </div>
 
-  <div class="qr-corner" id="qr-app">
+  <!-- Tela de entrada: QR Code central grande + info da sessão + tutoriais -->
+  <div id="entrada-publica" style="display:none;">
+    <img src="../assets/logo/logo_voxly.png" alt="Voxly" style="height:140px;width:auto;opacity:.96;filter:drop-shadow(0 12px 36px rgba(0,0,0,.5));margin-bottom:32px;">
+    <div id="qr-central" style="margin-bottom:24px;">
+      <img id="qrImgCentral" src="" alt="QR Code Voxly" style="width:320px;height:320px;image-rendering:pixelated;border-radius:16px;background:#fff;padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+    </div>
+    <div id="sessao-ativa-info" style="display:none;text-align:center;margin-top:24px;padding:18px 28px;background:rgba(18,20,27,.7);border:1px solid var(--linha);border-radius:14px;max-width:520px;margin-left:auto;margin-right:auto;">
+      <div style="font-family:'Space Mono',monospace;font-size:.65rem;letter-spacing:.5em;text-transform:uppercase;color:var(--ambar);margin-bottom:8px;">Sessão ativa</div>
+      <div id="sessao-nome-display" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:clamp(1.4rem,3vw,2.2rem);color:var(--texto);"></div>
+      <div id="sessao-periodo-display" style="font-family:'Space Mono',monospace;font-size:.7rem;letter-spacing:.2em;color:var(--mudo);margin-top:6px;"></div>
+    </div>
+    <div id="entrada-instrucao" style="margin-top:28px;font-size:clamp(.95rem,2vw,1.2rem);color:var(--mudo);font-family:'Space Mono',monospace;letter-spacing:.15em;text-transform:uppercase;">
+      Aponte a câmera para o QR Code e entre na sessão
+    </div>
+
+    <!-- Tutoriais -->
+    <div class="tutorial-grid" style="margin-top:32px;">
+      <div class="tutorial-card">
+        <h4>📱 1. Escaneie o QR Code</h4>
+        <p>Aponte a câmera do celular para o QR Code central ou acesse <strong>voxly-karaoke.web.app</strong> no navegador.</p>
+      </div>
+      <div class="tutorial-card">
+        <h4>🎤 2. Entre na sessão</h4>
+        <p>Digite seu nome artístico e toque em "Entrar". Se a sessão tiver código, insira o código exibido na tela.</p>
+      </div>
+      <div class="tutorial-card">
+        <h4>🎵 3. Peça sua música</h4>
+        <p>Busque por artista ou título no catálogo. Toque na música desejada para adicionar à fila.</p>
+      </div>
+      <div class="tutorial-card">
+        <h4>⏱ 4. Aguarde sua vez</h4>
+        <p>O host controla a fila. Quando for sua vez, confirme no celular e suba ao palco!</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="qr-corner" id="qr-app" style="display:none;">
     <img id="qrImgApp" src="" alt="QR App">
     <div class="qr-corner-label">📱 Acesse o App</div>
   </div>
 
-  <div class="qr-corner" id="qr-sessao">
+  <div class="qr-corner" id="qr-sessao" style="display:none;">
     <img id="qrImgSessao" src="" alt="QR Sessão">
     <div class="qr-corner-label">🎤 Entre na Sessão</div>
   </div>

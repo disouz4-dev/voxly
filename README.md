@@ -8,6 +8,46 @@ Construído com **Electron**, **Firebase / Firestore** e **Node.js**.
 
 ---
 
+## 📥 Instalação Rápida
+
+As versões mais recentes estão sempre em: **[github.com/disouz4-dev/voxly/releases/latest](https://github.com/disouz4-dev/voxly/releases/latest)**
+
+### 🐧 Linux
+
+**Opção A — .deb (Ubuntu/Debian, recomendado):**
+```bash
+# Baixe e instale (substitua VERSÃO pela versão mais recente, ex: 1.1.0)
+wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/voxly_1.1.0_amd64.deb
+sudo dpkg -i voxly_1.1.0_amd64.deb
+sudo apt-get install -f   # corrige dependências, se necessário
+```
+
+**Opção B — AppImage (portátil):**
+```bash
+# Baixe, torne executável e rode (substitua VERSÃO pela mais recente)
+wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/Voxly-1.1.0.AppImage
+chmod +x Voxly-1.1.0.AppImage
+./Voxly-1.1.0.AppImage
+```
+
+### 🍎 macOS
+```bash
+# Baixe o .dmg (substitua VERSÃO pela mais recente)
+curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/Voxly-1.1.0.dmg
+
+# Monte e copie para /Applications
+hdiutil attach Voxly.dmg
+cp -R "/Volumes/Voxly/Voxly.app" /Applications/
+hdiutil detach /Volumes/Voxly
+
+# Abra (na primeira vez, use o botão direito → Abrir, pois ainda não é assinado)
+open /Applications/Voxly.app
+```
+
+> ⚠️ O macOS pode exibir "não verificado" por causa do **Gatekeeper** (o app ainda não é assinado/notarizado pela Apple). Para abrir: **botão direito no app → Abrir → Abrir**.
+
+---
+
 ## ✨ Funcionalidades
 
 - 🎵 **Sessões ao vivo** — o host inicia uma sessão e gera um código + QR Code.
@@ -19,7 +59,6 @@ Construído com **Electron**, **Firebase / Firestore** e **Node.js**.
 - 🎚️ **Controle de tom (pitch shift)** para quem quer cantar em outro tom.
 - 🧑🤝🧑 **Presença online** — o host vê quem está conectado.
 - 📂 **Catálogo de músicas** — busca com cache no Firestore e capas via iTunes.
-- 🗔 **Bandeja (tray)** — o app roda minimizado na bandeja com ícone do Voxly e menu rápido.
 - 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases.
 - 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
 
@@ -61,8 +100,8 @@ npm install
 npm start            # inicia o Electron (host + player)
 npm run dev          # modo desenvolvimento
 ```
-
 ### Builds por plataforma
+
 ```bash
 cd app
 npm run build:mac     # macOS  (DMG + ZIP)   — requer macOS
@@ -70,6 +109,39 @@ npm run build:win     # Windows (NSIS + portable)
 npm run build:linux   # Linux  (AppImage + .deb)
 ```
 > O instalador **.dmg/.zip do macOS** é gerado pela pipeline `build-electron-mac` do CI (macOS runner). O **.deb** já sai pronto no `make build-linux`. O ícone do app é gerado a partir de `app/src/assets/icons/icon.png` (1024×1024) para todas as plataformas, com `icon.ico` multi-tamanho no Windows.
+
+### 🐧 Instalação (Linux)
+
+Após gerar ou baixar os instaladores Linux (via [GitHub Releases](https://github.com/disouz4-dev/voxly/releases)):
+
+#### **Pacote Debian (.deb)**
+```bash
+# Certifique-se de estar no diretório contendo o arquivo .deb
+# (se baixou das Releases, é onde salvou o arquivo; 
+#  se buildou localmente, é o diretório 'dist/')
+sudo dpkg -i voxly_*.deb
+sudo apt-get install -f  # corrige dependências, se necessário
+
+# Remoção
+sudo apt-get remove voxly
+```
+
+#### **AppImage**
+```bash
+# Acesse o diretório onde os instaladores foram gerados
+cd dist
+
+# Torne executável
+chmod +x Voxly-*.AppImage
+
+# Execute
+./Voxly-*.AppImage
+
+# Opcional: integre ao sistema (cria atalho no menu de aplicações)
+./Voxly-*.AppImage --appimage-install
+```
+
+> 💡 **Dica**: os AppImages são portáteis - basta baixar, tornar executável e rodar. Não requerem instalação nem permissões de root.
 
 ### As 3 telas
 
@@ -81,9 +153,6 @@ npm run build:linux   # Linux  (AppImage + .deb)
 
 - O host liga/desliga a tela do público pelo botão **🎥 Público**.
 - **Horário do show**: no painel *Controle do Palco* o KJ define a hora (`🎬 Horário do Show`) e o **público, o palco e o app dos cantores** exibem a contagem regressiva até o show começar. Na hora, é só dar ▶ Play.
-
-### 🗔 Bandeja (tray)
-O app continua rodando em segundo plano na bandeja após fechar a janela. O menu oferece **Abrir Gerência**, **Tela do Público** e **Sair do Voxly**.
 
 ### 🔄 Atualização automática
 Os instaladores publicados como *release draft* no **GitHub Releases** são detectados pelo `electron-updater` e instalados na próxima reinicialização (macOS requer assinatura/notarização da Apple).

@@ -419,7 +419,7 @@ footer strong { color:var(--ambar); font-weight:700; }
   <div class="header-controls">
     <span class="session-badge inativa" id="sessionBadge">● Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
-    <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="iniciarSessao()">▶ Iniciar Sessão</button>
+    <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="abrirModalSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-ok btn-sm" id="startQueueBtn" onclick="iniciarFila()" style="display:none;">▶ Iniciar Fila</button>
     <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar</button>
     <button class="btn btn-secondary btn-sm" id="btnAdicionarCantor" onclick="abrirModalCantor()" style="display:none;">➕ Cantor</button>
@@ -427,6 +427,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     <button class="btn btn-ghost btn-sm" id="btnAudiencia" onclick="toggleAudiencia()" title="Liga/desliga a tela do público (cantor + música + QR)">🎥 Público</button>
     <button class="btn btn-ghost btn-sm" id="btnIntervalo" onclick="toggleIntervalo()" title="Música de intervalo">🎵 Intervalo</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalTemas()" title="Temas (playlists editáveis) da música de intervalo">🎛 Temas</button>
+    <button class="btn btn-ghost btn-sm" onclick="abrirModalYoutube()" title="Baixar músicas do YouTube">⬇ YouTube</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
 </header>
@@ -488,13 +489,8 @@ footer strong { color:var(--ambar); font-weight:700; }
       <div class="qr-section">
         <div class="qr-box">
           <div class="qr-box-title">📱 Acesso ao App</div>
-          <img id="qr-app" width="130" height="130" src="">
+          <img id="qr-app" width="180" height="180" src="">
           <div class="qr-box-url">voxly-karaoke.web.app</div>
-        </div>
-        <div class="qr-box" id="qr-sessao-box" style="opacity:0.3;">
-          <div class="qr-box-title">🎤 Entrar na Sessão</div>
-          <img id="qr-sessao" width="130" height="130" src="">
-          <div class="qr-box-url" id="qr-sessao-url">Inicie uma sessão</div>
         </div>
       </div>
 
@@ -656,8 +652,94 @@ footer strong { color:var(--ambar); font-weight:700; }
     <input class="modal-input" type="text" id="tema-busca" placeholder="Buscar no catálogo..." oninput="buscarCatalogoTema()">
     <div id="tema-busca-resultados" style="max-height:170px;overflow-y:auto;margin-top:6px;"></div>
 
+    <label class="modal-label" style="margin-top:18px;">Ou selecione arquivo(s) do sistema</label>
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="adicionarArquivoTema()">📁 Selecionar arquivo(s)</button>
+      <span style="align-self:center;font-size:.7rem;color:var(--mudo);">Adiciona direto ao tema (copia para pasta interna do app)</span>
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalTemas()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: YouTube Download -->
+<div class="modal-overlay" id="modalYoutube">
+  <div class="modal-box" style="width:min(720px,96vw);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;">
+    <h2>⬇ Baixar do YouTube</h2>
+    <p style="font-size:.78rem;color:var(--mudo);margin:6px 0 14px;line-height:1.5;">
+      Cole URLs de vídeos, playlists ou canais. O app baixa, renomeia (IA) e organiza na sua biblioteca.
+    </p>
+
+    <div style="flex:1;overflow-y:auto;padding-right:4px;">
+      <!-- URLs -->
+      <label class="modal-label">Links (um por linha)</label>
+      <textarea id="yt-urls" class="modal-input" style="min-height:100px;resize:vertical;font-family:'Space Mono',monospace;font-size:.75rem;line-height:1.5;" placeholder="https://www.youtube.com/watch?v=...
+https://www.youtube.com/playlist?list=...
+https://www.youtube.com/@canal/videos"></textarea>
+
+      <!-- Options -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:14px;">
+        <div>
+          <label class="modal-label">Qualidade</label>
+          <select class="modal-select" id="yt-qualidade">
+            <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Vídeo — Melhor (mp4)</option>
+            <option value="bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]">📺 Vídeo — 1080p</option>
+            <option value="bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]">📺 Vídeo — 720p</option>
+            <option value="bestaudio/best" selected>🎵 Áudio — Melhor qualidade</option>
+            <option value="bestaudio[ext=m4a]/bestaudio/best">🎵 Áudio — M4A (sem conversão)</option>
+            <option value="bestaudio[ext=webm]/bestaudio/best">🎵 Áudio — WebM (sem conversão)</option>
+          </select>
+        </div>
+        <div>
+          <label class="modal-label">Pasta de destino</label>
+          <div style="display:flex;gap:6px;">
+            <input class="modal-input" type="text" id="yt-pasta" readonly style="flex:1;">
+            <button class="btn btn-ghost btn-sm" onclick="selecionarPastaYt()" style="white-space:nowrap;">📁 Alterar</button>
+          </div>
+        </div>
+        <div>
+          <label class="modal-label">Opções</label>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;">
+              <input type="checkbox" id="yt-renomear" checked> <span>✅ Renomear com IA</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;">
+              <input type="checkbox" id="yt-organizar"> <span>📂 Organizar por artista</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;">
+              <input type="checkbox" id="yt-cookies"> <span>🍪 Cookies do navegador</span>
+            </label>
+          </div>
+        </div>
+        <div>
+          <label class="modal-label">Navegador (cookies)</label>
+          <select class="modal-select" id="yt-navegador">
+            <option value="chrome">Chrome</option>
+            <option value="firefox">Firefox</option>
+            <option value="chromium">Chromium</option>
+            <option value="edge">Edge</option>
+            <option value="opera">Opera</option>
+            <option value="brave">Brave</option>
+            <option value="vivaldi">Vivaldi</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div style="margin-top:18px;">
+        <label class="modal-label">Progresso</label>
+        <div id="yt-status" style="font-size:.8rem;color:var(--azul);min-height:1.5em;margin-bottom:6px;">Aguardando...</div>
+        <progress id="yt-progress" value="0" max="100" style="width:100%;height:8px;"></progress>
+        <div id="yt-log" style="margin-top:8px;max-height:200px;overflow-y:auto;background:var(--noite);border:1px solid var(--linha);border-radius:8px;padding:8px;font-family:'Space Mono',monospace;font-size:.65rem;color:var(--mudo);"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="margin-top:14px;flex-shrink:0;">
+      <button class="btn btn-ghost" onclick="fecharModalYoutube()">Fechar</button>
+      <button class="btn btn-primary" id="yt-btn-baixar" onclick="iniciarDownloadYt()">⬇ Baixar</button>
+      <button class="btn btn-danger" id="yt-btn-parar" onclick="pararDownloadYt()" style="display:none;">⏹ Parar</button>
     </div>
   </div>
 </div>
@@ -775,12 +857,9 @@ footer strong { color:var(--ambar); font-weight:700; }
 
   // ── Inicialização ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
-    // QR do app: prefere URL local (LAN); senão, usa Firebase Hosting
-    if (window.electronAPI) {
-      try { appUrlLocal = await window.electronAPI.getLocalWebAppUrl(); } catch(_) {}
-    }
-    gerarQR('qr-app', appUrlLocal || APP_URL);
-    document.querySelector('.qr-box-url').textContent = appUrlLocal || APP_URL;
+    // QR do app: sempre usa URL do Firebase Hosting (conforme solicitado)
+    gerarQR('qr-app', APP_URL);
+    document.querySelector('.qr-box-url').textContent = APP_URL;
 
     // Estado do intervalo
     carregarTemas();
@@ -888,36 +967,7 @@ footer strong { color:var(--ambar); font-weight:700; }
   function ativarInterfaceSessao() {
     const appBase = appUrlLocal || APP_URL;
     document.getElementById('sessionBadge').textContent  = `● Sessão ${sessaoCodigo}`;
-    document.getElementById('sessionBadge').className    = 'session-badge ativa';
-    document.getElementById('startSessionBtn').style.display = 'none';
-    document.getElementById('startQueueBtn').style.display   = 'inline-block';
-    document.getElementById('stopSessionBtn').style.display  = 'inline-block';
-    document.getElementById('cycle-label').style.display        = 'inline';
-    document.getElementById('cycle-num').textContent            = cicloAtual;
-    document.getElementById('btnAdicionarCantor').style.display = 'inline-block';
-
-    // Horário do show — preserva o horário já marcado antes da sessão iniciar
-    const sc = document.getElementById('show-contador');
-    if (sc) sc.classList.add('ativa');
-    clearInterval(timerCountdownHost);
-    const inpShow = document.getElementById('inicio-show');
-    const horarioPre = inpShow && inpShow.value ? new Date(inpShow.value).getTime() : null;
-    horarioInicioShow = horarioPre;
-    showIniciado = false;
-    armarCountdownHost();
-    if (horarioPre) {
-      relayShowHorario();
-      db.collection('sessoes').doc(SESSAO_ID).update({
-        horarioInicioShow: firebase.firestore.Timestamp.fromMillis(horarioPre),
-        showIniciado: false
-      }).catch(() => {});
-    }
-
-    // QR da sessão
-    const sessaoUrl = `${appBase}/profile.html?sessao=${sessaoCodigo}`;
-    gerarQR('qr-sessao', sessaoUrl);
-    document.getElementById('qr-sessao-url').textContent = `Código: ${sessaoCodigo}`;
-    document.getElementById('qr-sessao-box').style.opacity = '1';
+    // Removed session QR code generation as per user request
 
     // Notifica player — aguarda 2s para garantir que o player já carregou
     setTimeout(() => {
@@ -993,8 +1043,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     document.getElementById('stopSessionBtn').style.display  = 'none';
     document.getElementById('cycle-label').style.display        = 'none';
     document.getElementById('btnAdicionarCantor').style.display = 'none';
-    document.getElementById('qr-sessao-box').style.opacity      = '0.3';
-    document.getElementById('qr-sessao-url').textContent     = 'Inicie uma sessão';
+    // Removed session QR code reset as per user request
     document.getElementById('queue-list').innerHTML  = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
     document.getElementById('users-list').innerHTML  = '<div class="empty">Nenhum cantor conectado.</div>';
     document.getElementById('np-song').textContent   = '—';
@@ -1700,6 +1749,42 @@ footer strong { color:var(--ambar); font-weight:700; }
     mostrarToast(`📦 "${s.musica}" importada e armazenada no app.`, 2200);
   }
 
+  async function adicionarArquivoTema() {
+    if (!window.electronAPI) { mostrarToast('Disponível apenas no app (Electron).', 2500); return; }
+    const tema = temaAtivoObj();
+    if (!tema) { mostrarToast('Crie/ative um tema primeiro.', 2500); return; }
+    const result = await window.electronAPI.invoke("select-music-files");
+    if (!result || !result.length) return;
+    mostrarToast(`⬇ Importando ${result.length} arquivo(s)...`, 3000);
+    let importados = 0;
+    for (const fullPath of result) {
+      const destino = await window.electronAPI.importarMusicaTema(fullPath);
+      if (!destino) continue;
+      // Extrai nome do arquivo sem extensão e caminho
+      const nomeComExt = fullPath.split(/[\\/]/).pop();
+      const nome = nomeComExt.replace(/\.[^.]+$/, '');
+      // Tenta extrair artista - música do nome do arquivo
+      let artista = "Desconhecido", musica = nome;
+      const partes = nome.split(" - ");
+      if (partes.length >= 2) {
+        artista = partes[0].trim();
+        musica = partes.slice(1).join(" - ").trim();
+      }
+      if (tema.faixas.some(f => f.filePath === destino)) continue;
+      tema.faixas.push({ musica, artista, filePath: destino });
+      importados++;
+    }
+    if (importados) {
+      salvarTemas();
+      renderSelectTemas();
+      renderFaixasTema();
+      if (intervaloAtivo) enviarPlaylistIntervalo();
+      mostrarToast(`✅ ${importados} música(s) adicionada(s) ao tema "${tema.nome}".`, 2500);
+    } else {
+      mostrarToast('Nenhum arquivo novo importado.', 2500);
+    }
+  }
+
   function atualizarTituloIntervalo() {
     const btn = document.getElementById('btnIntervalo');
     if (btn) btn.title = 'Música de intervalo — Tema: ' + (temaAtivoObj() ? temaAtivoObj().nome : 'Animados');
@@ -1730,6 +1815,190 @@ footer strong { color:var(--ambar); font-weight:700; }
 
   function openSettings() { document.getElementById('modalAjustes').classList.add('open'); }
   function fecharModalAjustes() { document.getElementById('modalAjustes').classList.remove('open'); }
+
+  // ── YouTube Download Modal ───────────────────────────────────
+  function abrirModalYoutube() {
+    const modal = document.getElementById('modalYoutube');
+    if (!modal) return;
+    // Preenche pasta padrão
+    if (window.electronAPI) {
+      window.electronAPI.getMusicFolder().then(folder => {
+        if (folder) document.getElementById('yt-pasta').value = folder;
+      });
+    }
+    modal.classList.add('open');
+  }
+  function fecharModalYoutube() {
+    const modal = document.getElementById('modalYoutube');
+    if (!modal) return;
+    modal.classList.remove('open');
+    resetarModalYoutube();
+  }
+
+  function resetarModalYoutube() {
+    document.getElementById('yt-urls').value = '';
+    document.getElementById('yt-qualidade').value = 'bestaudio/best';
+    document.getElementById('yt-renomear').checked = true;
+    document.getElementById('yt-organizar').checked = false;
+    document.getElementById('yt-cookies').checked = false;
+    document.getElementById('yt-navegador').value = 'chrome';
+    document.getElementById('yt-status').textContent = 'Aguardando...';
+    document.getElementById('yt-progress').value = 0;
+    document.getElementById('yt-log').textContent = '';
+    document.getElementById('yt-btn-baixar').style.display = '';
+    document.getElementById('yt-btn-parar').style.display = 'none';
+  }
+
+  async function selecionarPastaYt() {
+    if (!window.electronAPI) return;
+    const folder = await window.electronAPI.selectMusicFolder();
+    if (folder) {
+      document.getElementById('yt-pasta').value = folder;
+    }
+  }
+
+  function logYt(msg, tipo = 'info') {
+    const el = document.getElementById('yt-log');
+    const prefix = tipo === 'erro' ? '❌ ' : tipo === 'ok' ? '✅ ' : tipo === 'canal' ? '📁 ' : 'ℹ️ ';
+    el.textContent += prefix + msg + '\n';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function iniciarDownloadYt() {
+    const urlsText = document.getElementById('yt-urls').value.trim();
+    if (!urlsText) {
+      mostrarToast('Adicione pelo menos uma URL');
+      return;
+    }
+    const pasta = document.getElementById('yt-pasta').value.trim();
+    if (!pasta) {
+      mostrarToast('Selecione a pasta de destino');
+      return;
+    }
+
+    const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+    if (!urls.length) {
+      mostrarToast('Nenhuma URL válida encontrada');
+      return;
+    }
+
+    const opts = {
+      urls,
+      pasta,
+      qualidade: document.getElementById('yt-qualidade').value,
+      renomear: document.getElementById('yt-renomear').checked,
+      organizar: document.getElementById('yt-organizar').checked,
+      cookies: document.getElementById('yt-cookies').checked,
+      navegador: document.getElementById('yt-cookies').checked ? document.getElementById('yt-navegador').value : null
+    };
+
+    document.getElementById('yt-btn-baixar').style.display = 'none';
+    document.getElementById('yt-btn-parar').style.display = '';
+    document.getElementById('yt-status').textContent = `Iniciando download de ${urls.length} URL(s)...`;
+    document.getElementById('yt-progress').value = 0;
+    logYt(`Iniciando download de ${urls.length} URL(s)`);
+
+    if (window.electronAPI) {
+      try {
+        await window.electronAPI.ytDownload(opts);
+      } catch (e) {
+        logYt('Erro ao iniciar: ' + e.message, 'erro');
+        document.getElementById('yt-btn-baixar').style.display = '';
+        document.getElementById('yt-btn-parar').style.display = 'none';
+      }
+    }
+  }
+
+  function pararDownloadYt() {
+    if (window.electronAPI) {
+      window.electronAPI.ytCancel();
+    }
+    document.getElementById('yt-btn-parar').style.display = 'none';
+    document.getElementById('yt-btn-baixar').style.display = '';
+    logYt('Download cancelado pelo usuário');
+  }
+
+  // Escuta eventos do processo principal
+  if (window.electronAPI) {
+    window.electronAPI.onYtProgress(info => {
+      if (info.status) document.getElementById('yt-status').textContent = info.status;
+      if (info.progress !== undefined) document.getElementById('yt-progress').value = info.progress;
+      if (info.log) logYt(info.log, info.logTipo || 'info');
+    });
+    window.electronAPI.onYtDone(info => {
+      document.getElementById('yt-btn-baixar').style.display = '';
+      document.getElementById('yt-btn-parar').style.display = 'none');
+      if (info && info.sucesso) {
+        document.getElementById('yt-status').textContent = '✅ Concluído!';
+        mostrarToast('Download do YouTube concluído');
+      } else if (info && info.cancelado) {
+        document.getElementById('yt-status').textContent = '⏹ Cancelado';
+      } else {
+        document.getElementById('yt-status').textContent = '❌ Erro no download';
+      }
+    });
+    window.electronAPI.onYtEditRequest(info => {
+      // AI não conseguiu identificar - abre modal de edição manual
+      abrirModalEdicaoManualYt(info);
+    });
+  }
+
+  // Modal de edição manual quando a IA falha
+  let ytEdicaoAtual = null;
+  function abrirModalEdicaoManualYt(info) {
+    ytEdicaoAtual = info;
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'modalYtEdicao';
+    modal.style.zIndex = '300';
+    modal.innerHTML = `
+      <div class="modal-box" style="width:min(500px,94vw);">
+        <h2>✏️ Edição Manual</h2>
+        <p style="font-size:.78rem;color:var(--mudo);margin:6px 0 14px;line-height:1.5;">
+          A IA não conseguiu identificar esta música. Preencha os campos abaixo.
+        </p>
+        <div style="margin-bottom:12px;">
+          <label class="modal-label">Arquivo original</label>
+          <div style="font-family:'Space Mono',monospace;font-size:.65rem;color:var(--azul);background:var(--palco2);padding:8px;border-radius:6px;border:1px solid var(--linha);">${escHtml(info.nomeArquivo)}</div>
+        </div>
+        <label class="modal-label">Artista</label>
+        <input class="modal-input" type="text" id="yt-edit-artista" placeholder="Ex: Exaltasamba" value="${escHtml(info.sugestaoArtista || '')}">
+        <label class="modal-label" style="margin-top:10px;">Música</label>
+        <input class="modal-input" type="text" id="yt-edit-musica" placeholder="Ex: Você Me Completa" value="${escHtml(info.sugestaoMusica || '')}">
+        <label class="modal-label" style="margin-top:10px;">Canal (opcional)</label>
+        <input class="modal-input" type="text" id="yt-edit-canal" placeholder="Ex: Karaokê Brasil" value="${escHtml(info.canal || '')}">
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="fecharModalYtEdicao()">Cancelar</button>
+          <button class="btn btn-primary" onclick="confirmarEdicaoManualYt()">Confirmar e Renomear</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.classList.add('open');
+    setTimeout(() => document.getElementById('yt-edit-artista').focus(), 100);
+  }
+
+  function fecharModalYtEdicao() {
+    const modal = document.getElementById('modalYtEdicao');
+    if (modal) modal.remove();
+    ytEdicaoAtual = null;
+  }
+
+  function confirmarEdicaoManualYt() {
+    if (!ytEdicaoAtual) return;
+    const artista = document.getElementById('yt-edit-artista').value.trim();
+    const musica = document.getElementById('yt-edit-musica').value.trim();
+    const canal = document.getElementById('yt-edit-canal').value.trim();
+    if (!artista || !musica) {
+      mostrarToast('Preencha artista e música');
+      return;
+    }
+    fecharModalYtEdicao();
+    if (window.electronAPI) {
+      window.electronAPI.ytConfirmEdit({ ...ytEdicaoAtual, artista, musica, canal });
+    }
+    ytEdicaoAtual = null;
+  }
 
   function verificarAtualizacao() {
     if (!document.getElementById('modalAjustes').classList.contains('open')) return;

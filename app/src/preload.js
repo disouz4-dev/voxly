@@ -4,7 +4,8 @@ const canaisPermitidos = new Set([
   "decode-qr",
   "join-session",
   "fetch-image",
-  "open-player"
+  "open-player",
+  "select-music-files"
 ]);
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -29,6 +30,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   toggleAudience:     () => ipcRenderer.invoke("toggle-audience"),
   getAudienceState:   () => ipcRenderer.invoke("get-audience-state"),
   onAudienceState:    (cb) => ipcRenderer.on("audiencia-estado", (_e, ativa) => cb(ativa)),
+
+  // YouTube Download
+  ytDownload:         (opts) => ipcRenderer.invoke("yt-download", opts),
+  ytCancel:           () => ipcRenderer.invoke("yt-cancel"),
+  onYtProgress:       (cb) => ipcRenderer.on("yt-progress", (_e, info) => cb(info)),
+  onYtDone:           (cb) => ipcRenderer.on("yt-done", (_e, info) => cb(info)),
+  onYtEditRequest:    (cb) => ipcRenderer.on("yt-edit-request", (_e, info) => cb(info)),
+  ytConfirmEdit:      (info) => ipcRenderer.invoke("yt-confirm-edit", info),
 
   // Invoke restrito a canais explicitamente permitidos
   invoke:            (channel, ...args) => {

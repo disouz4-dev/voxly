@@ -1,6 +1,6 @@
 {
   "name": "voxly",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Voxly - Sistema de fila para karaoke com QR Code",
   "homepage": "https://github.com/disouz4-dev/voxly",
   "license": "MIT",
@@ -57,14 +57,18 @@
       "icon": "src/assets/icons/icon.png",
       "category": "Audio",
       "maintainer": "Voxly",
-      "synopsis": "Karaoke colaborativo com QR Code"
+      "synopsis": "Karaoke colaborativo com QR Code",
+      "desktop": {
+        "Name": "Voxly Karaoke",
+        "Comment": "Karaoke colaborativo com QR Code"
+      }
     },
     "publish": [
       {
         "provider": "github",
         "owner": "disouz4-dev",
         "repo": "voxly",
-        "releaseType": "draft"
+        "releaseType": "release"
       }
     ],
     "files": [

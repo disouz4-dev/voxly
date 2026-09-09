@@ -8,6 +8,46 @@ Built with **Electron**, **Firebase / Firestore**, and **Node.js**.
 
 ---
 
+## 📥 Quick Install
+
+Latest versions are always at: **[github.com/disouz4-dev/voxly/releases/latest](https://github.com/disouz4-dev/voxly/releases/latest)**
+
+### 🐧 Linux
+
+**Option A — .deb (Ubuntu/Debian, recommended):**
+```bash
+# Download and install (replace VERSION with the latest, e.g. 1.1.0)
+wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/voxly_1.1.0_amd64.deb
+sudo dpkg -i voxly_1.1.0_amd64.deb
+sudo apt-get install -f   # fix dependencies, if needed
+```
+
+**Option B — AppImage (portable):**
+```bash
+# Download, make executable and run (replace VERSION with the latest)
+wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/Voxly-1.1.0.AppImage
+chmod +x Voxly-1.1.0.AppImage
+./Voxly-1.1.0.AppImage
+```
+
+### 🍎 macOS
+```bash
+# Download the .dmg (replace VERSION with the latest)
+curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/Voxly-1.1.0.dmg
+
+# Mount and copy to /Applications
+hdiutil attach Voxly.dmg
+cp -R "/Volumes/Voxly/Voxly.app" /Applications/
+hdiutil detach /Volumes/Voxly
+
+# Open (first time, right-click → Open, since it's not notarized yet)
+open /Applications/Voxly.app
+```
+
+> ⚠️ macOS may show "unidentified developer" because of **Gatekeeper** (the app is not yet signed/notarized by Apple). To open: **right-click the app → Open → Open**.
+
+---
+
 ## ✨ Features
 
 - 🎵 **Live sessions** — the host starts a session and generates a code + QR Code.
@@ -19,7 +59,6 @@ Built with **Electron**, **Firebase / Firestore**, and **Node.js**.
 - 🎚️ **Pitch shifting** — singers can change the song key to match their voice.
 - 🧑🤝🧑 **Online presence** — the host sees who is currently connected.
 - 📂 **Song catalog** — search with Firestore cache and iTunes artwork.
-- 🗔 **System tray** — the app keeps running in the tray with the Voxly icon and a quick menu.
 - 🔄 **Auto-update** — new installers are downloaded from GitHub Releases.
 - 🔌 **Offline fallback (LAN)** — even without internet the karaoke keeps going (details below).
 
@@ -61,8 +100,8 @@ npm install
 npm start            # launches Electron (host + player)
 npm run dev          # development mode
 ```
-
 ### Platform builds
+
 ```bash
 cd app
 npm run build:mac     # macOS  (DMG + ZIP)   — requires macOS
@@ -70,6 +109,39 @@ npm run build:win     # Windows (NSIS + portable)
 npm run build:linux   # Linux  (AppImage + .deb)
 ```
 > The macOS **.dmg/.zip** installer is produced by the `build-electron-mac` CI job (macOS runner). The Linux **.deb** is produced by `make build-linux`. The app icon is generated from `app/src/assets/icons/icon.png` (1024×1024) for all platforms, with a multi-size `icon.ico` on Windows.
+
+### 🐧 Installation (Linux)
+
+After building or downloading the Linux installers (via [GitHub Releases](https://github.com/disouz4-dev/voxly/releases)):
+
+#### **Debian Package (.deb)**
+```bash
+# Make sure you're in the directory containing the .deb file
+# (if you downloaded from Releases, this is where you saved the file;
+#  if you built locally, this is the 'dist/' directory)
+sudo dpkg -i voxly_*.deb
+sudo apt-get install -f  # fix dependencies, if needed
+
+# Removal
+sudo apt-get remove voxly
+```
+
+#### **AppImage**
+```bash
+# Navigate to the directory where the installers were generated
+cd dist
+
+# Make executable
+chmod +x Voxly-*.AppImage
+
+# Run
+./Voxly-*.AppImage
+
+# Optional: integrate with the system (creates application menu shortcut)
+./Voxly-*.AppImage --appimage-install
+```
+
+> 💡 **Tip**: AppImages are portable - just download, make executable, and run. No installation or root privileges required.
 
 ### The 3 screens
 
@@ -81,9 +153,6 @@ npm run build:linux   # Linux  (AppImage + .deb)
 
 - The host turns the audience screen on/off with the **🎥 Público** button.
 - **Show start time**: in the *Controle do Palco* panel the KJ sets the time (`🎬 Horário do Show`) and the **audience, stage and singers' app** show a live countdown until the show starts. At the right time, just hit ▶ Play.
-
-### 🗔 System tray
-After closing the window the app keeps running in the tray. The menu offers **Open Console**, **Audience Screen** and **Quit Voxly**.
 
 ### 🔄 Auto-update
 Installers published as *draft releases* on **GitHub Releases** are detected by `electron-updater` and installed on the next restart (macOS requires Apple signing/notarization).

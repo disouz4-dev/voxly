@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen, Tray, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, screen } = require("electron");
 const path   = require("path");
 const Store  = require("electron-store");
 const chokidar = require("chokidar");
@@ -11,7 +11,6 @@ const store = new Store();
 const SESSAO_ID = "sessao_default";
 
 const ICONE_APP  = path.join(__dirname, "assets", "icons", "icon.png");
-const ICONE_TRAY = path.join(__dirname, "assets", "icons", "tray.png");
 
 let hostWindow      = null;
 let playerWindow    = null;
@@ -20,7 +19,6 @@ let musicWatcher    = null;
 let catalogoLocal   = [];
 let servidorCatalogo= null;
 let servidorLocal   = null;
-let tray            = null;
 
 // ── Catálogo local ─────────────────────────────────────────
 
@@ -290,26 +288,8 @@ app.whenReady().then(() => {
     caminhoDados: path.join(app.getPath("userData"), "voxly-offline.json"),
   });
   servidorLocal.iniciar();
-  criarTray();
   configurarAutoUpdate();
 });
-
-// ── Bandeja (tray) ─────────────────────────────────────────
-function criarTray() {
-  try {
-    tray = new Tray(ICONE_TRAY);
-    tray.setToolTip("Voxly — Karaokê");
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: "🎛 Abrir Gerência",  click: () => abrirHost() },
-      { label: "🎥 Tela do Público", click: () => abrirAudiencia() },
-      { type: "separator" },
-      { label: "⏹ Sair do Voxly",   click: () => app.quit() },
-    ]));
-    tray.on("click", () => abrirHost());
-  } catch (e) {
-    console.warn("[TRAY] não foi possível criar a bandeja:", e.message);
-  }
-}
 
 function abrirHost() {
   if (hostWindow && !hostWindow.isDestroyed()) {
@@ -404,10 +384,7 @@ ipcMain.handle("restart-to-update", () => {
 ipcMain.handle("app-versao", () => app.getVersion());
 
 app.on("window-all-closed", () => {
-  // Com a bandeja ativa, o app continua rodando em segundo plano até sair pela bandeja
-  if (!tray) {
-    if (process.platform !== "darwin") app.quit();
-  }
+  if (process.platform !== "darwin") app.quit();
 });
 
 // ── IPC: Pasta de músicas ──────────────────────────────────
@@ -449,6 +426,20 @@ ipcMain.handle("list-music-files", () => {
     name:     path.relative(folder, fullPath),
     fullPath
   }));
+});
+
+ipcMain.handle("select-music-files", async () => {
+  const result = await dialog.showOpenDialog(hostWindow, {
+    properties: ["openFile", "multiSelections"],
+    title: "Selecionar arquivo(s) de música",
+    filters: [
+      { name: "Mídia", extensions: ["mp4", "mkv", "avi", "webm", "mp3"] }
+    ]
+  });
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths;
+  }
+  return [];
 });
 
 // ── IPC: Resolver arquivo ──────────────────────────────────
@@ -661,6 +652,320 @@ ipcMain.handle("get-local-ip", () => {
 ipcMain.handle("get-webapp-url", () => store.get("webAppUrl", "https://voxly-karaoke.web.app"));
 ipcMain.handle("set-webapp-url", (_, url) => store.set("webAppUrl", url));
 ipcMain.handle("get-local-webapp-url", () => servidorLocal ? servidorLocal.urlWeb() : null);
+
+// ── IPC: YouTube Download ───────────────────────────────────
+const { spawn } = require("child_process");
+const YT_ARCHIVE_FILE = path.join(app.getPath("userData"), "yt-archive.txt");
+const YT_DB_FILE = path.join(app.getPath("userData"), "yt-db.json");
+
+function ytDbLoad() {
+  try { return JSON.parse(fs.readFileSync(YT_DB_FILE, "utf8")); } catch { return { videos: {} }; }
+}
+function ytDbSave(db) { fs.writeFileSync(YT_DB_FILE, JSON.stringify(db, null, 2)); }
+function ytArchiveLoad() {
+  try { return new Set(fs.readFileSync(YT_ARCHIVE_FILE, "utf8").trim().split("\n").filter(Boolean)); } catch { return new Set(); }
+}
+function ytArchiveSave(ids) { fs.writeFileSync(YT_ARCHIVE_FILE, Array.from(ids).join("\n") + "\n"); }
+
+function gerarIdYt(nome) {
+  const crypto = require("crypto");
+  return crypto.createHash("md5").update(nome).digest("hex").slice(0, 6);
+}
+
+function limparNomeYt(s) {
+  return s.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").replace(/['‘’‚‛`´]/g, "").replace(/[“”„‟]/g, "").trim().replace(/\.+$/, "");
+}
+
+function normalizarCaseYt(s) {
+  if (!s) return s;
+  const excecoes = new Set(['de','do','da','dos','das','e','a','o','os','as','em','no','na','nos','nas','por','para','com','sem','the','an','of','in','on','at','by','for','and','or']);
+  return s.split(" ").map((p, i) => {
+    if (/^[A-Z]{2,5}$/.test(p) || /^([A-Z]\.){2,}$/.test(p) || /^[A-Z]{1,3}[\/\\-][A-Z]{1,3}$/.test(p)) return p;
+    if (i > 0 && excecoes.has(p.toLowerCase())) return p.toLowerCase();
+    return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+  }).join(" ");
+}
+
+let ytCancelado = false;
+let ytProcessoAtivo = null;
+
+function enviarProgresso(info) {
+  if (hostWindow && !hostWindow.isDestroyed()) {
+    hostWindow.webContents.send("yt-progress", info);
+  }
+}
+
+function extrairCanalDoTitulo(titulo, uploader, channel) {
+  // Prioridade: uploader > channel > extrair do título (entre colchetes no final)
+  if (uploader) return uploader;
+  if (channel) return channel;
+  const m = titulo.match(/\[([^\]{]{2,40})\]\s*$/);
+  if (m) return m[1].trim();
+  return "Desconhecido";
+}
+
+async function identificarComIA(nomeArquivo) {
+  // Tenta usar Ollama local primeiro (gratuito)
+  try {
+    const prompt = `Extraia ARTISTA e MÚSICA do nome: "${nomeArquivo}".
+Regras: 1) Ignore: karaoke, playback, HD, 4K, oficial, instrumental, backing track, legendado, "CC" ou nomes de canal. 2) Se começar com "CC" + artista (CCAESPA, CCBTS), ignore "CC". 3) Use grafia oficial. 4) Título em Title Case. 5) Se só artista, música = "Desconhecida". 6) Ordem pode ser "Artista Música" ou "Música Artista".
+Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
+
+    const res = await fetch("http://localhost:11434/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "llama3.2:3b", prompt, stream: false, options: { temperature: 0 } }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!res.ok) throw new Error("Ollama indisponível");
+    const data = await res.json();
+    const txt = data.response || "";
+    const jsonMatch = txt.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.artista && parsed.musica) {
+        return { artista: normalizarCaseYt(parsed.artista.trim()), musica: normalizarCaseYt(parsed.musica.trim()) };
+      }
+    }
+  } catch (e) {
+    console.log("[YT] Ollama falhou:", e.message);
+  }
+  return null;
+}
+
+async function baixarUrl(opts) {
+  const { urls, pasta, qualidade, renomear, organizar, cookies, navegador } = opts;
+  ytCancelado = false;
+  const archive = ytArchiveLoad();
+  const db = ytDbLoad();
+  let totalBaixados = 0;
+
+  for (let i = 0; i < urls.length && !ytCancelado; i++) {
+    const url = urls[i];
+    enviarProgresso({ status: `[${i+1}/${urls.length}] Processando: ${url}`, progress: Math.round(i/urls.length*100), log: `Iniciando: ${url}`, logTipo: 'canal' });
+
+    const args = [
+      "-f", qualidade,
+      "-o", path.join(pasta, "%(title)s.%(ext)s"),
+      "--download-archive", YT_ARCHIVE_FILE,
+      "--no-overwrites",
+      "--ignore-errors",
+      "--sleep-interval", "2",
+      "--max-sleep-interval", "5",
+      "--extractor-args", "youtubetab:skip=authcheck",
+    ];
+
+    if (cookies && navegador) {
+      args.push("--cookies-from-browser", navegador);
+    }
+
+    // yt-dlp com progress hooks
+    const child = spawn("yt-dlp", [...args, url], { windowsHide: true });
+    ytProcessoAtivo = child;
+
+    let arquivoBaixado = null;
+    let infoVideo = {};
+
+    child.stdout.on("data", (data) => {
+      const txt = data.toString();
+      // Detecta arquivo baixado
+      const m = txt.match(/\[download\] Destination: (.+)/);
+      if (m) arquivoBaixado = m[1].trim();
+      // Progresso
+      const p = txt.match(/\[download\]\s+(\d+\.?\d*)%/);
+      if (p) {
+        enviarProgresso({ progress: Math.round(i/urls.length*100 + parseFloat(p[1])/urls.length), status: `Baixando ${p[1]}%` });
+      }
+      // Canal
+      const c = txt.match(/\[info\]\s+(.+?)\s+-\s+(.+)/);
+      if (c && !infoVideo.canal) {
+        infoVideo.canal = c[1].trim();
+      }
+    });
+
+    child.stderr.on("data", (data) => {
+      const txt = data.toString();
+      if (txt.includes("already been downloaded") || txt.includes("already been recorded")) {
+        enviarProgresso({ log: `⏭ Já baixado (archive): ${url}`, logTipo: 'info' });
+      }
+    });
+
+    await new Promise((resolve) => {
+      child.on("close", (code) => {
+        ytProcessoAtivo = null;
+        resolve(code);
+      });
+    });
+
+    if (ytCancelado) break;
+
+    // Encontra o arquivo baixado (pode ter sido renomeado pelo yt-dlp)
+    if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
+      // Tenta achar arquivo novo na pasta
+      const files = fs.readdirSync(pasta).filter(f => {
+        const full = path.join(pasta, f);
+        return fs.statSync(full).isFile() && [".mp4", ".mkv", ".webm", ".mp3", ".m4a"].includes(path.extname(f).toLowerCase());
+      });
+      // Pega o mais recente
+      if (files.length) {
+        files.sort((a, b) => fs.statSync(path.join(pasta, b)).mtimeMs - fs.statSync(path.join(pasta, a)).mtimeMs);
+        arquivoBaixado = path.join(pasta, files[0]);
+      }
+    }
+
+    if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
+      enviarProgresso({ log: `⚠️ Arquivo não encontrado após download`, logTipo: 'erro' });
+      continue;
+    }
+
+    enviarProgresso({ log: `⬇ Baixado: ${path.basename(arquivoBaixado)}`, logTipo: 'ok' });
+    totalBaixados++;
+
+    // Extrai metadados do yt-dlp (rodar novamente só para info)
+    let meta = {};
+    try {
+      const metaChild = spawn("yt-dlp", ["--skip-download", "--print-json", url], { windowsHide: true });
+      let metaOut = "";
+      metaChild.stdout.on("data", d => metaOut += d.toString());
+      await new Promise(r => metaChild.on("close", r));
+      meta = JSON.parse(metaOut.trim().split("\n")[0]);
+      infoVideo.titulo = meta.title || "";
+      infoVideo.uploader = meta.uploader || "";
+      infoVideo.channel = meta.channel || "";
+      infoVideo.id = meta.id || "";
+    } catch (e) {
+      console.log("[YT] Falha ao extrair meta:", e.message);
+    }
+
+    const canal = extrairCanalDoTitulo(infoVideo.titulo || "", infoVideo.uploader, infoVideo.channel);
+    const idVideo = infoVideo.id || gerarIdYt(path.basename(arquivoBaixado));
+
+    // Salva no DB
+    db.videos[idVideo] = {
+      titulo: infoVideo.titulo || path.basename(arquivoBaixado),
+      url,
+      canal,
+      artista: "",
+      musica: "",
+      arquivo: path.basename(arquivoBaixado),
+      data: new Date().toISOString()
+    };
+    ytDbSave(db);
+
+    // Renomear com IA se solicitado
+    if (renomear && !ytCancelado) {
+      enviarProgresso({ status: "Identificando com IA...", log: "🤖 Identificando artista/música...", logTipo: 'info' });
+
+      const nomeLimpo = path.basename(arquivoBaixado, path.extname(arquivoBaixado))
+        .replace(/\[[^\]]*\]/g, " ")
+        .replace(/\([^)]{0,30}\)/g, " ")
+        .replace(/\b(karaoke|playback|instrumental|backing\s*track|vers[aã]o|version|oficial|official|lyrics|legendado|hd|4k|hq|fhd|1080p|720p|full)\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      let identificado = await identificarComIA(nomeLimpo);
+
+      if (!identificado || !identificado.artista || !identificado.musica) {
+        // IA falhou - solicita edição manual
+        enviarProgresso({
+          status: "IA não identificou - edição manual necessária",
+          log: "⚠️ IA não conseguiu identificar - abrindo edição manual",
+          logTipo: 'erro'
+        });
+
+        if (hostWindow && !hostWindow.isDestroyed()) {
+          hostWindow.webContents.send("yt-edit-request", {
+            arquivoOriginal: arquivoBaixado,
+            nomeArquivo: path.basename(arquivoBaixado),
+            sugestaoArtista: identificado?.artista || "",
+            sugestaoMusica: identificado?.musica || "",
+            canal,
+            idVideo
+          });
+        }
+
+        // Aguarda confirmação manual
+        await new Promise((resolve) => {
+          const handler = (_e, resposta) => {
+            if (resposta.idVideo === idVideo) {
+              ipcMain.removeListener("yt-confirm-edit", handler);
+              identificado = { artista: resposta.artista, musica: resposta.musica };
+              resolve();
+            }
+          };
+          ipcMain.on("yt-confirm-edit", handler);
+        });
+
+        if (ytCancelado) break;
+      }
+
+      if (identificado && identificado.artista && identificado.musica) {
+        const artista = limparNomeYt(normalizarCaseYt(identificado.artista));
+        const musica = limparNomeYt(normalizarCaseYt(identificado.musica));
+        const ext = path.extname(arquivoBaixado);
+        const idHex = gerarIdYt(artista + musica);
+        // Novo formato: Artista - Música - Canal [id]
+        const novoNome = `${artista} - ${musica} - ${limparNomeYt(canal)} [${idHex}]${ext}`;
+
+        let pastaDest = pasta;
+        if (organizar) {
+          pastaDest = path.join(pasta, artista);
+          fs.mkdirSync(pastaDest, { recursive: true });
+        }
+
+        const novoPath = path.join(pastaDest, novoNome);
+        if (arquivoBaixado !== novoPath) {
+          fs.renameSync(arquivoBaixado, novoPath);
+          arquivoBaixado = novoPath;
+        }
+
+        db.videos[idVideo].artista = artista;
+        db.videos[idVideo].musica = musica;
+        db.videos[idVideo].arquivo = path.basename(arquivoBaixado);
+        ytDbSave(db);
+
+        enviarProgresso({ log: `✏️ Renomeado: ${path.basename(arquivoBaixado)}`, logTipo: 'ok' });
+      }
+    }
+
+    // Adiciona ao archive
+    archive.add(idVideo);
+    ytArchiveSave(archive);
+  }
+
+  return { sucesso: !ytCancelado, totalBaixados, cancelado: ytCancelado };
+}
+
+ipcMain.handle("yt-download", async (_, opts) => {
+  ytCancelado = false;
+  try {
+    const resultado = await baixarUrl(opts);
+    if (hostWindow && !hostWindow.isDestroyed()) {
+      hostWindow.webContents.send("yt-done", resultado);
+    }
+    return resultado;
+  } catch (e) {
+    console.error("[YT] Erro:", e);
+    if (hostWindow && !hostWindow.isDestroyed()) {
+      hostWindow.webContents.send("yt-done", { sucesso: false, erro: e.message });
+    }
+    return { sucesso: false, erro: e.message };
+  }
+});
+
+ipcMain.handle("yt-cancel", () => {
+  ytCancelado = true;
+  if (ytProcessoAtivo) {
+    ytProcessoAtivo.kill();
+    ytProcessoAtivo = null;
+  }
+  return true;
+});
+
+ipcMain.handle("yt-confirm-edit", (_, info) => {
+  // Apenas dispara o evento para quem está aguardando
+  return true;
+});
 
 // ── Watcher ────────────────────────────────────────────────
 function startWatcher(folder) {

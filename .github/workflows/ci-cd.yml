@@ -86,6 +86,32 @@ jobs:
             app/dist/*.exe
           retention-days: 7
 
+  # ---- Build Electron (Linux) ----
+  build-electron-linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: app
+      - name: Build Electron (Linux)
+        run: npm run build:linux
+        working-directory: app
+      - name: Upload artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: voxly-linux
+          path: |
+            app/dist/*.AppImage
+            app/dist/*.deb
+          retention-days: 7
+
   # ---- Build Electron (macOS) ----
   build-electron-mac:
     needs: test
@@ -112,6 +138,87 @@ jobs:
             app/dist/*.zip
             app/dist/*.app
           retention-days: 7
+
+  # ---- Publish Electron Releases ----
+  release:
+    needs: [build-electron-linux, build-electron-win, build-electron-mac]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to create releases
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: app
+      - name: Download Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: voxly-linux
+          path: ./dist/linux
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: voxly-windows
+          path: ./dist/windows
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: voxly-macos
+          path: ./dist/macos
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+      - name: Upload Linux AppImage
+        if: steps.create_release.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/linux/Voxly-*.AppImage
+          asset_name: Voxly-${{ github.ref_name }}-Linux.AppImage
+          asset_content_type: application/octet-stream
+      - name: Upload Linux DEB
+        if: steps.create_release.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/linux/voxly_*.deb
+          asset_name: Voxly-${{ github.ref_name }}-Linux.deb
+          asset_content_type: application/octet-stream
+      - name: Upload Windows EXE
+        if: steps.create_release.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/windows/Voxly-Setup-*.exe
+          asset_name: Voxly-${{ github.ref_name }}-Setup-Windows.exe
+          asset_content_type: application/octet-stream
+      - name: Upload macOS DMG
+        if: steps.create_release.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/macos/Voxly-*.dmg
+          asset_name: Voxly-${{ github.ref_name }}-macOS.dmg
+          asset_content_type: application/octet-stream
 
   # ---- Deploy Web (Firebase Hosting) ----
   deploy-web-staging:
