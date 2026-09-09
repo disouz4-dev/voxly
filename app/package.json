@@ -44,7 +44,7 @@
         "nsis",
         "portable"
       ],
-      "icon": "src/assets/icons/icon.png"
+      "icon": "src/assets/icons/icon.ico"
     },
     "linux": {
       "target": [
