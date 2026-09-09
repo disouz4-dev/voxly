@@ -5,9 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Voxly - Cadastro</title>
   <style>
+    @font-face { font-family:'Sora';       src:url('assets/fonts/Sora.ttf')       format('truetype'); font-weight:100 800; font-display:swap; }
+    @font-face { font-family:'Unbounded';  src:url('assets/fonts/Unbounded.ttf')  format('truetype'); font-weight:100 900; font-display:swap; }
+    @font-face { font-family:'Space Mono'; src:url('assets/fonts/SpaceMono-Regular.ttf') format('truetype'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'Space Mono'; src:url('assets/fonts/SpaceMono-Bold.ttf')    format('truetype'); font-weight:700; font-display:swap; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', sans-serif; background: #000; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .container { background: rgba(0,0,0,0.7); padding: 30px; border-radius: 15px; max-width: 500px; width: 100%; box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
+    body {
+      font-family: 'Sora', system-ui, sans-serif;
+      background:
+        radial-gradient(110% 70% at 85% -10%, #1b1626 0%, transparent 55%),
+        radial-gradient(90% 60% at 0% 110%, #0e1c22 0%, transparent 55%),
+        #0b0c11;
+      color: #ece7dd; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    ::selection { background:#ffb454; color:#1c1206; }
+    .container {
+      position: relative;
+      background: rgba(18,20,27,.75);
+      padding: 30px; border-radius: 20px;
+      max-width: 500px; width: 100%;
+      box-shadow: 0 30px 80px rgba(0,0,0,.55);
+      border: 1px solid #262b37; overflow: hidden;
+    }
+    .container::before {
+      content:""; position:absolute; left:0; top:0; width:26px; height:26px;
+      border-left:2px solid #ffb454; border-top:2px solid #ffb454;
+      border-top-left-radius:20px; pointer-events:none;
+    }
     .logo-container { display: flex; justify-content: center; margin-bottom: 20px; height: 100px; }
     .logo-container img { max-height: 100%; display: block; }
 
@@ -19,38 +44,40 @@
       width: 90px; height: 90px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 2rem; font-weight: 700; color: #fff;
-      margin-bottom: 8px; overflow: hidden; border: 3px solid #333;
+      margin-bottom: 8px; overflow: hidden; border: 3px solid #ffb454;
+      box-shadow: 0 0 22px rgba(255,180,84,.22);
     }
     .avatar-circle img { width: 100%; height: 100%; object-fit: cover; }
-    .avatar-label { font-size: 0.8rem; color: #888; }
+    .avatar-label { font-family:'Space Mono', monospace; font-size: .68rem; letter-spacing:.08em; color: #8d93a4; }
 
-    h2 { text-align: center; margin-bottom: 20px; font-size: 1.3rem; }
+    h2 { text-align: center; margin-bottom: 20px; font-size: 1.25rem; font-family:'Unbounded', sans-serif; font-weight:600; letter-spacing:.02em; }
     .field { margin-bottom: 15px; }
-    label { display: block; margin-bottom: 5px; color: #bbb; font-size: 0.9rem; }
+    label { display: block; margin-bottom: 5px; color: #b9becd; font-size: .82rem; font-weight:600; }
     input[type=text], input[type=date], select {
-      width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #555;
-      background: rgba(255,255,255,0.05); color: #fff; font-size: 1rem;
+      width: 100%; padding: 10px; border-radius: 9px; border: 1px solid #262b37;
+      background: rgba(255,255,255,0.05); color: #ece7dd; font-size: 1rem;
+      font-family: 'Sora', sans-serif;
     }
-    input[type=text]:focus, input[type=date]:focus, select:focus { outline: none; border-color: #e040fb; }
-    select option { background: #222; }
+    input[type=text]:focus, input[type=date]:focus, select:focus { outline: none; border-color: #ffb454; }
+    select option { background: #1a1d26; }
     .genre-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
     .genre-btn {
-      background: #333; color: #fff; border: 1px solid #555;
-      border-radius: 20px; padding: 7px 14px; cursor: pointer;
-      font-size: 0.85rem; transition: all 0.2s;
+      background: #1a1d26; color: #ece7dd; border: 1px solid #262b37;
+      border-radius: 999px; padding: 7px 14px; cursor: pointer;
+      font-family:'Space Mono', monospace; font-size: .74rem; transition: all 0.2s;
     }
-    .genre-btn:hover { background: #444; }
-    .genre-btn.selected { background: #4285f4; border-color: #4285f4; }
-    .genre-count { font-size: 0.78rem; color: #888; margin-top: 5px; }
-    .checkbox-label { display: flex; align-items: center; gap: 8px; color: #bbb; cursor: pointer; }
+    .genre-btn:hover { background: #22262f; }
+    .genre-btn.selected { background: linear-gradient(135deg,#ffb454,#e0932e); border-color: #ffb454; color: #241608; font-weight:700; }
+    .genre-count { font-family:'Space Mono', monospace; font-size: .72rem; color: #8d93a4; margin-top: 5px; }
+    .checkbox-label { display: flex; align-items: center; gap: 8px; color: #b9becd; cursor: pointer; font-weight:400; }
     .checkbox-label input { width: auto; }
-    .btn { width: 100%; padding: 12px; background: #4285f4; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; margin-top: 10px; transition: background 0.2s; }
-    .btn:hover { background: #3367d6; }
-    .btn.back { background: #555; }
-    .btn.back:hover { background: #444; }
-    .error { color: #ff5555; margin-top: 5px; font-size: 0.85rem; }
-    .footer { margin-top: 20px; text-align: center; font-size: 0.85rem; color: #777; }
-    .footer a { color: #e040fb; text-decoration: none; }
+    .btn { width: 100%; padding: 13px; background: linear-gradient(135deg,#58c4dd,#2f93ab); color: #06242c; border: none; border-radius: 11px; cursor: pointer; font-family:'Sora'; font-weight:600; font-size: .95rem; margin-top: 10px; letter-spacing:.02em; transition: filter 0.2s, transform 0.2s; }
+    .btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
+    .btn.back { background: #1a1d26; color: #ece7dd; border: 1px solid #262b37; }
+    .btn.back:hover { background: #22262f; }
+    .error { color: #ff6b6b; margin-top: 5px; font-size: .85rem; font-family:'Space Mono', monospace; }
+    .footer { margin-top: 20px; text-align: center; font-size: .78rem; font-family:'Space Mono', monospace; color: #8d93a4; }
+    .footer a { color: #58c4dd; text-decoration: none; }
   </style>
 </head>
 <body>

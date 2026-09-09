@@ -1,20 +1,26 @@
-const { app, BrowserWindow, ipcMain, dialog, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, screen, Tray, Menu } = require("electron");
 const path   = require("path");
 const Store  = require("electron-store");
 const chokidar = require("chokidar");
 const fs     = require("fs");
 const http   = require("http");
 const ServidorLocal = require("./local-server");
+const { autoUpdater } = require("electron-updater");
 
 const store = new Store();
 const SESSAO_ID = "sessao_default";
 
+const ICONE_APP  = path.join(__dirname, "assets", "icons", "icon.png");
+const ICONE_TRAY = path.join(__dirname, "assets", "icons", "tray.png");
+
 let hostWindow      = null;
 let playerWindow    = null;
+let audienceWindow  = null;
 let musicWatcher    = null;
 let catalogoLocal   = [];
 let servidorCatalogo= null;
 let servidorLocal   = null;
+let tray            = null;
 
 // ── Catálogo local ─────────────────────────────────────────
 
@@ -178,17 +184,35 @@ function similaridade(a, b) {
 }
 
 // ── Janelas ────────────────────────────────────────────────
+function escolherDisplayOcupado() {
+  // Displays escolhidos automaticamente, para a tela do publico evitar
+  // o monitor primario (KJ) e o do palco quando houver mais monitores.
+  const displays = screen.getAllDisplays();
+  const primario = displays.find(d => d.bounds.x === 0 && d.bounds.y === 0) || displays[0];
+
+  // Calcula qual display o palco usaria (mesma logica do player)
+  const ext = displays.find(d => d.bounds.x !== 0 || d.bounds.y !== 0);
+  const displayPalco = ext || primario;
+
+  // Tela do publico: primeiro display que não seja KJ nem palco; senão, o primario.
+  const livre = displays.find(d => (d.bounds.x !== 0 || d.bounds.y !== 0)
+    && (d.id !== displayPalco.id));
+  return livre ? livre.bounds : primario.bounds;
+}
+
 function createHostWindow() {
   hostWindow = new BrowserWindow({
-    width: 1280, height: 800, minWidth: 1024, minHeight: 700,
+    width: 1440, height: 900, minWidth: 1100, minHeight: 720,
     title: "Voxly - Gerência",
+    icon: ICONE_APP,
+    backgroundColor: "#101014",
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
   });
   hostWindow.loadFile(path.join(__dirname, "screens", "host.html"));
-  hostWindow.on("closed", () => { hostWindow = null; app.quit(); });
+  hostWindow.on("closed", () => { hostWindow = null; });
 }
 
 function createPlayerWindow() {
@@ -202,9 +226,10 @@ function createPlayerWindow() {
     width:  target.bounds.width,
     height: target.bounds.height,
     title: "Voxly - Palco",
+    icon: ICONE_APP,
     fullscreenable: true,
     frame: true,
-    backgroundColor: "#000000",
+    backgroundColor: "#07070b",
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
       webSecurity: false,
@@ -216,6 +241,39 @@ function createPlayerWindow() {
     console.log("[MAIN] Player carregado e pronto.");
   });
   playerWindow.on("closed", () => { playerWindow = null; });
+}
+
+// Tela 3: auditório/público — painel opcional ligado pelo host.
+// Mostra cantor atual + música + QR codes (sem repetir o vídeo).
+function createAudienceWindow() {
+  const bounds = escolherDisplayOcupado();
+
+  audienceWindow = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width:  bounds.width,
+    height: bounds.height,
+    title: "Voxly - Público",
+    icon: ICONE_APP,
+    fullscreenable: true,
+    frame: true,
+    backgroundColor: "#07070b",
+    webPreferences: {
+      nodeIntegration: false, contextIsolation: true,
+      webSecurity: false,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+  audienceWindow.loadFile(path.join(__dirname, "screens", "player.html"), {
+    search: "tela=publico",
+  });
+  audienceWindow.once("ready-to-show", () => {
+    if (hostWindow) hostWindow.webContents.send("audiencia-estado", true);
+  });
+  audienceWindow.on("closed", () => {
+    audienceWindow = null;
+    if (hostWindow) hostWindow.webContents.send("audiencia-estado", false);
+  });
 }
 
 app.whenReady().then(() => {
@@ -232,10 +290,91 @@ app.whenReady().then(() => {
     caminhoDados: path.join(app.getPath("userData"), "voxly-offline.json"),
   });
   servidorLocal.iniciar();
+  criarTray();
+  configurarAutoUpdate();
 });
 
+// ── Bandeja (tray) ─────────────────────────────────────────
+function criarTray() {
+  try {
+    tray = new Tray(ICONE_TRAY);
+    tray.setToolTip("Voxly — Karaokê");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "🎛 Abrir Gerência",  click: () => abrirHost() },
+      { label: "🎥 Tela do Público", click: () => abrirAudiencia() },
+      { type: "separator" },
+      { label: "⏹ Sair do Voxly",   click: () => app.quit() },
+    ]));
+    tray.on("click", () => abrirHost());
+  } catch (e) {
+    console.warn("[TRAY] não foi possível criar a bandeja:", e.message);
+  }
+}
+
+function abrirHost() {
+  if (hostWindow && !hostWindow.isDestroyed()) {
+    if (hostWindow.isMinimized()) hostWindow.restore();
+    hostWindow.show();
+    hostWindow.focus();
+  } else {
+    createHostWindow();
+  }
+}
+
+function abrirAudiencia() {
+  if (audienceWindow && !audienceWindow.isDestroyed()) {
+    audienceWindow.close();
+    audienceWindow = null;
+  } else {
+    createAudienceWindow();
+  }
+}
+
+// ── Atualização automática (GitHub Releases) ────────────────
+let atualizacaoDisponivel = false;
+function configurarAutoUpdate() {
+  if (!app.isPackaged) return; // sem auto-update em dev
+
+  autoUpdater.logger = console;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => console.log("[UPDATE] verificando atualizacoes..."));
+  autoUpdater.on("update-available", () => console.log("[UPDATE] nova versao disponivel"));
+  autoUpdater.on("error", (err) => console.warn("[UPDATE] erro:", err.message));
+
+  autoUpdater.on("download-progress", (p) => {
+    const pct = Math.round(p.percent);
+    if (hostWindow && atualizacaoDisponivel === false) {
+      atualizacaoDisponivel = true;
+      hostWindow.webContents.send("status-atualizacao", { fase: "baixando", percentual: pct });
+    }
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    console.log(`[UPDATE] pronto (${info.version})`);
+    const janela = hostWindow || playerWindow || null;
+    if (!janela) { autoUpdater.quitAndInstall(); return; }
+    const { response } = await dialog.showMessageBox(janela, {
+      type: "info",
+      title: "Voxly — atualização disponível",
+      message: `Nova versão ${info.version} instalada.`,
+      detail: "Reinicie agora para aplicar a atualização?",
+      buttons: ["Reiniciar agora", "Depois"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) autoUpdater.quitAndInstall();
+  });
+
+  autoUpdater.checkForUpdatesAndNotify().catch((e) => console.warn("[UPDATE] falha ao checar:", e.message));
+}
+
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  // Com a bandeja ativa, o app continua rodando em segundo plano até sair pela bandeja
+  if (!tray) {
+    if (process.platform !== "darwin") app.quit();
+  }
 });
 
 // ── IPC: Pasta de músicas ──────────────────────────────────
@@ -354,6 +493,10 @@ ipcMain.handle("player-command", (_, cmd) => {
     playerWindow.webContents.send("player-cmd", cmd);
     console.log(`[CMD] → ${String(cmd).slice(0, 80)}`);
   }
+  // Tela do público recebe a mesma info (ignora vídeo se não quiser)
+  if (audienceWindow) {
+    audienceWindow.webContents.send("player-cmd", cmd);
+  }
 });
 
 ipcMain.handle("song-ended", () => {
@@ -370,6 +513,19 @@ ipcMain.handle("open-player", () => {
     playerWindow.focus();
   }
 });
+
+// ── IPC: Tela do público (opcional) ───────────────────────
+ipcMain.handle("toggle-audience", () => {
+  if (audienceWindow && !audienceWindow.isDestroyed()) {
+    audienceWindow.close();
+    audienceWindow = null;
+  } else {
+    createAudienceWindow();
+  }
+  return !!audienceWindow;
+});
+
+ipcMain.handle("get-audience-state", () => !!(audienceWindow && !audienceWindow.isDestroyed()));
 
 // ── IPC: Imagem externa (bypass CORS — net.fetch roda no processo principal) ──
 const { net } = require('electron');

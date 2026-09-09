@@ -17,6 +17,7 @@
   "dependencies": {
     "chokidar": "^3.5.3",
     "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.9",
     "firebase": "^10.14.1",
     "qrcode": "^1.5.3",
     "rubberband-web": "^0.2.1",
@@ -48,12 +49,22 @@
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "icon": "src/assets/icons/icon.png",
       "category": "Audio",
-      "maintainer": "Voxly"
+      "maintainer": "Voxly",
+      "synopsis": "Karaoke colaborativo com QR Code"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "disouz4-dev",
+        "repo": "voxly",
+        "releaseType": "draft"
+      }
+    ],
     "files": [
       "src/**/*",
       "package.json"

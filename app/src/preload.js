@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getWebAppUrl:       () => ipcRenderer.invoke("get-webapp-url"),
   setWebAppUrl:       (url) => ipcRenderer.invoke("set-webapp-url", url),
   getLocalWebAppUrl:  () => ipcRenderer.invoke("get-local-webapp-url"),
+  toggleAudience:     () => ipcRenderer.invoke("toggle-audience"),
+  getAudienceState:   () => ipcRenderer.invoke("get-audience-state"),
+  onAudienceState:    (cb) => ipcRenderer.on("audiencia-estado", (_e, ativa) => cb(ativa)),
 
   // Invoke restrito a canais explicitamente permitidos
   invoke:            (channel, ...args) => {
@@ -30,6 +33,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   onMusicFolderChanged: (cb) => ipcRenderer.on("music-folder-changed", cb),
+  onUpdateStatus:       (cb) => ipcRenderer.on("status-atualizacao", (_e, info) => cb(info)),
   songEnded:            () => ipcRenderer.invoke("song-ended"),
   onSongEnded:          (cb) => ipcRenderer.on("song-ended", cb),
   onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp) => cb(fp)),
