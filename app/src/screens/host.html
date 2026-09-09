@@ -1927,7 +1927,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     });
     window.electronAPI.onYtDone(info => {
       document.getElementById('yt-btn-baixar').style.display = '';
-      document.getElementById('yt-btn-parar').style.display = 'none');
+      document.getElementById('yt-btn-parar').style.display = 'none';
       if (info && info.sucesso) {
         document.getElementById('yt-status').textContent = '✅ Concluído!';
         mostrarToast('Download do YouTube concluído');

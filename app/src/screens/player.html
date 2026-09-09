@@ -309,6 +309,22 @@ body.modo-publico #entrada-publica { display:flex; }
   .pub-right { border-left:none; border-top:1px solid var(--linha); order:3; max-height:40vh; }
 }
 
+/* Tom atual — o JS escreve em #pub-tom, mas a classe nunca teve regra. */
+.pub-tom {
+  font-family:'Space Mono', monospace; font-size:clamp(.7rem,1.5vw,1rem);
+  letter-spacing:.25em; text-transform:uppercase; color:var(--ambar);
+  margin-top:clamp(14px,2.5vh,22px); padding-top:clamp(12px,2vh,18px);
+  border-top:1px solid var(--linha);
+}
+
+/* A coluna da fila (.pub-right) ainda nao tem fonte de dados: o player so
+   recebe {cantor, duo, musica, artista, semitons}. Ate existir esse envio do
+   host, o layout roda com duas colunas em vez de deixar um painel vazio. */
+.pub-layout.sem-fila { grid-template-columns: 380px 1fr; }
+@media (max-width: 1400px) { .pub-layout.sem-fila { grid-template-columns: 320px 1fr; } }
+@media (max-width: 1200px) { .pub-layout.sem-fila { grid-template-columns: 280px 1fr; } }
+@media (max-width: 1000px) { .pub-layout.sem-fila { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } }
+
 /* Entrada pública (QR central + tutoriais) no modo público quando idle */
 body.modo-publico #entrada-publica {
   display:none; position:absolute; inset:0; z-index:10;
@@ -446,12 +462,22 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
 
   <!-- Painel do público (tela 3 — auditório) -->
   <div id="publico-painel">
-    <div class="pub-kicker"><span class="pub-dot"></span>Voxly Ao Vivo</div>
-    <div class="pub-singer" id="pub-singer">—</div>
-    <div class="pub-duo"    id="pub-duo" style="display:none;"></div>
-    <div class="pub-song"   id="pub-song">Aguardando o próximo cantor...</div>
-    <div class="pub-artist" id="pub-artist"></div>
-    <div class="pub-tom"    id="pub-tom">TOM ORIGINAL</div>
+    <div class="pub-layout sem-fila">
+      <div class="pub-left">
+        <div class="pub-left-header"><span class="pub-dot"></span>Voxly Ao Vivo</div>
+        <div class="pub-singer-name" id="pub-singer">—</div>
+        <div class="pub-duo-name"    id="pub-duo" style="display:none;"></div>
+        <div class="pub-song-title"  id="pub-song">Aguardando o próximo cantor...</div>
+        <div class="pub-song-artist" id="pub-artist"></div>
+        <div class="pub-tom"         id="pub-tom">TOM ORIGINAL</div>
+      </div>
+      <div class="pub-center">
+        <div class="pub-center-idle">
+          <img src="../assets/logo/logo_voxly.png" alt="Voxly">
+          <div class="pub-center-idle-text">Aguardando próxima música...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Tela de entrada: QR Code central grande + info da sessão + tutoriais -->
@@ -508,6 +534,16 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
 document.addEventListener("DOMContentLoaded", () => {
   const isAudience = new URLSearchParams(window.location.search).get("tela") === "publico";
   if (isAudience) document.body.classList.add("modo-publico");
+
+  // O painel do publico e a MESMA pagina do Palco (player.html?tela=publico), entao
+  // roda o mesmo JS e reproduzia o proprio audio em paralelo: duas musicas de
+  // intervalo diferentes ao mesmo tempo (cada janela sorteia do seu deck), alem de
+  // abertura, preview e trilha do video duplicados. O Palco e a unica fonte de som;
+  // aqui e so painel visual. `muted` prevalece sobre .volume e sobrevive a troca de
+  // src, entao basta marcar uma vez.
+  if (isAudience) {
+    document.querySelectorAll("video, audio").forEach(el => { el.muted = true; });
+  }
 
   // ── Contagem regressiva para o início do show ────────────
   let showHorarioInicio = null;
@@ -832,7 +868,10 @@ document.addEventListener("DOMContentLoaded", () => {
     return intervaloDeck[intervaloDeckPos++];
   }
 
-  let intervaloHabilitado = true;
+  // Nasce desligado no painel do publico: o Palco e a fonte unica de audio.
+  // As guardas de intervalo-on/off ja cobriam o caminho por comando, mas o
+  // intervalo tambem comeca sozinho via mostrarIdleScreen() -> tocarIntervalo().
+  let intervaloHabilitado = !isAudience;
   let idleAtivo = true; // true enquanto idle screen estiver visível
 
   function tocarIntervalo() {
@@ -933,6 +972,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── TTS — chamada por voz ────────────────────────────────
   function chamarPorVoz(cantor, duo) {
+    if (isAudience) return; // locucao sai so pelo Palco, senao fala em dobro
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
     const texto = duo
