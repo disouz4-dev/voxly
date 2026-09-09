@@ -387,8 +387,7 @@ footer {
 footer strong { color:var(--ambar); font-weight:700; }
 
 /* ── Horário do show / contagem ── */
-.show-contador { display:none; margin-bottom:14px; }
-.show-contador.ativa { display:block; }
+.show-contador { display:block; margin-bottom:14px; }
 .show-contador-inner { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:4px; }
 .show-contador-inner .rule-input { flex:1; min-width:180px; }
 .cd-host {
@@ -635,6 +634,8 @@ footer strong { color:var(--ambar); font-weight:700; }
     <p style="font-size:.78rem;color:var(--mudo);margin:6px 0 14px;line-height:1.5;">
       No intervalo da sessão toca só o tema escolhido. Casa de rock? Crie o tema
       <strong style="color:var(--ambar)">Rock</strong> e monte sua playlist.
+      As músicas marcadas com <strong style="color:var(--ok)">📦 local</strong> ficam
+      armazenadas <strong>dentro do app</strong> (não dependem da pasta de músicas).
     </p>
 
     <label class="modal-label">Tema ativo no momento</label>
@@ -657,6 +658,27 @@ footer strong { color:var(--ambar); font-weight:700; }
 
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalTemas()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalAjustes">
+  <div class="modal-box" style="width:min(460px,94vw);">
+    <h2>⚙ Configurações</h2>
+
+    <label class="modal-label">Versão instalada</label>
+    <p id="ajustes-versao" style="font-size:.85rem;color:var(--ambar);margin:4px 0 12px;">—</p>
+
+    <label class="modal-label">Atualização automática</label>
+    <p id="status-atualizacao" style="font-size:.8rem;color:var(--mudo);line-height:1.5;margin:4px 0 12px;">
+      O app verifica novas versões no GitHub ao abrir e baixa em segundo plano.
+      A verificação funciona no app instalado (no modo desenvolvedor ela fica desativada).
+    </p>
+
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="btnRestartAtualizar" onclick="reiniciarParaAtualizar()" style="display:none;">🔄 Reiniciar e atualizar</button>
+      <button class="btn btn-ghost" onclick="verificarAtualizacao()">🔎 Verificar atualização</button>
+      <button class="btn btn-ghost" onclick="fecharModalAjustes()">Fechar</button>
     </div>
   </div>
 </div>
@@ -764,6 +786,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     carregarTemas();
     atualizarTituloIntervalo();
     atualizarBtnIntervalo();
+    inicializarAtualizacaoUI();
     setTimeout(() => {
       if (window.electronAPI) {
         window.electronAPI.playerCommand(intervaloAtivo ? 'intervalo-on' : 'intervalo-off');
@@ -873,13 +896,22 @@ footer strong { color:var(--ambar); font-weight:700; }
     document.getElementById('cycle-num').textContent            = cicloAtual;
     document.getElementById('btnAdicionarCantor').style.display = 'inline-block';
 
-    // Horário do show
+    // Horário do show — preserva o horário já marcado antes da sessão iniciar
     const sc = document.getElementById('show-contador');
     if (sc) sc.classList.add('ativa');
     clearInterval(timerCountdownHost);
-    horarioInicioShow = null;
+    const inpShow = document.getElementById('inicio-show');
+    const horarioPre = inpShow && inpShow.value ? new Date(inpShow.value).getTime() : null;
+    horarioInicioShow = horarioPre;
     showIniciado = false;
     armarCountdownHost();
+    if (horarioPre) {
+      relayShowHorario();
+      db.collection('sessoes').doc(SESSAO_ID).update({
+        horarioInicioShow: firebase.firestore.Timestamp.fromMillis(horarioPre),
+        showIniciado: false
+      }).catch(() => {});
+    }
 
     // QR da sessão
     const sessaoUrl = `${appBase}/profile.html?sessao=${sessaoCodigo}`;
@@ -1523,7 +1555,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     }
     const faixas = [];
     for (const f of tema.faixas) {
-      const fullPath = f.arquivo ? await window.electronAPI.resolveArquivo(f.arquivo) : null;
+      const fullPath = f.filePath || (f.arquivo ? await window.electronAPI.resolveArquivo(f.arquivo) : null);
       if (fullPath) faixas.push({ musica: f.musica, artista: f.artista, filePath: fullPath });
     }
     window.electronAPI.playerCommand(JSON.stringify({ cmd: 'intervalo-playlist', faixas }));
@@ -1566,6 +1598,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     box.innerHTML = tema.faixas.map((f, i) =>
       `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--linha);font-size:.82rem;">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${escHtml(f.musica)}</strong> <span style="color:var(--mudo);font-size:.72rem;">— ${escHtml(f.artista)}</span></span>
+        <span title="${f.filePath ? 'Armazenada dentro do app' : 'Referencia a pasta de músicas'}" style="font-size:.7rem;padding:2px 7px;border-radius:8px;${f.filePath ? 'background:rgba(103,217,164,.12);color:var(--ok);' : 'background:rgba(141,147,164,.12);color:var(--mudo);'}">${f.filePath ? '📦 local' : '📂 pasta'}</span>
         <button class="btn btn-danger btn-sm" onclick="removerFaixaTema(${i})" title="Remover">✕</button>
       </div>`).join('') ||
       '<div class="empty">Tema vazio — adicione músicas abaixo.</div>';
@@ -1574,8 +1607,14 @@ footer strong { color:var(--ambar); font-weight:700; }
   function removerFaixaTema(i) {
     const tema = temaAtivoObj();
     if (!tema) return;
+    const f = tema.faixas[i];
     tema.faixas.splice(i, 1);
     salvarTemas();
+    if (f && f.filePath && window.electronAPI) {
+      window.electronAPI.removerMusicaTema(f.filePath).then(ok => {
+        if (ok) mostrarToast('🗑 Arquivo local removido do app.', 2200);
+      }).catch(() => {});
+    }
     renderSelectTemas();
     renderFaixasTema();
     if (intervaloAtivo) enviarPlaylistIntervalo();
@@ -1621,7 +1660,8 @@ footer strong { color:var(--ambar); font-weight:700; }
     box.innerHTML = res.map((s, i) =>
       `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--linha);font-size:.82rem;">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${escHtml(s.musica)}</strong> <span style="color:var(--mudo);font-size:.72rem;">— ${escHtml(s.artista)}</span></span>
-        <button class="btn btn-ok btn-sm" onclick="adicionarFaixaTema(${i})" title="Adicionar ao tema">＋</button>
+        <button class="btn btn-ok btn-sm" onclick="adicionarFaixaTema(${i})" title="Adicionar ao tema (usa a pasta de músicas)">＋</button>
+        <button class="btn btn-primary btn-sm" onclick="importarFaixaTema(${i})" title="Importar para dentro do app (cópia local)">⬇</button>
       </div>`).join('');
     window.catalogoTemaLast = res;
   }
@@ -1632,13 +1672,32 @@ footer strong { color:var(--ambar); font-weight:700; }
     if (!s) return;
     const tema = temaAtivoObj();
     if (!tema) { mostrarToast('Crie/ative um tema primeiro.', 2500); return; }
-    if (tema.faixas.some(f => f.arquivo === s.arquivo)) { mostrarToast('Essa música já está no tema.', 2500); return; }
+    if (tema.faixas.some(f => f.arquivo === s.arquivo || f.filePath?.endsWith(s.arquivo))) { mostrarToast('Essa música já está no tema.', 2500); return; }
     tema.faixas.push({ musica: s.musica, artista: s.artista, arquivo: s.arquivo });
     salvarTemas();
     renderSelectTemas();
     renderFaixasTema();
     if (intervaloAtivo) enviarPlaylistIntervalo();
     mostrarToast(`➕ "${s.musica}" adicionada a "${tema.nome}".`, 2200);
+  }
+
+  async function importarFaixaTema(i) {
+    const res = window.catalogoTemaLast || [];
+    const s = res[i];
+    if (!s) return;
+    const tema = temaAtivoObj();
+    if (!tema) { mostrarToast('Crie/ative um tema primeiro.', 2500); return; }
+    if (!window.electronAPI) { mostrarToast('Importação disponível no app (Electron).', 2500); return; }
+    mostrarToast('⬇ Copiando música para dentro do app...', 2500);
+    const destino = await window.electronAPI.importarMusicaTema(s.arquivo);
+    if (!destino) { mostrarToast('Não foi possível copiar o arquivo.', 2800); return; }
+    if (tema.faixas.some(f => f.filePath === destino || f.arquivo === s.arquivo)) { mostrarToast('Essa música já está no tema.', 2500); return; }
+    tema.faixas.push({ musica: s.musica, artista: s.artista, filePath: destino });
+    salvarTemas();
+    renderSelectTemas();
+    renderFaixasTema();
+    if (intervaloAtivo) enviarPlaylistIntervalo();
+    mostrarToast(`📦 "${s.musica}" importada e armazenada no app.`, 2200);
   }
 
   function atualizarTituloIntervalo() {
@@ -1669,7 +1728,49 @@ footer strong { color:var(--ambar); font-weight:700; }
     mostrarToast(intervaloAtivo ? 'Música de intervalo ativada' : 'Música de intervalo desativada');
   }
 
-  function openSettings() { alert('Em desenvolvimento'); }
+  function openSettings() { document.getElementById('modalAjustes').classList.add('open'); }
+  function fecharModalAjustes() { document.getElementById('modalAjustes').classList.remove('open'); }
+
+  function verificarAtualizacao() {
+    if (!document.getElementById('modalAjustes').classList.contains('open')) return;
+    if (!window.electronAPI) return;
+    const st = document.getElementById('status-atualizacao');
+    window.electronAPI.checkForUpdates().then(r => {
+      if (r && r.fase === 'dev') {
+        st.textContent = 'Modo desenvolvedor: a atualização automática fica ativa no app instalado. Você já está na versão deste código.';
+      } else if (r && r.fase === 'erro') {
+        st.textContent = 'Não foi possível consultar atualizações.';
+      }
+    }).catch(() => {
+      st.textContent = 'Não foi possível consultar atualizações.';
+    });
+  }
+
+  function reiniciarParaAtualizar() {
+    if (window.electronAPI) window.electronAPI.restartToUpdate();
+  }
+
+  function inicializarAtualizacaoUI() {
+    if (!window.electronAPI) return;
+    window.electronAPI.appVersao().then(v => {
+      document.getElementById('ajustes-versao').textContent = v || '—';
+    }).catch(() => {});
+    window.electronAPI.onUpdateStatus(info => {
+      const st = document.getElementById('status-atualizacao');
+      const btn = document.getElementById('btnRestartAtualizar');
+      if (!st) return;
+      switch (info.fase) {
+        case 'checando':  st.textContent = 'Verificando atualizações...'; break;
+        case 'baixando':  st.textContent = `Baixando nova versão... ${info.percentual ?? 0}%`; break;
+        case 'pronto':
+          st.innerHTML = `✔ Nova versão <strong style="color:var(--ok)">${info.versao || ''}</strong> baixada. Reinicie para aplicar.`;
+          btn.style.display = '';
+          break;
+        case 'atualizado': st.textContent = '✔ Você já está na versão mais recente.'; break;
+        case 'erro':      st.textContent = 'Não foi possível verificar atualizações agora.'; break;
+      }
+    });
+  }
 
   // ── Player controls ───────────────────────────────────────
   function playerCmd(cmd) { if (window.electronAPI) window.electronAPI.playerCommand(cmd); }
@@ -1764,7 +1865,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     if (!cd) return;
     const atualizar = () => {
       if (showIniciado) { cd.textContent = '● AO VIVO'; cd.className = 'cd-host live'; return; }
-      if (!horarioInicioShow || !SESSAO_ID) { cd.textContent = '—'; cd.className = 'cd-host'; return; }
+      if (!horarioInicioShow) { cd.textContent = '—'; cd.className = 'cd-host'; return; }
       const dif = horarioInicioShow - Date.now();
       if (dif <= 0) { cd.textContent = '🎤 É HORA DO SHOW!'; cd.className = 'cd-host zerou'; return; }
       cd.textContent = fmtCDMs(dif);
@@ -1829,6 +1930,7 @@ footer strong { color:var(--ambar); font-weight:700; }
           }
           armarCountdownHost();
         }
+        relayShowHorario();
       });
   }
 
@@ -1978,7 +2080,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     document.getElementById('modalCantor').classList.remove('open');
   }
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { fecharModalCantor(); fecharModalMusica(); }
+    if (e.key === 'Escape') { fecharModalCantor(); fecharModalMusica(); fecharModalTemas(); fecharModalAjustes(); }
   });
 
   async function adicionarCantorManual() {

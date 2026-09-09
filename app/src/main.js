@@ -331,7 +331,12 @@ function abrirAudiencia() {
 }
 
 // ── Atualização automática (GitHub Releases) ────────────────
-let atualizacaoDisponivel = false;
+function confiarEstadoAtualizacao(estado) {
+  if (hostWindow && !hostWindow.isDestroyed()) {
+    hostWindow.webContents.send("status-atualizacao", estado);
+  }
+}
+
 function configurarAutoUpdate() {
   if (!app.isPackaged) return; // sem auto-update em dev
 
@@ -339,20 +344,31 @@ function configurarAutoUpdate() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on("checking-for-update", () => console.log("[UPDATE] verificando atualizacoes..."));
-  autoUpdater.on("update-available", () => console.log("[UPDATE] nova versao disponivel"));
-  autoUpdater.on("error", (err) => console.warn("[UPDATE] erro:", err.message));
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[UPDATE] verificando atualizacoes...");
+    confiarEstadoAtualizacao({ fase: "checando" });
+  });
+  autoUpdater.on("update-not-available", () => {
+    console.log("[UPDATE] ja esta na versao mais recente");
+    confiarEstadoAtualizacao({ fase: "atualizado" });
+  });
+  autoUpdater.on("update-available", () => {
+    console.log("[UPDATE] nova versao disponivel");
+    confiarEstadoAtualizacao({ fase: "baixando", percentual: 0 });
+  });
+  autoUpdater.on("error", (err) => {
+    console.warn("[UPDATE] erro:", err.message);
+    confiarEstadoAtualizacao({ fase: "erro", erro: err.message });
+  });
 
   autoUpdater.on("download-progress", (p) => {
     const pct = Math.round(p.percent);
-    if (hostWindow && atualizacaoDisponivel === false) {
-      atualizacaoDisponivel = true;
-      hostWindow.webContents.send("status-atualizacao", { fase: "baixando", percentual: pct });
-    }
+    confiarEstadoAtualizacao({ fase: "baixando", percentual: pct });
   });
 
   autoUpdater.on("update-downloaded", async (info) => {
     console.log(`[UPDATE] pronto (${info.version})`);
+    confiarEstadoAtualizacao({ fase: "pronto", versao: info.version });
     const janela = hostWindow || playerWindow || null;
     if (!janela) { autoUpdater.quitAndInstall(); return; }
     const { response } = await dialog.showMessageBox(janela, {
@@ -369,6 +385,23 @@ function configurarAutoUpdate() {
 
   autoUpdater.checkForUpdatesAndNotify().catch((e) => console.warn("[UPDATE] falha ao checar:", e.message));
 }
+
+// ── IPC: Atualização automática ────────────────────────────
+ipcMain.handle("check-for-updates", () => {
+  if (!app.isPackaged) return { fase: "dev" };
+  try {
+    autoUpdater.checkForUpdates();
+    return { fase: "checando" };
+  } catch (e) {
+    return { fase: "erro", erro: e.message };
+  }
+});
+
+ipcMain.handle("restart-to-update", () => {
+  try { autoUpdater.quitAndInstall(); return true; } catch { return false; }
+});
+
+ipcMain.handle("app-versao", () => app.getVersion());
 
 app.on("window-all-closed", () => {
   // Com a bandeja ativa, o app continua rodando em segundo plano até sair pela bandeja
@@ -536,6 +569,52 @@ ipcMain.handle("resolve-arquivo", (e, arquivo) => {
     return fs.existsSync(fullPath) ? fullPath : null;
   } catch {
     return null;
+  }
+});
+
+// ── IPC: Importa música para dentro do app (temas de intervalo) ──
+function pastaTemasIntervalo() {
+  return path.join(app.getPath("userData"), "intervalo-temas");
+}
+
+function copiarSemColisao(origem, pastaDestino) {
+  fs.mkdirSync(pastaDestino, { recursive: true });
+  const ext  = path.extname(origem);
+  const base = path.basename(origem, ext);
+  let destino = path.join(pastaDestino, path.basename(origem));
+  let n = 2;
+  while (fs.existsSync(destino)) {
+    destino = path.join(pastaDestino, `${base} (${n})${ext}`);
+    n++;
+  }
+  fs.copyFileSync(origem, destino);
+  return destino;
+}
+
+ipcMain.handle("importar-musica-tema", (e, arquivo) => {
+  try {
+    const folder = store.get("musicFolder");
+    if (!folder || !arquivo) return null;
+    const origem = path.join(folder, arquivo);
+    if (!fs.existsSync(origem)) return null;
+    const destino = copiarSemColisao(origem, pastaTemasIntervalo());
+    console.log("[TEMA] música importada para o app:", path.basename(destino));
+    return destino;
+  } catch (err) {
+    console.warn("[TEMA] falha ao importar:", err.message);
+    return null;
+  }
+});
+
+ipcMain.handle("remover-musica-tema", (e, filePath) => {
+  try {
+    const pasta = pastaTemasIntervalo();
+    const rel   = path.relative(pasta, filePath);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return false; // só apaga dentro do app
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return true;
+  } catch {
+    return false;
   }
 });
 
