@@ -2,7 +2,7 @@
 # Voxly - Makefile (Comandos de uso comum)
 # ============================================================
 
-.PHONY: help install dev build build-web build-electron \
+.PHONY: help install dev build build-mac build-win build-linux build-web build-electron \
         docker-up docker-down docker-build \
         deploy deploy-staging deploy-production \
         clean lint test
@@ -21,7 +21,9 @@ help:
 	@echo "  make install          Instala dependencias do app"
 	@echo "  make dev              Inicia app Electron em modo desenvolvimento"
 	@echo "  make build            Build completo (Electron + Web)"
-	@echo "  make build-electron   Build do app Electron (Windows)"
+	@echo "  make build-mac        Build do app Electron (macOS: DMG + ZIP)"
+	@echo "  make build-win        Build do app Electron (Windows: NSIS + portable)"
+	@echo "  make build-linux      Build do app Electron (Linux: AppImage)"
 	@echo "  make build-web        Build/hosting do app Web"
 	@echo ""
 	@echo "  make docker-up        Sobe todos os servicos (Docker)"
@@ -45,10 +47,16 @@ dev:
 	cd $(APP_DIR) && npm run dev
 
 # ---- Build ----
-build: build-web build-electron
+build: build-web build-win build-mac
 
-build-electron:
-	cd $(APP_DIR) && npm run build
+build-mac:
+	cd $(APP_DIR) && npm run build:mac
+
+build-win:
+	cd $(APP_DIR) && npm run build:win
+
+build-linux:
+	cd $(APP_DIR) && npm run build:linux
 
 build-web:
 	cd $(WEB_DIR) && npx serve public -l 3000

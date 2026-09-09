@@ -62,7 +62,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ---- Build Electron (Windows) ----
-  build-electron:
+  build-electron-win:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -75,14 +75,42 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
         working-directory: app
-      - name: Build Electron
+      - name: Build Electron (Windows)
         run: npm run build:win
         working-directory: app
       - name: Upload artefatos
         uses: actions/upload-artifact@v4
         with:
           name: voxly-windows
-          path: app/dist/*.exe
+          path: |
+            app/dist/*.exe
+          retention-days: 7
+
+  # ---- Build Electron (macOS) ----
+  build-electron-mac:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: app
+      - name: Build Electron (macOS)
+        run: npm run build:mac
+        working-directory: app
+      - name: Upload artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: voxly-macos
+          path: |
+            app/dist/*.dmg
+            app/dist/*.zip
+            app/dist/*.app
           retention-days: 7
 
   # ---- Deploy Web (Firebase Hosting) ----

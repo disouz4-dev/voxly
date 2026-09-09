@@ -57,6 +57,15 @@ npm start            # inicia o Electron (host + player)
 npm run dev          # modo desenvolvimento
 ```
 
+### Builds por plataforma
+```bash
+cd app
+npm run build:mac     # macOS  (DMG + ZIP)   — requer macOS
+npm run build:win     # Windows (NSIS + portable)
+npm run build:linux   # Linux  (AppImage)
+```
+> O instalador **.dmg/.zip do macOS** é gerado pela pipeline `build-electron-mac` do CI (macOS runner). O ícone do app é gerado a partir de `app/src/assets/icons/icon.png` (1024×1024) para todas as plataformas.
+
 ### Web dos cantores (local)
 ```bash
 # opção 1: direto pela LAN (feito automaticamente pelo app na porta 8030)
@@ -87,7 +96,7 @@ make docker-build           # build da imagem
 
 ## 🧰 Tecnologias
 
-- **Electron 30** — aplicação desktop (host/player)
+- **Electron 30** — aplicação desktop multiplataforma (Windows, macOS, Linux)
 - **Firebase / Firestore** — autenticação, sessões e fila em tempo real
 - **Firebase Hosting** — web pública dos cantores
 - **Node.js** — servidor LAN, IPC e testes

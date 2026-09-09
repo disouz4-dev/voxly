@@ -57,6 +57,15 @@ npm start            # launches Electron (host + player)
 npm run dev          # development mode
 ```
 
+### Platform builds
+```bash
+cd app
+npm run build:mac     # macOS  (DMG + ZIP)   — requires macOS
+npm run build:win     # Windows (NSIS + portable)
+npm run build:linux   # Linux  (AppImage)
+```
+> The macOS **.dmg/.zip** installer is produced by the `build-electron-mac` CI job (macOS runner). The app icon is generated from `app/src/assets/icons/icon.png` (1024×1024) for all platforms.
+
 ### Singer web app (local)
 ```bash
 # option 1: served automatically by the app over the LAN (port 8030)
@@ -87,7 +96,7 @@ make docker-build           # build the image
 
 ## 🧰 Tech stack
 
-- **Electron 30** — desktop app (host/player)
+- **Electron 30** — cross-platform desktop app (Windows, macOS, Linux)
 - **Firebase / Firestore** — authentication, sessions, real-time queue
 - **Firebase Hosting** — public web app for singers
 - **Node.js** — LAN server, IPC, and tests

@@ -2,12 +2,15 @@
   "name": "voxly",
   "version": "1.0.0",
   "description": "Voxly - Sistema de fila para karaoke com QR Code",
+  "author": "Voxly <voxly-karaoke@users.noreply.github.com>",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
     "test": "node --test test/*.test.js",
     "lint": "node --check src/main.js && node --check src/preload.js"
   },
@@ -27,22 +30,33 @@
   "build": {
     "appId": "com.voxly.app",
     "productName": "Voxly",
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.music",
+      "icon": "src/assets/icons/icon.png",
+      "darkModeSupport": true
+    },
     "win": {
-      "target": "nsis",
-      "icon": "src/assets/icons/icon.ico"
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "src/assets/icons/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "src/assets/icons/icon.png",
+      "category": "Audio",
+      "maintainer": "Voxly"
     },
     "files": [
       "src/**/*",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "musicas",
-        "to": "musicas",
-        "filter": [
-          "**/*"
-        ]
-      }
     ]
   }
 }
