@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # Web app (Firebase hosting emulation)
+  web:
+    build:
+      context: .
+      target: runner
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./web/public:/app/web/public
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Firebase emulator for local development
+  firebase:
+    image: andreysenov/firebase-tools
+    ports:
+      - "4000:4000"
+      - "5000:5000"
+      - "8080:8080"
+      - "9099:9099"
+    volumes:
+      - ./web:/home/node/web
+    working_dir: /home/node/web
+    command: firebase emulators:start --project voxly-karaoke
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Electron app development (requires X11 forwarding)
+  electron:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./app:/app
+      - /app/node_modules
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ELECTRON_ENABLE_LOGGING=1
+    network_mode: host
+    profiles:
+      - desktop
+
+volumes:
+  firebase_data:

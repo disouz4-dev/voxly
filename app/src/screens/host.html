@@ -602,6 +602,7 @@
 
   const db  = firebase.firestore();
   const APP_URL = "https://voxly-karaoke.web.app";
+  let appUrlLocal = null; // URL LAN do servidor local
 
   let SESSAO_ID        = null;
   let sessaoCodigo     = null;
@@ -671,8 +672,12 @@
 
   // ── Inicialização ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
-    // QR do app sempre visível
-    gerarQR('qr-app', APP_URL);
+    // QR do app: prefere URL local (LAN); senão, usa Firebase Hosting
+    if (window.electronAPI) {
+      try { appUrlLocal = await window.electronAPI.getLocalWebAppUrl(); } catch(_) {}
+    }
+    gerarQR('qr-app', appUrlLocal || APP_URL);
+    document.querySelector('.qr-box-url').textContent = appUrlLocal || APP_URL;
 
     // Estado do intervalo
     atualizarBtnIntervalo();
@@ -726,6 +731,7 @@
           ativarInterfaceSessao();
           renderQueue();
           renderUsers();
+          escutarLocalOffline();
           mostrarToast('⚠️ Modo offline — sessão restaurada do backup local', 5000);
         }
       }
@@ -763,12 +769,13 @@
         cmd:     'sessao-iniciada',
         codigo,
         sessaoId,
-        appUrl:  APP_URL
+        appUrl:  appUrlLocal || APP_URL
       }));
     }
   }
 
   function ativarInterfaceSessao() {
+    const appBase = appUrlLocal || APP_URL;
     document.getElementById('sessionBadge').textContent  = `● Sessão ${sessaoCodigo}`;
     document.getElementById('sessionBadge').className    = 'session-badge ativa';
     document.getElementById('startSessionBtn').style.display = 'none';
@@ -779,7 +786,7 @@
     document.getElementById('btnAdicionarCantor').style.display = 'inline-block';
 
     // QR da sessão
-    const sessaoUrl = `${APP_URL}/profile.html?sessao=${sessaoCodigo}`;
+    const sessaoUrl = `${appBase}/profile.html?sessao=${sessaoCodigo}`;
     gerarQR('qr-sessao', sessaoUrl);
     document.getElementById('qr-sessao-url').textContent = `Código: ${sessaoCodigo}`;
     document.getElementById('qr-sessao-box').style.opacity = '1';
@@ -788,7 +795,7 @@
     setTimeout(() => {
       if (window.electronAPI) {
         window.electronAPI.playerCommand(JSON.stringify({
-          cmd: 'sessao-iniciada', codigo: sessaoCodigo, appUrl: APP_URL
+          cmd: 'sessao-iniciada', codigo: sessaoCodigo, appUrl: appBase
         }));
       }
     }, 2000);
@@ -1506,6 +1513,84 @@
         }))
       ));
       localStorage.setItem('voxly_backup_sessaoCodigo', sessaoCodigo || '');
+    } catch(e) {}
+    if (modoOffline) mirrorLocalData();
+  }
+
+  // ── Sincronização offline com o servidor local (cantores) ──
+  let localEventSource = null;
+  function baseLocal() {
+    if (appUrlLocal) return appUrlLocal;
+    return 'http://localhost:8030';
+  }
+
+  function normalizarLocal(doc) {
+    const c = { ...doc };
+    delete c.id; delete c._colecao;
+    return c;
+  }
+
+  async function localApi(path, metodo, corpo) {
+    try {
+      const opts = { method: metodo, headers: {} };
+      if (corpo !== undefined) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(corpo);
+      }
+      const r = await fetch(baseLocal() + '/api/store' + path, opts);
+      if (r.status === 204) return { status: 'ok' };
+      return await r.json().catch(() => ({ status: 'ok' }));
+    } catch(e) { return { status: 'erro' }; }
+  }
+
+  function mirrorLocalData() {
+    if (!SESSAO_ID) return;
+    // Espelha a própria sessão (código/status) para o cantor offline resolver
+    if (sessaoCodigo) {
+      localApi('?path=sessoes/' + SESSAO_ID, 'PUT', {
+        codigo: sessaoCodigo, status: 'ativa', regras: regras || {}, cicloAtual: cicloAtual
+      });
+    }
+    // Espelha fila e presenças para os cantores offline verem
+    filaData.forEach(item => {
+      const d = JSON.parse(JSON.stringify(item));
+      delete d._id;
+      localApi('?path=sessoes/' + SESSAO_ID + '/fila/' + item.id, 'PUT', d);
+    });
+    presencasData.forEach(p => {
+      const d = JSON.parse(JSON.stringify(p));
+      delete d.id;
+      localApi('?path=sessoes/' + SESSAO_ID + '/presencas/' + p.uid, 'PUT', d);
+    });
+  }
+
+  function escutarLocalOffline() {
+    if (localEventSource || !SESSAO_ID) return;
+    try {
+      localEventSource = new EventSource(baseLocal() + '/api/eventos?sessao=' + SESSAO_ID);
+      localEventSource.onmessage = async () => {
+        if (!modoOffline) return;
+        // Puxa a fila atualizada do servidor local e mescla
+        const r = await localApi('?prefix=sessoes/' + SESSAO_ID + '/fila', 'GET');
+        if (r.docs && r.docs.length) {
+          const atual = r.docs.map(normalizarLocal);
+          // Mantém itens que só existem no host (manual) e traz os novos
+          const porId = new Map(filaData.map(i => [i.id, i]));
+          atual.forEach(i => { porId.set(i.id, i); });
+          filaData = [...porId.values()];
+          renderQueue();
+        }
+        const p = await localApi('?prefix=sessoes/' + SESSAO_ID + '/presencas', 'GET');
+        if (p.docs) {
+          const presentes = p.docs.map(normalizarLocal);
+          const porId = new Map(presencasData.map(x => [x.uid, x]));
+          presentes.forEach(x => porId.set(x.uid, x));
+          presencasData = [...porId.values()];
+          renderUsers();
+        }
+        salvarBackupLocal();
+      };
+      localEventSource.onerror = () => { /* EventSource reconecta sozinho */ };
     } catch(e) {}
   }
 

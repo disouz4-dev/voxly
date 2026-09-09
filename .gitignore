@@ -9,3 +9,15 @@ web/public/firebase_config.js
 *.backup*
 web/public/profile.html.bak_sessao
 .claude/
+.env
+.env.*
+!.env.example
+dist/
+build/
+out/
+.cache
+*.log
+.DS_Store
+Thumbs.db
+app/dist/
+app/out/

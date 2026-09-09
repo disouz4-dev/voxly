@@ -4,6 +4,7 @@ const Store  = require("electron-store");
 const chokidar = require("chokidar");
 const fs     = require("fs");
 const http   = require("http");
+const ServidorLocal = require("./local-server");
 
 const store = new Store();
 const SESSAO_ID = "sessao_default";
@@ -13,6 +14,7 @@ let playerWindow    = null;
 let musicWatcher    = null;
 let catalogoLocal   = [];
 let servidorCatalogo= null;
+let servidorLocal   = null;
 
 // ── Catálogo local ─────────────────────────────────────────
 
@@ -226,6 +228,10 @@ app.whenReady().then(() => {
     agendarDownloadFotos(folder);
   }
   iniciarServidorCatalogo();
+  servidorLocal = new ServidorLocal({
+    caminhoDados: path.join(app.getPath("userData"), "voxly-offline.json"),
+  });
+  servidorLocal.iniciar();
 });
 
 app.on("window-all-closed", () => {
@@ -407,6 +413,7 @@ ipcMain.handle("get-local-ip", () => {
 // ── IPC: QR Code ───────────────────────────────────────────
 ipcMain.handle("get-webapp-url", () => store.get("webAppUrl", "https://voxly-karaoke.web.app"));
 ipcMain.handle("set-webapp-url", (_, url) => store.set("webAppUrl", url));
+ipcMain.handle("get-local-webapp-url", () => servidorLocal ? servidorLocal.urlWeb() : null);
 
 // ── Watcher ────────────────────────────────────────────────
 function startWatcher(folder) {

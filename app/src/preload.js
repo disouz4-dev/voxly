@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const canaisPermitidos = new Set([
+  "decode-qr",
+  "join-session",
+  "fetch-image",
+  "open-player"
+]);
+
 contextBridge.exposeInMainWorld("electronAPI", {
   selectMusicFolder:  () => ipcRenderer.invoke("select-music-folder"),
   getMusicFolder:     () => ipcRenderer.invoke("get-music-folder"),
@@ -12,9 +19,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   playerCommand:      (cmd) => ipcRenderer.invoke("player-command", cmd),
   getWebAppUrl:       () => ipcRenderer.invoke("get-webapp-url"),
   setWebAppUrl:       (url) => ipcRenderer.invoke("set-webapp-url", url),
+  getLocalWebAppUrl:  () => ipcRenderer.invoke("get-local-webapp-url"),
 
-  // Generic invoke for any channel not explicitly exposed
-  invoke:            (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  // Invoke restrito a canais explicitamente permitidos
+  invoke:            (channel, ...args) => {
+    if (canaisPermitidos.has(channel)) {
+      return ipcRenderer.invoke(channel, ...args);
+    }
+    return Promise.reject(new Error(`Canal IPC nao permitido: ${channel}`));
+  },
 
   onMusicFolderChanged: (cb) => ipcRenderer.on("music-folder-changed", cb),
   songEnded:            () => ipcRenderer.invoke("song-ended"),

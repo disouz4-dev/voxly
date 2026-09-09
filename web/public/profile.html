@@ -327,6 +327,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
+  <script src="/offline-client.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -338,8 +339,58 @@
       appId: "1:689541919299:web:92e70bbd3a1a2709d5daf6"
     });
 
+    // ── Fonte de dados: Firestore (online) → servidor local (offline) ──
     const auth = firebase.auth();
-    const db   = firebase.firestore();
+    let db;
+    let modoOffline = false;
+
+    async function detectarOnline() {
+      // Se veio do servidor local (LAN), prova um doc do Firestore com timeout curto
+      try {
+        const controle = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2500));
+        const probe = Promise.race([
+          firebase.firestore().collection('sessoes').limit(1).get(),
+          controle,
+        ]);
+        await probe;
+        return true;
+      } catch(e) {
+        return false;
+      }
+    }
+
+    (async () => {
+      const online = await detectarOnline();
+      if (online) {
+        db = firebase.firestore();
+        modoOffline = false;
+      } else {
+        db = VoxlyLocal.db();
+        modoOffline = true;
+      }
+      if (modoOffline) {
+        // Sem internet: identidade local, ignora o fluxo de auth do Firebase
+        currentUser = { uid: VoxlyLocal.idCantor(), email: null, displayName: null };
+        await carregarPerfil();
+        mostrarToast('⚠️ Modo offline — usando dados locais', 3500);
+        const temSessao = await resolverSessao();
+        if (temSessao) ativarConteudoSessao();
+      } else {
+        auth.onAuthStateChanged(handleAuth);
+      }
+    })();
+
+    async function handleAuth(u) {
+      if (modoOffline) { currentUser = { uid: VoxlyLocal.idCantor() }; await carregarPerfil(); return; }
+      if (!usr) { window.location.href = '/index.html'; return; }
+      currentUser = usr;
+      await carregarPerfil();
+
+      const temSessao = await resolverSessao();
+      if (temSessao) {
+        ativarConteudoSessao();
+      }
+    }
     // Sessão vem da URL (?sessao=CODIGO) ou do localStorage
     let SESSAO_ID    = null;
     let sessaoAtiva  = false;
@@ -399,20 +450,32 @@
     function getAvatarColor(s) { let h=0; for(let i=0;i<s.length;i++) h=s.charCodeAt(i)+((h<<5)-h); return avatarColors[Math.abs(h)%avatarColors.length]; }
     function getInitials(n) { return n.trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?'; }
 
-    auth.onAuthStateChanged(async u => {
-      if (!u) { window.location.href = '/index.html'; return; }
-      currentUser = u;
-      await carregarPerfil();
-
-      const temSessao = await resolverSessao();
-      if (temSessao) {
-        ativarConteudoSessao();
+    function mostrarToast(msg, dur) {
+      const progress = document.querySelector('.progressFila') || document.createElement('div');
+      if (!progress.parentNode) {
+        progress.className = 'progressFila';
+        progress.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);transform-origin:left;background:#e040fb;color:#fff;padding:10px 16px;border-radius:8px;font-size:.85rem;z-index:9990;box-shadow:0 4px 20px rgba(0,0,0,.5);width:auto;';
+        document.body.appendChild(progress);
       }
-    });
+      progress.textContent = msg;
+      progress.style.display = 'block';
+      clearTimeout(progress._t);
+      progress._t = setTimeout(() => { progress.style.display = 'none'; }, dur || 3500);
+    }
 
     async function carregarPerfil() {
       const snap = await db.collection('cantores').doc(currentUser.uid).get();
-      if (!snap.exists) { window.location.href = '/signup.html'; return; }
+      if (!snap.exists) {
+        if (modoOffline) {
+          // Offline: cria perfil mínimo local em vez de redirecionar ao cadastro
+          const nome = localStorage.getItem('voxly_offline_nome') || 'Cantor';
+          perfilData = { nomeArtistico: nome, nomeCompleto: nome, generos: [], photoURL: null };
+          localStorage.setItem('voxly_offline_nome', nome);
+          return;
+        }
+        window.location.href = '/signup.html';
+        return;
+      }
       perfilData = snap.data();
 
       const avatarEl = document.getElementById('avatarEl');
@@ -1014,7 +1077,7 @@ function escutarFila() {
       escutarConfirmacao();
       escutarConvites();
       carregarHistorico();
-      iniciarHeartbeat();
+      ativarPresencaOnDisconnect();
     }
 
     // ── Scanner de QR Code ───────────────────────────────────
@@ -1104,16 +1167,16 @@ function escutarFila() {
       await ativarConteudoSessao();
     }
 
-    function iniciarHeartbeat() {
-      async function ping() {
-        if (!currentUser) return;
-        try {
-          await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(currentUser.uid)
-            .update({ ultimoHeartbeat: firebase.firestore.FieldValue.serverTimestamp() });
-        } catch(e) {}
-      }
-      ping();
-      setInterval(ping, 30000);
+    function ativarPresencaOnDisconnect() {
+      if (!currentUser) return;
+      const ref = db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(currentUser.uid);
+      // Remove a presença automaticamente quando o cliente desconectar (sem heartbeat)
+      ref.onDisconnect().remove().catch(() => {});
+      // Escrita única ao entrar
+      ref.set({
+        status: 'online',
+        ultimoHeartbeat: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true }).catch(() => {});
     }
 
     function sair() {

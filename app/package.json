@@ -7,7 +7,9 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
-    "build:win": "electron-builder --win"
+    "build:win": "electron-builder --win",
+    "test": "node --test test/*.test.js",
+    "lint": "node --check src/main.js && node --check src/preload.js"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
