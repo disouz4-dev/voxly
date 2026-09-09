@@ -671,37 +671,47 @@ document.addEventListener("DOMContentLoaded", () => {
     "../assets/intervalo/Pausa de Karaokê.mp3"
   ];
   let intervaloFaixasCustom = null; // playlist do tema definida pelo host [{musica,artista,filePath}]
-  let intervaloIdx      = Math.floor(Math.random() * intervaloFaixas.length);
-  let intervaloCustomIdx = -1;
+  let intervaloIdx   = Math.floor(Math.random() * intervaloFaixas.length);
+  let intervaloDeck  = [];   // shuffle "de verdade": bag com os índices embaralhados
+  let intervaloDeckPos = 0;
+
   function listaIntervaloAtiva() {
     return intervaloFaixasCustom && intervaloFaixasCustom.length ? intervaloFaixasCustom : null;
   }
-  function proximaFaixaIntervalo() {
-    const lista = listaIntervaloAtiva();
-    if (!lista) {
-      if (intervaloFaixas.length <= 1) return;
-      let next;
-      do { next = Math.floor(Math.random() * intervaloFaixas.length); } while (next === intervaloIdx);
-      intervaloIdx = next;
-      return;
+
+  function montarDeckIntervalo(tamanho) {
+    intervaloDeck = [];
+    for (let i = 0; i < tamanho; i++) intervaloDeck.push(i);
+    for (let i = intervaloDeck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [intervaloDeck[i], intervaloDeck[j]] = [intervaloDeck[j], intervaloDeck[i]];
     }
-    if (lista.length <= 1) { intervaloCustomIdx = 0; return; }
-    let next;
-    do { next = Math.floor(Math.random() * lista.length); } while (next === intervaloCustomIdx);
-    intervaloCustomIdx = next;
+    intervaloDeckPos = 0;
   }
+
+  // Próximo índice na ordem embaralhada (sem repetir até rodar todas as faixas)
+  function proximoIndiceIntervalo() {
+    const lista = listaIntervaloAtiva();
+    const tamanho = lista ? lista.length : intervaloFaixas.length;
+    if (tamanho <= 1) return 0;
+    if (intervaloDeckPos >= intervaloDeck.length || intervaloDeck.length !== tamanho) {
+      montarDeckIntervalo(tamanho);
+    }
+    return intervaloDeck[intervaloDeckPos++];
+  }
+
   let intervaloHabilitado = true;
   let idleAtivo = true; // true enquanto idle screen estiver visível
 
   function tocarIntervalo() {
     if (!intervaloHabilitado || !idleAtivo) return;
     const lista = listaIntervaloAtiva();
+    const idx = proximoIndiceIntervalo();
     if (lista) {
-      if (intervaloCustomIdx < 0 || intervaloCustomIdx >= lista.length) intervaloCustomIdx = 0;
-      const faixa = lista[intervaloCustomIdx];
+      const faixa = lista[idx];
       intervaloAudio.src = faixa.filePath ? toFileUrl(faixa.filePath) : toFileUrl(intervaloFaixas[0]);
     } else {
-      intervaloAudio.src = intervaloFaixas[intervaloIdx];
+      intervaloAudio.src = intervaloFaixas[idx];
     }
     intervaloAudio.volume = 0.5;
     intervaloAudio.play().catch(() => {});
@@ -713,7 +723,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   intervaloAudio.addEventListener("ended", () => {
-    proximaFaixaIntervalo();
     tocarIntervalo();
   });
 
@@ -887,7 +896,8 @@ document.addEventListener("DOMContentLoaded", () => {
           intervaloFaixasCustom = Array.isArray(dados.faixas)
             ? dados.faixas.filter(f => f && f.filePath)
             : null;
-          intervaloCustomIdx = -1;
+intervaloDeck = [];
+          intervaloDeckPos = 0;
           if (intervaloHabilitado && idleAtivo) tocarIntervalo();
           return;
         }
@@ -1020,7 +1030,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { if (!isAudience) { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); } }
     if (cmd === "intervalo-off") { if (!isAudience) { intervaloHabilitado = false; pararIntervalo(); } }
-    if (cmd === "intervalo-playlist-clear") { if (!isAudience) { intervaloFaixasCustom = null; intervaloCustomIdx = -1; } }
+    if (cmd === "intervalo-playlist-clear") { if (!isAudience) { intervaloFaixasCustom = null; intervaloDeck = []; intervaloDeckPos = 0; } }
     if (cmd === "sessao-encerrada") {
       setShowHorario(null, true);
       document.getElementById("qr-sessao").style.display = "none";

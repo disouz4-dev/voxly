@@ -2,6 +2,8 @@
   "name": "voxly",
   "version": "1.0.0",
   "description": "Voxly - Sistema de fila para karaoke com QR Code",
+  "homepage": "https://github.com/disouz4-dev/voxly",
+  "license": "MIT",
   "author": "Voxly <voxly-karaoke@users.noreply.github.com>",
   "main": "src/main.js",
   "scripts": {

@@ -11,11 +11,16 @@ Construído com **Electron**, **Firebase / Firestore** e **Node.js**.
 ## ✨ Funcionalidades
 
 - 🎵 **Sessões ao vivo** — o host inicia uma sessão e gera um código + QR Code.
+- 🖥️ **3 telas** — uma para o **host (KJ)**, uma para o **palco** (roda o vídeo karaokê em tela cheia) e uma opcional para o **público** (cantor + música + QR, sem vídeo).
+- ⏱️ **Horário do show** — o KJ define quando o show começa; o público e o app dos cantores mostram a **contagem regressiva** até a hora marcada.
+- 🎛️ **Temas de intervalo** — playlists editáveis por tema (Rock, Pagode, MPB...). Casa de rock? Só toca Rock no intervalo.
 - 📱 **Participação pelo celular** — escaneie o QR e entre na sessão instantaneamente.
 - 🎤 **Fila de músicas em tempo real** — os cantores pedem, o host controla (marcar cantada, pular, remover).
 - 🎚️ **Controle de tom (pitch shift)** para quem quer cantar em outro tom.
 - 🧑🤝🧑 **Presença online** — o host vê quem está conectado.
 - 📂 **Catálogo de músicas** — busca com cache no Firestore e capas via iTunes.
+- 🗔 **Bandeja (tray)** — o app roda minimizado na bandeja com ícone do Voxly e menu rápido.
+- 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases.
 - 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
 
 ## 🏗️ Arquitetura
@@ -62,9 +67,29 @@ npm run dev          # modo desenvolvimento
 cd app
 npm run build:mac     # macOS  (DMG + ZIP)   — requer macOS
 npm run build:win     # Windows (NSIS + portable)
-npm run build:linux   # Linux  (AppImage)
+npm run build:linux   # Linux  (AppImage + .deb)
 ```
-> O instalador **.dmg/.zip do macOS** é gerado pela pipeline `build-electron-mac` do CI (macOS runner). O ícone do app é gerado a partir de `app/src/assets/icons/icon.png` (1024×1024) para todas as plataformas.
+> O instalador **.dmg/.zip do macOS** é gerado pela pipeline `build-electron-mac` do CI (macOS runner). O **.deb** já sai pronto no `make build-linux`. O ícone do app é gerado a partir de `app/src/assets/icons/icon.png` (1024×1024) para todas as plataformas, com `icon.ico` multi-tamanho no Windows.
+
+### As 3 telas
+
+| Tela | Janela | O que mostra |
+|---|---|---|
+| **1 · Host (KJ)** | Gerência | Fila, presenças, now-playing, QR, regras e botão 🎥 **Público** |
+| **2 · Palco** | Fullscreen | O vídeo karaokê + intro/preview |
+| **3 · Público** | Outro monitor | Cantor, música, tom e QR de acesso — **sem vídeo** |
+
+- O host liga/desliga a tela do público pelo botão **🎥 Público**.
+- **Horário do show**: no painel *Controle do Palco* o KJ define a hora (`🎬 Horário do Show`) e o **público, o palco e o app dos cantores** exibem a contagem regressiva até o show começar. Na hora, é só dar ▶ Play.
+
+### 🗔 Bandeja (tray)
+O app continua rodando em segundo plano na bandeja após fechar a janela. O menu oferece **Abrir Gerência**, **Tela do Público** e **Sair do Voxly**.
+
+### 🔄 Atualização automática
+Os instaladores publicados como *release draft* no **GitHub Releases** são detectados pelo `electron-updater` e instalados na próxima reinicialização (macOS requer assinatura/notarização da Apple).
+
+### 🎛️ Temas de intervalo
+No botão **🎛 Temas** do host você cria temas (ex.: *Rock*) com **playlist própria e editável**, montada a partir do catálogo local. O tema ativo define o que toca entre as músicas; sem tema, voltam as faixas animadas padrão.
 
 ### Web dos cantores (local)
 ```bash

@@ -11,11 +11,16 @@ Built with **Electron**, **Firebase / Firestore**, and **Node.js**.
 ## ✨ Features
 
 - 🎵 **Live sessions** — the host starts a session and generates a code + QR Code.
+- 🖥️ **3 screens** — one for the **host (KJ)**, one for the **stage** (plays the karaoke video fullscreen) and an optional **audience** screen (singer + song + QR, no video).
+- ⏱️ **Show start time** — the KJ sets when the show begins; the audience screen and the singers' app show a live **countdown**.
+- 🎛️ **Interval themes** — editable, theme-based playlists (Rock, Pagode, MPB...). Rock venue? Only rock plays between songs.
 - 📱 **Join from a phone** — scan the QR and join the session instantly.
 - 🎤 **Real-time song queue** — singers request songs, the host controls the queue (mark as sung, skip, remove).
 - 🎚️ **Pitch shifting** — singers can change the song key to match their voice.
 - 🧑🤝🧑 **Online presence** — the host sees who is currently connected.
 - 📂 **Song catalog** — search with Firestore cache and iTunes artwork.
+- 🗔 **System tray** — the app keeps running in the tray with the Voxly icon and a quick menu.
+- 🔄 **Auto-update** — new installers are downloaded from GitHub Releases.
 - 🔌 **Offline fallback (LAN)** — even without internet the karaoke keeps going (details below).
 
 ## 🏗️ Architecture
@@ -62,9 +67,29 @@ npm run dev          # development mode
 cd app
 npm run build:mac     # macOS  (DMG + ZIP)   — requires macOS
 npm run build:win     # Windows (NSIS + portable)
-npm run build:linux   # Linux  (AppImage)
+npm run build:linux   # Linux  (AppImage + .deb)
 ```
-> The macOS **.dmg/.zip** installer is produced by the `build-electron-mac` CI job (macOS runner). The app icon is generated from `app/src/assets/icons/icon.png` (1024×1024) for all platforms.
+> The macOS **.dmg/.zip** installer is produced by the `build-electron-mac` CI job (macOS runner). The Linux **.deb** is produced by `make build-linux`. The app icon is generated from `app/src/assets/icons/icon.png` (1024×1024) for all platforms, with a multi-size `icon.ico` on Windows.
+
+### The 3 screens
+
+| Screen | Window | Shows |
+|---|---|---|
+| **1 · Host (KJ)** | Console | Queue, attendance, now-playing, QR, rules and the 🎥 **Audience** toggle |
+| **2 · Stage** | Fullscreen | The karaoke video + intro/preview |
+| **3 · Audience** | Another monitor | Singer, song, key and access QR — **no video** |
+
+- The host turns the audience screen on/off with the **🎥 Público** button.
+- **Show start time**: in the *Controle do Palco* panel the KJ sets the time (`🎬 Horário do Show`) and the **audience, stage and singers' app** show a live countdown until the show starts. At the right time, just hit ▶ Play.
+
+### 🗔 System tray
+After closing the window the app keeps running in the tray. The menu offers **Open Console**, **Audience Screen** and **Quit Voxly**.
+
+### 🔄 Auto-update
+Installers published as *draft releases* on **GitHub Releases** are detected by `electron-updater` and installed on the next restart (macOS requires Apple signing/notarization).
+
+### 🎛️ Interval themes
+In the host's **🎛 Temas** button you create themes (e.g. *Rock*) with your own **editable playlist**, built from the local catalog. The active theme defines what plays between songs; without one, the default animated tracks play.
 
 ### Singer web app (local)
 ```bash
