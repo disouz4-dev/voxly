@@ -5,6 +5,7 @@ const chokidar = require("chokidar");
 const fs     = require("fs");
 const http   = require("http");
 const ServidorLocal = require("./local-server");
+const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
 const store = new Store();
@@ -1027,6 +1028,72 @@ ipcMain.handle("yt-download", async (_, opts) => {
     }
     return { sucesso: false, erro: e.message };
   }
+});
+
+// ── IPC: procura candidatos de karaoke no YouTube ──────────
+// O app do cantor roda no navegador e nao alcanca o yt-dlp; quem busca e
+// ranqueia e sempre o host. O renderer so recebe a lista pronta.
+const YT_BUSCA_TIMEOUT_MS = 45000;
+
+ipcMain.handle("yt-buscar", async (_, pedido) => {
+  const ytDlp = resolverBinario("yt-dlp");
+  if (!ytDlp) {
+    return { sucesso: false, erro: 'yt-dlp nao encontrado. Instale com "brew install yt-dlp ffmpeg".' };
+  }
+  if (!pedido || !pedido.musica) {
+    return { sucesso: false, erro: "Informe ao menos o nome da musica." };
+  }
+
+  const consulta = montarConsulta(pedido);
+  const args = [
+    `ytsearch12:${consulta}`,
+    "--dump-json", "--skip-download", "--no-warnings",
+    "--socket-timeout", "15",
+    "--extractor-args", "youtubetab:skip=authcheck",
+  ];
+
+  return await new Promise((resolve) => {
+    const child = spawn(ytDlp, args, { windowsHide: true });
+    let saida = "", erroSaida = "", encerrado = false;
+
+    // Sem isto uma busca travada deixaria a fila do KJ pendurada para sempre.
+    const relogio = setTimeout(() => {
+      encerrado = true;
+      child.kill();
+      resolve({ sucesso: false, erro: "A busca no YouTube demorou demais." });
+    }, YT_BUSCA_TIMEOUT_MS);
+
+    child.stdout.on("data", d => saida += d.toString());
+    child.stderr.on("data", d => erroSaida += d.toString());
+
+    child.on("error", (e) => {
+      clearTimeout(relogio);
+      if (!encerrado) resolve({ sucesso: false, erro: `Falha ao executar o yt-dlp: ${e.message}` });
+    });
+
+    child.on("close", () => {
+      clearTimeout(relogio);
+      if (encerrado) return;
+
+      // Cada linha de --dump-json e um video. Uma linha corrompida nao pode
+      // derrubar a busca inteira, entao o parse e por item.
+      const videos = saida.split("\n").map(l => l.trim()).filter(Boolean).flatMap(l => {
+        try { return [JSON.parse(l)]; } catch { return []; }
+      });
+
+      if (!videos.length) {
+        const ultima = erroSaida.trim().split("\n").pop();
+        resolve({ sucesso: false, erro: ultima || "Nenhum resultado encontrado." });
+        return;
+      }
+
+      const candidatos = ordenarCandidatos(videos, pedido, {
+        canaisPreferidos: store.get("canaisPreferidos", []),
+      });
+      console.log(`[YT] "${consulta}" → ${videos.length} brutos, ${candidatos.length} candidatos`);
+      resolve({ sucesso: true, consulta, candidatos });
+    });
+  });
 });
 
 ipcMain.handle("yt-cancel", () => {

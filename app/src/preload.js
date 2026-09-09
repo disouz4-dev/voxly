@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onAudienceState:    (cb) => ipcRenderer.on("audiencia-estado", (_e, ativa) => cb(ativa)),
 
   // YouTube Download
+  ytBuscar:           (pedido) => ipcRenderer.invoke("yt-buscar", pedido),
   ytDownload:         (opts) => ipcRenderer.invoke("yt-download", opts),
   ytCancel:           () => ipcRenderer.invoke("yt-cancel"),
   onYtProgress:       (cb) => ipcRenderer.on("yt-progress", (_e, info) => cb(info)),
