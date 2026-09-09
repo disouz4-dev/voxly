@@ -3,8 +3,10 @@ name: Voxly CI/CD
 on:
   push:
     branches: [main, develop]
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -64,7 +66,7 @@ jobs:
   # ---- Build Electron (Windows) ----
   build-electron-win:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -145,16 +147,8 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # needed to create releases
+      contents: write  # needed to create releases and upload assets
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - name: Instalar dependencias
-        run: npm ci
-        working-directory: app
       - name: Download Linux build
         uses: actions/download-artifact@v4
         with:
@@ -170,8 +164,7 @@ jobs:
         with:
           name: voxly-macos
           path: ./dist/macos
-      - name: Create Release
-        id: create_release
+      - name: Publicar Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -179,46 +172,12 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
-      - name: Upload Linux AppImage
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dist/linux/Voxly-*.AppImage
-          asset_name: Voxly-${{ github.ref_name }}-Linux.AppImage
-          asset_content_type: application/octet-stream
-      - name: Upload Linux DEB
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dist/linux/voxly_*.deb
-          asset_name: Voxly-${{ github.ref_name }}-Linux.deb
-          asset_content_type: application/octet-stream
-      - name: Upload Windows EXE
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dist/windows/Voxly-Setup-*.exe
-          asset_name: Voxly-${{ github.ref_name }}-Setup-Windows.exe
-          asset_content_type: application/octet-stream
-      - name: Upload macOS DMG
-        if: steps.create_release.outputs.upload_url != ''
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dist/macos/Voxly-*.dmg
-          asset_name: Voxly-${{ github.ref_name }}-macOS.dmg
-          asset_content_type: application/octet-stream
+          files: |
+            ./dist/linux/*.AppImage
+            ./dist/linux/*.deb
+            ./dist/windows/*.exe
+            ./dist/macos/*.dmg
+            ./dist/macos/*.zip
 
   # ---- Deploy Web (Firebase Hosting) ----
   deploy-web-staging:

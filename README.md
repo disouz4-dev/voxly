@@ -16,24 +16,24 @@ As versões mais recentes estão sempre em: **[github.com/disouz4-dev/voxly/rele
 
 **Opção A — .deb (Ubuntu/Debian, recomendado):**
 ```bash
-# Baixe e instale (substitua VERSÃO pela versão mais recente, ex: 1.1.0)
-wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/voxly_1.1.0_amd64.deb
-sudo dpkg -i voxly_1.1.0_amd64.deb
+# Baixe e instale (substitua VERSÃO pela versão mais recente, ex: 1.1.1)
+wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.1/voxly_1.1.1_amd64.deb
+sudo dpkg -i voxly_1.1.1_amd64.deb
 sudo apt-get install -f   # corrige dependências, se necessário
 ```
 
 **Opção B — AppImage (portátil):**
 ```bash
 # Baixe, torne executável e rode (substitua VERSÃO pela mais recente)
-wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/Voxly-1.1.0.AppImage
-chmod +x Voxly-1.1.0.AppImage
-./Voxly-1.1.0.AppImage
+wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.1/Voxly-1.1.1.AppImage
+chmod +x Voxly-1.1.1.AppImage
+./Voxly-1.1.1.AppImage
 ```
 
 ### 🍎 macOS
 ```bash
 # Baixe o .dmg (substitua VERSÃO pela mais recente)
-curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v1.1.0/Voxly-1.1.0.dmg
+curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v1.1.1/Voxly-1.1.1.dmg
 
 # Monte e copie para /Applications
 hdiutil attach Voxly.dmg
