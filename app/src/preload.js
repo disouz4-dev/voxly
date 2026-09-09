@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   scanMusicFolder:    () => ipcRenderer.invoke("scan-music-folder"),
   listMusicFiles:     () => ipcRenderer.invoke("list-music-files"),
   resolveMusicFile:   (song, artist) => ipcRenderer.invoke("resolve-music-file", song, artist),
+  resolveArquivo:     (arquivo) => ipcRenderer.invoke("resolve-arquivo", arquivo),
   linkMusicFile:      (songId) => ipcRenderer.invoke("link-music-file", songId),
   getMusicLinks:      () => ipcRenderer.invoke("get-music-links"),
   playSong:           (filePath) => ipcRenderer.invoke("play-song", filePath),

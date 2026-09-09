@@ -670,19 +670,39 @@ document.addEventListener("DOMContentLoaded", () => {
     "../assets/intervalo/Pausa Animada.mp3",
     "../assets/intervalo/Pausa de Karaokê.mp3"
   ];
-  let intervaloIdx    = Math.floor(Math.random() * intervaloFaixas.length);
+  let intervaloFaixasCustom = null; // playlist do tema definida pelo host [{musica,artista,filePath}]
+  let intervaloIdx      = Math.floor(Math.random() * intervaloFaixas.length);
+  let intervaloCustomIdx = -1;
+  function listaIntervaloAtiva() {
+    return intervaloFaixasCustom && intervaloFaixasCustom.length ? intervaloFaixasCustom : null;
+  }
   function proximaFaixaIntervalo() {
-    if (intervaloFaixas.length <= 1) return;
+    const lista = listaIntervaloAtiva();
+    if (!lista) {
+      if (intervaloFaixas.length <= 1) return;
+      let next;
+      do { next = Math.floor(Math.random() * intervaloFaixas.length); } while (next === intervaloIdx);
+      intervaloIdx = next;
+      return;
+    }
+    if (lista.length <= 1) { intervaloCustomIdx = 0; return; }
     let next;
-    do { next = Math.floor(Math.random() * intervaloFaixas.length); } while (next === intervaloIdx);
-    intervaloIdx = next;
+    do { next = Math.floor(Math.random() * lista.length); } while (next === intervaloCustomIdx);
+    intervaloCustomIdx = next;
   }
   let intervaloHabilitado = true;
   let idleAtivo = true; // true enquanto idle screen estiver visível
 
   function tocarIntervalo() {
     if (!intervaloHabilitado || !idleAtivo) return;
-    intervaloAudio.src    = intervaloFaixas[intervaloIdx];
+    const lista = listaIntervaloAtiva();
+    if (lista) {
+      if (intervaloCustomIdx < 0 || intervaloCustomIdx >= lista.length) intervaloCustomIdx = 0;
+      const faixa = lista[intervaloCustomIdx];
+      intervaloAudio.src = faixa.filePath ? toFileUrl(faixa.filePath) : toFileUrl(intervaloFaixas[0]);
+    } else {
+      intervaloAudio.src = intervaloFaixas[intervaloIdx];
+    }
     intervaloAudio.volume = 0.5;
     intervaloAudio.play().catch(() => {});
   }
@@ -862,6 +882,16 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
+        if (dados.cmd === "intervalo-playlist") {
+          if (isAudience) return;
+          intervaloFaixasCustom = Array.isArray(dados.faixas)
+            ? dados.faixas.filter(f => f && f.filePath)
+            : null;
+          intervaloCustomIdx = -1;
+          if (intervaloHabilitado && idleAtivo) tocarIntervalo();
+          return;
+        }
+
         if (dados.cmd === "sessao-iniciada") {
           const sessaoUrl = `${APP_URL}/profile.html?sessao=${dados.codigo}`;
           document.getElementById("qrImgSessao").src =
@@ -990,6 +1020,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { if (!isAudience) { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); } }
     if (cmd === "intervalo-off") { if (!isAudience) { intervaloHabilitado = false; pararIntervalo(); } }
+    if (cmd === "intervalo-playlist-clear") { if (!isAudience) { intervaloFaixasCustom = null; intervaloCustomIdx = -1; } }
     if (cmd === "sessao-encerrada") {
       setShowHorario(null, true);
       document.getElementById("qr-sessao").style.display = "none";

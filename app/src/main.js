@@ -527,6 +527,18 @@ ipcMain.handle("toggle-audience", () => {
 
 ipcMain.handle("get-audience-state", () => !!(audienceWindow && !audienceWindow.isDestroyed()));
 
+// ── IPC: Resolve caminho completo p/ playlist de intervalo ──
+ipcMain.handle("resolve-arquivo", (e, arquivo) => {
+  try {
+    const folder = store.get("musicFolder");
+    if (!folder || !arquivo) return null;
+    const fullPath = path.join(folder, arquivo);
+    return fs.existsSync(fullPath) ? fullPath : null;
+  } catch {
+    return null;
+  }
+});
+
 // ── IPC: Imagem externa (bypass CORS — net.fetch roda no processo principal) ──
 const { net } = require('electron');
 ipcMain.handle("fetch-image", async (_, url) => {

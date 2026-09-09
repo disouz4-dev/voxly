@@ -427,6 +427,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     <button class="btn btn-ghost btn-sm" onclick="reabrirPlayer()">🖥 Player</button>
     <button class="btn btn-ghost btn-sm" id="btnAudiencia" onclick="toggleAudiencia()" title="Liga/desliga a tela do público (cantor + música + QR)">🎥 Público</button>
     <button class="btn btn-ghost btn-sm" id="btnIntervalo" onclick="toggleIntervalo()" title="Música de intervalo">🎵 Intervalo</button>
+    <button class="btn btn-ghost btn-sm" onclick="abrirModalTemas()" title="Temas (playlists editáveis) da música de intervalo">🎛 Temas</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
 </header>
@@ -628,6 +629,38 @@ footer strong { color:var(--ambar); font-weight:700; }
   </div>
 </div>
 
+<div class="modal-overlay" id="modalTemas">
+  <div class="modal-box" style="width:min(520px,94vw);">
+    <h2>🎛 Temas de Intervalo</h2>
+    <p style="font-size:.78rem;color:var(--mudo);margin:6px 0 14px;line-height:1.5;">
+      No intervalo da sessão toca só o tema escolhido. Casa de rock? Crie o tema
+      <strong style="color:var(--ambar)">Rock</strong> e monte sua playlist.
+    </p>
+
+    <label class="modal-label">Tema ativo no momento</label>
+    <select class="modal-select" id="select-tema-ativo" onchange="mudarTemaAtivo()"></select>
+
+    <label class="modal-label">Criar novo tema</label>
+    <div style="display:flex;gap:8px;">
+      <input class="modal-input" type="text" id="nova-tema-nome" placeholder="Ex: Rock, Pagode, MPB..." maxlength="30" style="flex:1;margin:0;">
+      <button class="btn btn-primary btn-sm" onclick="criarTema()">Criar</button>
+    </div>
+
+    <label class="modal-label" style="margin-top:18px;">Músicas do tema
+      <span id="tema-faixa-count" style="color:var(--azul);"></span>
+    </label>
+    <div id="tema-faixas" style="max-height:150px;overflow-y:auto;margin-bottom:4px;"></div>
+
+    <label class="modal-label">Adicionar música (catálogo local)</label>
+    <input class="modal-input" type="text" id="tema-busca" placeholder="Buscar no catálogo..." oninput="buscarCatalogoTema()">
+    <div id="tema-busca-resultados" style="max-height:170px;overflow-y:auto;margin-top:6px;"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalTemas()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
@@ -728,10 +761,13 @@ footer strong { color:var(--ambar); font-weight:700; }
     document.querySelector('.qr-box-url').textContent = appUrlLocal || APP_URL;
 
     // Estado do intervalo
+    carregarTemas();
+    atualizarTituloIntervalo();
     atualizarBtnIntervalo();
     setTimeout(() => {
       if (window.electronAPI) {
         window.electronAPI.playerCommand(intervaloAtivo ? 'intervalo-on' : 'intervalo-off');
+        if (intervaloAtivo) enviarPlaylistIntervalo();
       }
     }, 2500);
 
@@ -1461,6 +1497,155 @@ footer strong { color:var(--ambar); font-weight:700; }
   // ── Música de intervalo ───────────────────────────────────
   let intervaloAtivo = localStorage.getItem('voxly_intervalo') !== 'off';
 
+  // ── Temas de intervalo (playlists editáveis) ──────────────
+  let temasIntervalo = [];               // [{ id, nome, faixas:[{musica,artista,arquivo}] }]
+  let temaAtivoId    = null;
+  let catalogoTemaScan = {};             // canal de busca → cache local
+
+  function carregarTemas() {
+    try { temasIntervalo = JSON.parse(localStorage.getItem('voxly_temas') || '[]'); }
+    catch { temasIntervalo = []; }
+    temaAtivoId = localStorage.getItem('voxly_tema_ativo') || null;
+  }
+  function salvarTemas() {
+    localStorage.setItem('voxly_temas', JSON.stringify(temasIntervalo));
+  }
+  function temaAtivoObj() {
+    return temasIntervalo.find(t => t.id === temaAtivoId) || null;
+  }
+
+  async function enviarPlaylistIntervalo() {
+    if (!window.electronAPI) return;
+    const tema = temaAtivoObj();
+    if (!tema || !tema.faixas || tema.faixas.length === 0) {
+      window.electronAPI.playerCommand('intervalo-playlist-clear');
+      return;
+    }
+    const faixas = [];
+    for (const f of tema.faixas) {
+      const fullPath = f.arquivo ? await window.electronAPI.resolveArquivo(f.arquivo) : null;
+      if (fullPath) faixas.push({ musica: f.musica, artista: f.artista, filePath: fullPath });
+    }
+    window.electronAPI.playerCommand(JSON.stringify({ cmd: 'intervalo-playlist', faixas }));
+  }
+
+  function mudarTemaAtivo() {
+    temaAtivoId = document.getElementById('select-tema-ativo').value || null;
+    localStorage.setItem('voxly_tema_ativo', temaAtivoId);
+    renderFaixasTema();
+    atualizarTituloIntervalo();
+    if (intervaloAtivo) enviarPlaylistIntervalo();
+    mostrarToast(temaAtivoObj() ? `🎛 Tema ativo: ${temaAtivoObj().nome}` : '🎛 Tema padrão (animados)', 2500);
+  }
+
+  function abrirModalTemas() {
+    renderSelectTemas();
+    renderFaixasTema();
+    document.getElementById('tema-busca').value = '';
+    document.getElementById('tema-busca-resultados').innerHTML = '';
+    document.getElementById('modalTemas').classList.add('open');
+  }
+  function fecharModalTemas() { document.getElementById('modalTemas').classList.remove('open'); }
+
+  function renderSelectTemas() {
+    const sel = document.getElementById('select-tema-ativo');
+    sel.innerHTML = '<option value="">🎵 Padrão (animados)</option>' +
+      temasIntervalo.map(t =>
+        `<option value="${t.id}" ${t.id === temaAtivoId ? 'selected' : ''}>${escHtml(t.nome)} (${t.faixas.length})</option>`
+      ).join('');
+  }
+
+  function renderFaixasTema() {
+    const box = document.getElementById('tema-faixas');
+    const tema = temaAtivoObj();
+    document.getElementById('tema-faixa-count').textContent = tema ? `— ${tema.faixas.length} música(s)` : '— tema padrão';
+    if (!tema) {
+      box.innerHTML = '<div class="empty">Nenhum tema ativo. Crie um tema acima e adicione músicas.</div>';
+      return;
+    }
+    box.innerHTML = tema.faixas.map((f, i) =>
+      `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--linha);font-size:.82rem;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${escHtml(f.musica)}</strong> <span style="color:var(--mudo);font-size:.72rem;">— ${escHtml(f.artista)}</span></span>
+        <button class="btn btn-danger btn-sm" onclick="removerFaixaTema(${i})" title="Remover">✕</button>
+      </div>`).join('') ||
+      '<div class="empty">Tema vazio — adicione músicas abaixo.</div>';
+  }
+
+  function removerFaixaTema(i) {
+    const tema = temaAtivoObj();
+    if (!tema) return;
+    tema.faixas.splice(i, 1);
+    salvarTemas();
+    renderSelectTemas();
+    renderFaixasTema();
+    if (intervaloAtivo) enviarPlaylistIntervalo();
+  }
+
+  function criarTema() {
+    const input = document.getElementById('nova-tema-nome');
+    const nome  = input.value.trim();
+    if (!nome) { mostrarToast('Digite o nome do tema.', 2200); return; }
+    if (temasIntervalo.some(t => t.nome.toLowerCase() === nome.toLowerCase())) {
+      mostrarToast('Já existe um tema com esse nome.', 2500);
+      return;
+    }
+    const tema = { id: 't' + Date.now(), nome, faixas: [] };
+    temasIntervalo.push(tema);
+    temaAtivoId = tema.id;
+    localStorage.setItem('voxly_tema_ativo', temaAtivoId);
+    salvarTemas();
+    input.value = '';
+    renderSelectTemas();
+    renderFaixasTema();
+    atualizarTituloIntervalo();
+    mostrarToast(`🎛 Tema "${nome}" criado e ativado.`, 2500);
+  }
+
+  async function buscarCatalogoTema() {
+    const q = document.getElementById('tema-busca').value.trim().toLowerCase();
+    const box = document.getElementById('tema-busca-resultados');
+    if (!q) { box.innerHTML = ''; return; }
+    if (!catalogoTemaScan.arquivos) {
+      try {
+        const resp = await fetch('http://127.0.0.1:7432/catalogo');
+        catalogoTemaScan.arquivos = resp.ok ? await resp.json() : [];
+      } catch {
+        catalogoTemaScan.arquivos = [];
+      }
+    }
+    const tema = temaAtivoObj();
+    const res = catalogoTemaScan.arquivos
+      .filter(s => (s.artista + ' ' + s.musica).toLowerCase().includes(q))
+      .slice(0, 25);
+    if (!res.length) { box.innerHTML = '<div class="empty">Sem resultados no catálogo.</div>'; return; }
+    box.innerHTML = res.map((s, i) =>
+      `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--linha);font-size:.82rem;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${escHtml(s.musica)}</strong> <span style="color:var(--mudo);font-size:.72rem;">— ${escHtml(s.artista)}</span></span>
+        <button class="btn btn-ok btn-sm" onclick="adicionarFaixaTema(${i})" title="Adicionar ao tema">＋</button>
+      </div>`).join('');
+    window.catalogoTemaLast = res;
+  }
+
+  function adicionarFaixaTema(i) {
+    const res = window.catalogoTemaLast || [];
+    const s = res[i];
+    if (!s) return;
+    const tema = temaAtivoObj();
+    if (!tema) { mostrarToast('Crie/ative um tema primeiro.', 2500); return; }
+    if (tema.faixas.some(f => f.arquivo === s.arquivo)) { mostrarToast('Essa música já está no tema.', 2500); return; }
+    tema.faixas.push({ musica: s.musica, artista: s.artista, arquivo: s.arquivo });
+    salvarTemas();
+    renderSelectTemas();
+    renderFaixasTema();
+    if (intervaloAtivo) enviarPlaylistIntervalo();
+    mostrarToast(`➕ "${s.musica}" adicionada a "${tema.nome}".`, 2200);
+  }
+
+  function atualizarTituloIntervalo() {
+    const btn = document.getElementById('btnIntervalo');
+    if (btn) btn.title = 'Música de intervalo — Tema: ' + (temaAtivoObj() ? temaAtivoObj().nome : 'Animados');
+  }
+
   function atualizarBtnIntervalo() {
     const btn = document.getElementById('btnIntervalo');
     if (!btn) return;
@@ -1478,6 +1663,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     localStorage.setItem('voxly_intervalo', intervaloAtivo ? 'on' : 'off');
     if (window.electronAPI) {
       window.electronAPI.playerCommand(intervaloAtivo ? 'intervalo-on' : 'intervalo-off');
+      if (intervaloAtivo) enviarPlaylistIntervalo();
     }
     atualizarBtnIntervalo();
     mostrarToast(intervaloAtivo ? 'Música de intervalo ativada' : 'Música de intervalo desativada');
