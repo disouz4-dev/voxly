@@ -195,7 +195,32 @@ function escolherDisplayOcupado() {
   // Tela do publico: primeiro display que não seja KJ nem palco; senão, o primario.
   const livre = displays.find(d => (d.bounds.x !== 0 || d.bounds.y !== 0)
     && (d.id !== displayPalco.id));
-  return livre ? livre.bounds : primario.bounds;
+  return livre || primario;
+}
+
+// Palco e Publico ocupam o display inteiro — o que so faz sentido quando ha
+// monitor externo. Em tela unica eles cobririam por completo a Gerencia, que
+// continua aberta mas invisivel atras. Nesse caso a janela e reduzida e
+// encostada num canto, deixando a Gerencia alcancavel.
+const PROPORCAO_TELA_UNICA = 0.6;
+
+function geometriaSecundaria(display, canto) {
+  const externo = display.bounds.x !== 0 || display.bounds.y !== 0;
+  if (externo) {
+    const { x, y, width, height } = display.bounds;
+    return { x, y, width, height };
+  }
+
+  // workArea (e nao bounds) para a janela nao nascer sob a barra de menu / Dock.
+  const area = display.workArea;
+  const width  = Math.round(area.width  * PROPORCAO_TELA_UNICA);
+  const height = Math.round(area.height * PROPORCAO_TELA_UNICA);
+  return {
+    x: canto === "esquerda" ? area.x : area.x + area.width - width,
+    y: area.y + area.height - height,
+    width,
+    height,
+  };
 }
 
 function createHostWindow() {
@@ -217,12 +242,13 @@ function createPlayerWindow() {
   const displays = screen.getAllDisplays();
   const extDisplay = displays.find(d => d.bounds.x !== 0 || d.bounds.y !== 0);
   const target = extDisplay || displays[0];
+  const geo = geometriaSecundaria(target, "direita");
 
   playerWindow = new BrowserWindow({
-    x: target.bounds.x,
-    y: target.bounds.y,
-    width:  target.bounds.width,
-    height: target.bounds.height,
+    x: geo.x,
+    y: geo.y,
+    width:  geo.width,
+    height: geo.height,
     title: "Voxly - Palco",
     icon: ICONE_APP,
     fullscreenable: true,
@@ -244,13 +270,13 @@ function createPlayerWindow() {
 // Tela 3: auditório/público — painel opcional ligado pelo host.
 // Mostra cantor atual + música + QR codes (sem repetir o vídeo).
 function createAudienceWindow() {
-  const bounds = escolherDisplayOcupado();
+  const geo = geometriaSecundaria(escolherDisplayOcupado(), "esquerda");
 
   audienceWindow = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    width:  bounds.width,
-    height: bounds.height,
+    x: geo.x,
+    y: geo.y,
+    width:  geo.width,
+    height: geo.height,
     title: "Voxly - Público",
     icon: ICONE_APP,
     fullscreenable: true,
