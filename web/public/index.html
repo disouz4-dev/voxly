@@ -72,6 +72,12 @@
     .form-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size:.82rem; color: var(--texto); }
     .form-group input { width: 100%; padding: 12px; border: 1px solid var(--linha); border-radius: 10px; background: rgba(255,255,255,0.05); color: var(--texto); font-size: 1rem; }
     .form-group input:focus { outline: none; border-color: var(--ambar); }
+    #login-aviso {
+      display:none; margin-top:4px; padding:10px 12px; border-radius:10px;
+      background:rgba(255,107,107,.08); border:1px solid var(--perigo);
+      color:var(--texto); font-size:.8rem; line-height:1.5; text-align:center;
+    }
+    #login-aviso.info { background:rgba(255,180,84,.08); border-color:var(--ambar); }
     .footer { margin-top: 30px; text-align: center; color: var(--mudo); font-size: .8rem; font-family:'Space Mono',monospace; }
     .footer strong { color:var(--ambar); text-transform:uppercase; letter-spacing:.08em; }
     .footer a { color: var(--azul); text-decoration: none; }
@@ -92,6 +98,7 @@
       <div class="or-divider"><span>OU</span></div>
       <button id="email-login" class="btn email-btn">Entrar com E-mail</button>
       <button id="signup-login" class="btn ghost-btn">Cadastrar</button>
+      <div id="login-aviso"></div>
     </div>
 
     <div id="email-form" style="display:none;">
@@ -140,8 +147,15 @@
     }
 
     async function redirectByProfile(user) {
-      const doc = await db.collection('cantores').doc(user.uid).get();
-      window.location.href = comSessao(doc.exists ? '/profile.html' : '/signup.html');
+      try {
+        const doc = await db.collection('cantores').doc(user.uid).get();
+        window.location.href = comSessao(doc.exists ? '/profile.html' : '/signup.html');
+      } catch (e) {
+        // Sem isto, uma leitura recusada deixava a pessoa parada no login sem
+        // nenhuma pista do motivo.
+        console.error('[VOXLY] Falha ao ler o perfil:', e);
+        avisoLogin('Entrou, mas nao consegui carregar seu perfil (' + (e.code || e.message) + ').');
+      }
     }
 
     const loginMethods      = document.getElementById('login-methods');
@@ -164,20 +178,59 @@
     function showMethods() { loginMethods.style.display = 'flex'; }
     function hideMethods() { loginMethods.style.display = 'none'; }
 
+    function avisoLogin(msg, tipo) {
+      const el = document.getElementById('login-aviso');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.className = tipo === 'info' ? 'info' : '';
+      el.style.display = msg ? 'block' : 'none';
+    }
+
+    // Codigos que significam "o popup nao vai funcionar aqui". Navegador que
+    // bloqueia cookies de terceiros derruba o signInWithPopup assim, e o
+    // fluxo por redirecionamento nao depende deles.
+    const POPUP_INVIAVEL = new Set([
+      'auth/popup-blocked',
+      'auth/popup-closed-by-user',
+      'auth/operation-not-supported-in-this-environment',
+      'auth/web-storage-unsupported',
+      'auth/internal-error',
+    ]);
+
     let signingIn = false;
-    googleLoginButton.addEventListener('click', () => {
+    googleLoginButton.addEventListener('click', async () => {
       if (signingIn) return;
       signingIn = true;
       googleLoginButton.disabled = true;
+      avisoLogin('');
+
       const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider)
-        .then(r => redirectByProfile(r.user))
-        .catch(e => {
-          if (e.code !== 'auth/cancelled-popup-request' && e.code !== 'auth/popup-closed-by-user')
-            alert('Erro Google: ' + e.message);
-        })
-        .finally(() => { signingIn = false; googleLoginButton.disabled = false; });
+      try {
+        const r = await auth.signInWithPopup(provider);
+        await redirectByProfile(r.user);
+      } catch (e) {
+        // Desistencia deliberada de quem clicou: nao vira erro na tela.
+        if (e.code === 'auth/cancelled-popup-request') {
+          // segue em silencio
+        } else if (POPUP_INVIAVEL.has(e.code)) {
+          avisoLogin('Popup bloqueado. Abrindo o login do Google nesta janela...', 'info');
+          await auth.signInWithRedirect(provider);
+          return; // a pagina vai recarregar
+        } else {
+          // Antes, popup-closed-by-user era engolido em silencio: a pessoa
+          // escolhia a conta e a tela simplesmente nao reagia.
+          avisoLogin('Nao foi possivel entrar com o Google (' + (e.code || e.message) + ').');
+        }
+      } finally {
+        signingIn = false;
+        googleLoginButton.disabled = false;
+      }
     });
+
+    // Retorno do signInWithRedirect.
+    auth.getRedirectResult()
+      .then(r => { if (r && r.user) return redirectByProfile(r.user); })
+      .catch(e => avisoLogin('Nao foi possivel entrar com o Google (' + (e.code || e.message) + ').'));
 
     emailLoginButton.addEventListener('click', () => { hideMethods(); emailForm.style.display='block'; emailInput.focus(); });
     backToChoices.addEventListener('click', () => { emailForm.style.display='none'; emailError.style.display='none'; showMethods(); });
