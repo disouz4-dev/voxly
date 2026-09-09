@@ -78,7 +78,7 @@ jobs:
         run: npm ci
         working-directory: app
       - name: Build Electron (Windows)
-        run: npm run build:win
+        run: npm run build:win -- --publish never
         working-directory: app
       - name: Upload artefatos
         uses: actions/upload-artifact@v4
@@ -103,7 +103,7 @@ jobs:
         run: npm ci
         working-directory: app
       - name: Build Electron (Linux)
-        run: npm run build:linux
+        run: npm run build:linux -- --publish never
         working-directory: app
       - name: Upload artefatos
         uses: actions/upload-artifact@v4
@@ -129,7 +129,7 @@ jobs:
         run: npm ci
         working-directory: app
       - name: Build Electron (macOS)
-        run: npm run build:mac
+        run: npm run build:mac -- --publish never
         working-directory: app
       - name: Upload artefatos
         uses: actions/upload-artifact@v4
