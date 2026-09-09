@@ -116,9 +116,16 @@
     const auth = firebase.auth();
     const db   = firebase.firestore();
 
+    // Preserva o deep link do QR (?sessao=<id>) atraves do login: o cantor que
+    // escaneou o codigo da casa precisa cair naquela sessao, e nao na lista.
+    function comSessao(destino) {
+      const sessao = new URLSearchParams(location.search).get('sessao');
+      return sessao ? `${destino}?sessao=${encodeURIComponent(sessao)}` : destino;
+    }
+
     async function redirectByProfile(user) {
       const doc = await db.collection('cantores').doc(user.uid).get();
-      window.location.href = doc.exists ? '/profile.html' : '/signup.html';
+      window.location.href = comSessao(doc.exists ? '/profile.html' : '/signup.html');
     }
 
     const loginMethods      = document.getElementById('login-methods');

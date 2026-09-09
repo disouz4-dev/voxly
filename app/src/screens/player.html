@@ -326,6 +326,27 @@ body.modo-publico #entrada-publica { display:flex; }
   text-align:center; line-height:1.6;
 }
 
+/* Enquanto o KJ nao abre a sessao nao existe QR para gerar: no lugar vai um
+   dino pixelado no espirito da pagina de sem-conexao, para a plateia entender
+   que ainda nao da para entrar. */
+.pub-qr-espera {
+  width:100%; max-width:340px; aspect-ratio:1;
+  border:2px dashed var(--linha); border-radius:16px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:clamp(14px,2.5vh,22px); padding:clamp(16px,3vw,26px);
+  background:rgba(255,255,255,.02);
+}
+.pub-dino { width:min(58%,190px); height:auto; opacity:.55; }
+.pub-dino rect { fill:var(--mudo); }
+.pub-qr-espera .pub-qr-label { color:var(--mudo); }
+
+/* Casa e janela de horario da sessao, no topo da coluna. */
+.pub-periodo {
+  font-family:'Space Mono', monospace; font-size:clamp(.58rem,1.1vw,.72rem);
+  letter-spacing:.2em; text-transform:uppercase; color:var(--mudo);
+  margin:-8px 0 clamp(16px,3vh,28px);
+}
+
 /* A coluna da fila (.pub-right) ainda nao tem fonte de dados: o player so
    recebe {cantor, duo, musica, artista, semitons}. Ate existir esse envio do
    host, o layout roda com duas colunas em vez de deixar um painel vazio. */
@@ -342,10 +363,9 @@ body.modo-publico #entrada-publica {
 }
 body.modo-publico #entrada-publica.visivel { display:flex; }
 
-body.modo-publico .qr-corner { bottom:34px; }
-body.modo-publico .qr-corner img { width:150px; height:150px; }
-body.modo-publico #qr-app    { left:34px; }
-body.modo-publico #qr-sessao { right:34px; }
+/* O painel do publico ja traz o QR grande na coluna do cantor; os QRs de canto
+   sao do desenho antigo e so repetiriam o mesmo destino. Ficam so no Palco. */
+body.modo-publico .qr-corner { display:none !important; }
 body.modo-publico .footer { display:none; }
 
 /* Tutoriais na tela de entrada */
@@ -473,14 +493,19 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
   <div id="publico-painel">
     <div class="pub-layout sem-fila">
       <div class="pub-left">
-        <div class="pub-left-header"><span class="pub-dot"></span>Voxly Ao Vivo</div>
+        <div class="pub-left-header"><span class="pub-dot"></span><span id="pub-casa">Voxly Ao Vivo</span></div>
+        <div class="pub-periodo" id="pub-periodo"></div>
         <div class="pub-singer-name" id="pub-singer">—</div>
         <div class="pub-duo-name"    id="pub-duo" style="display:none;"></div>
         <div class="pub-song-title"  id="pub-song">Aguardando o próximo cantor...</div>
         <div class="pub-song-artist" id="pub-artist"></div>
         <div class="pub-qr">
-          <img id="pub-qr-img" src="" alt="QR Code para entrar na sessão">
-          <div class="pub-qr-label">Aponte a câmera<br>e entre na sessão</div>
+          <div class="pub-qr-espera" id="pub-qr-espera">
+            <svg class="pub-dino" id="pub-dino" viewBox="0 0 20 21" shape-rendering="crispEdges" aria-hidden="true"></svg>
+            <div class="pub-qr-label">Aguardando<br>início da sessão</div>
+          </div>
+          <img id="pub-qr-img" src="" alt="QR Code para entrar na sessão" style="display:none;">
+          <div class="pub-qr-label" id="pub-qr-label" style="display:none;">Aponte a câmera<br>e entre na sessão</div>
         </div>
       </div>
       <div class="pub-center">
@@ -915,14 +940,74 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("qrImgApp").src =
     `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(APP_URL)}`;
 
-  // QR grande da tela do publico. Comeca apontando para o app e passa a apontar
-  // para a sessao assim que o host inicia uma (ver "sessao-iniciada").
+  // Dino pixelado do estado de espera, montado a partir de um mapa. Desenhado
+  // aqui em vez de virar imagem para o aviso continuar aparecendo sem rede.
+  const DINO = [
+    "..............XXXXX.",
+    ".............XXXXXXX",
+    ".............XX.XXXX",
+    ".............XXXXXXX",
+    ".............XXXXX..",
+    ".............XXXX...",
+    "..........XXXXXX....",
+    ".........XXXXXXX....",
+    "X.......XXXXXXXXX...",
+    "XX.....XXXXXXXXXX...",
+    "XXX...XXXXXXXXXXX...",
+    "XXXX.XXXXXXXXXXX....",
+    "XXXXXXXXXXXXXXXX....",
+    ".XXXXXXXXXXXXXXX....",
+    "..XXXXXXXXXXXXX.....",
+    "...XXXXXXXXXXX......",
+    "....XXXXXXXXX.......",
+    ".....XXX..XXX.......",
+    ".....XXX..XXX.......",
+    ".....XX...XXX.......",
+    ".....XX...XX........",
+  ];
+  (function desenharDino() {
+    const svg = document.getElementById("pub-dino");
+    if (!svg) return; // so existe no painel do publico
+    let rects = "";
+    DINO.forEach((linha, y) => [...linha].forEach((c, x) => {
+      if (c === "X") rects += `<rect x="${x}" y="${y}" width="1" height="1"/>`;
+    }));
+    svg.innerHTML = rects;
+  })();
+
+  // O QR so faz sentido depois que existe sessao — antes disso nao ha para onde
+  // apontar, entao o espaco fica com o aviso de espera.
   function definirQrPublico(url) {
     const img = document.getElementById("pub-qr-img");
     if (!img) return; // so existe no painel do publico
     img.src = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(url)}`;
+    img.style.display = "";
+    document.getElementById("pub-qr-label").style.display = "";
+    document.getElementById("pub-qr-espera").style.display = "none";
   }
-  definirQrPublico(APP_URL);
+
+  function limparQrPublico() {
+    const img = document.getElementById("pub-qr-img");
+    if (!img) return;
+    img.src = "";
+    img.style.display = "none";
+    document.getElementById("pub-qr-label").style.display = "none";
+    document.getElementById("pub-qr-espera").style.display = "";
+    document.getElementById("pub-casa").textContent = "Voxly Ao Vivo";
+    document.getElementById("pub-periodo").textContent = "";
+  }
+
+  // Casa e janela de horario declaradas pelo KJ ao abrir a sessao.
+  function mostrarDadosCasa(dados) {
+    const casa = document.getElementById("pub-casa");
+    if (!casa) return; // so existe no painel do publico
+    if (dados.nomeCasa) casa.textContent = dados.nomeCasa;
+    const periodo = document.getElementById("pub-periodo");
+    if (periodo && dados.inicio && dados.termino) {
+      const hm = ms => new Date(ms).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      periodo.textContent = `${hm(dados.inicio)} — ${hm(dados.termino)}`;
+    }
+  }
 
   // Play video (canal legado)
   window.electronAPI.onPlayVideo(filePath => {
@@ -1094,11 +1179,14 @@ intervaloDeck = [];
         }
 
         if (dados.cmd === "sessao-iniciada") {
-          const sessaoUrl = `${APP_URL}/profile.html?sessao=${dados.codigo}`;
+          // Deep link pelo id da sessao: o cantor loga e cai direto na casa certa,
+          // sem escolher na lista e sem risco de cair na sessao errada.
+          const sessaoUrl = `${APP_URL}/index.html?sessao=${encodeURIComponent(dados.sessaoId || dados.codigo)}`;
           document.getElementById("qrImgSessao").src =
             `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(sessaoUrl)}`;
           document.getElementById("qr-sessao").style.display = "flex";
           definirQrPublico(sessaoUrl);
+          mostrarDadosCasa(dados);
           return;
         }
 
@@ -1226,6 +1314,7 @@ intervaloDeck = [];
       setShowHorario(null, true);
       document.getElementById("qr-sessao").style.display = "none";
       document.getElementById("qrImgSessao").src = "";
+      limparQrPublico();
       if (isAudience) atualizarPainelPublico(null);
     }
     if (cmd === "stop") {

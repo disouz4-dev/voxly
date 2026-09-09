@@ -204,47 +204,15 @@
     <div class="hero-genres" id="genresList"></div>
   </div>
 
-  <!-- ENTRADA NA SESSÃO — visível até o cantor entrar -->
+  <!-- ENTRADA NA SESSÃO — lista de casas com sessão aberta agora -->
   <div class="section" id="sessao-entrada">
-    <div class="section-title">🎤 Entrar na Sessão</div>
+    <div class="section-title">🎤 Sessões ativas</div>
     <div class="card">
       <p style="text-align:center;color:var(--muted);font-size:0.85rem;margin-bottom:16px;">
-        Escaneie o QR Code da sessão ou digite o código para começar
+        Escolha a casa onde você está para entrar na fila.
       </p>
-
-      <!-- Scanner de câmera -->
-      <div id="scannerBox" style="display:none;margin-bottom:12px;position:relative;">
-        <video id="scannerVideo" playsinline style="width:100%;border-radius:10px;background:#000;display:block;"></video>
-        <canvas id="scannerCanvas" style="display:none;"></canvas>
-        <div style="position:absolute;inset:0;border:2px solid var(--accent);border-radius:10px;pointer-events:none;"></div>
-        <button onclick="pararScanner()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.6);border:none;color:#fff;font-size:0.8rem;cursor:pointer;padding:4px 10px;border-radius:6px;">✕ Fechar</button>
-        <p style="text-align:center;font-size:0.75rem;color:var(--muted);margin-top:6px;">Aponte para o QR Code da sessão</p>
-      </div>
-
-      <button onclick="iniciarScanner()" id="btnScanner" style="width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:14px;">
-        📷 Escanear QR Code da Sessão
-      </button>
-
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-        <div style="flex:1;height:1px;background:#ffffff15;"></div>
-        <span style="font-size:0.72rem;color:var(--muted);">ou digite o código</span>
-        <div style="flex:1;height:1px;background:#ffffff15;"></div>
-      </div>
-
-      <div style="display:flex;gap:8px;">
-        <input
-          id="inputCodigoSessao"
-          type="text"
-          maxlength="6"
-          placeholder="CÓDIGO"
-          autocapitalize="characters"
-          style="flex:1;padding:13px;background:var(--surface2);border:1px solid #ffffff20;border-radius:8px;color:var(--text);font-size:1.2rem;font-weight:700;letter-spacing:4px;text-align:center;text-transform:uppercase;"
-        >
-        <button onclick="entrarComCodigo()" style="padding:13px 20px;background:var(--accent2);color:#fff;border:none;border-radius:8px;font-size:0.95rem;font-weight:700;cursor:pointer;">
-          Entrar
-        </button>
-      </div>
-      <div id="codigoError" style="color:var(--danger);font-size:0.8rem;margin-top:8px;text-align:center;"></div>
+      <div id="listaSessoes"></div>
+      <div id="sessoesAviso" style="color:var(--muted);font-size:0.85rem;margin-top:10px;text-align:center;"></div>
     </div>
   </div>
 
@@ -451,13 +419,15 @@
 
     async function handleAuth(u) {
       if (modoOffline) { currentUser = { uid: VoxlyLocal.idCantor() }; await carregarPerfil(); return; }
-      if (!usr) { window.location.href = '/index.html'; return; }
-      currentUser = usr;
+      if (!u) { window.location.href = '/index.html'; return; }
+      currentUser = u;
       await carregarPerfil();
 
       const temSessao = await resolverSessao();
       if (temSessao) {
         ativarConteudoSessao();
+      } else {
+        listarSessoesAtivas();
       }
     }
     // Sessão vem da URL (?sessao=CODIGO) ou do localStorage
@@ -470,27 +440,34 @@
 
     async function resolverSessao() {
       const params = new URLSearchParams(window.location.search);
-      const codigo = params.get('sessao');
+      const ref = params.get('sessao');
 
-      if (codigo) {
-        // Busca sessão pelo código
-        const snap = await db.collection('sessoes')
-          .where('codigo', '==', codigo)
-          .where('status', '==', 'ativa')
-          .limit(1).get();
+      if (ref) {
+        // O QR da casa carrega o ID do documento, para o cantor cair exatamente
+        // naquela sessao. Codigo de 6 caracteres ainda resolve, por causa de
+        // links antigos que ficaram por ai.
+        let doc = null;
+        const porId = await db.collection('sessoes').doc(ref).get();
+        if (porId.exists) {
+          doc = porId;
+        } else {
+          const snap = await db.collection('sessoes')
+            .where('codigo', '==', ref.toUpperCase())
+            .limit(1).get();
+          if (!snap.empty) doc = snap.docs[0];
+        }
 
-        if (!snap.empty) {
-          SESSAO_ID   = snap.docs[0].id;
+        window.history.replaceState({}, '', '/profile.html');
+
+        if (doc && doc.data().status === 'ativa') {
+          SESSAO_ID   = doc.id;
           sessaoAtiva = true;
           localStorage.setItem('voxly_sessao_id',  SESSAO_ID);
-          localStorage.setItem('voxly_sessao_cod', codigo);
-          // Limpa URL sem recarregar
-          window.history.replaceState({}, '', '/profile.html');
+          localStorage.setItem('voxly_sessao_cod', doc.data().codigo || '');
           return true;
-        } else {
-          alert('Sessão não encontrada ou encerrada.');
-          return false;
         }
+        avisarSessoes(doc ? 'Essa sessão já foi encerrada.' : 'Sessão não encontrada.');
+        return false;
       }
 
       // Tenta restaurar sessão salva
@@ -1180,90 +1157,82 @@ function escutarFila() {
       ativarPresencaOnDisconnect();
     }
 
-    // ── Scanner de QR Code ───────────────────────────────────
-    let scannerStream   = null;
-    let scannerInterval = null;
+    // ── Sessões ativas ───────────────────────────────────────
+    function avisarSessoes(msg) {
+      const el = document.getElementById('sessoesAviso');
+      if (el) el.textContent = msg || '';
+    }
 
-    async function iniciarScanner() {
-      const errEl = document.getElementById('codigoError');
-      errEl.textContent = '';
+    const emMs = t => t ? (t.toDate ? t.toDate().getTime() : t) : null;
 
-      if (!navigator.mediaDevices?.getUserMedia) {
-        errEl.textContent = 'Câmera não suportada neste navegador.';
-        return;
-      }
+    function faixaHorario(d) {
+      const ini = emMs(d.horarioInicio), fim = emMs(d.horarioTermino);
+      if (!ini || !fim) return '';
+      const hm = ms => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      return `${hm(ini)} — ${hm(fim)}`;
+    }
+
+    async function listarSessoesAtivas() {
+      const lista = document.getElementById('listaSessoes');
+      if (!lista) return;
+      lista.innerHTML = '';
+      avisarSessoes('Carregando sessões...');
 
       try {
-        scannerStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
+        const snap = await db.collection('sessoes').where('status', '==', 'ativa').get();
+        const agora = Date.now();
+
+        // Filtro de horario no cliente para nao exigir indice composto — e para
+        // que uma sessao esquecida aberta pelo KJ pare de aparecer no fim dela.
+        const ativas = snap.docs.filter(doc => {
+          const fim = emMs(doc.data().horarioTermino);
+          return !fim || fim > agora;
         });
-        const video = document.getElementById('scannerVideo');
-        video.srcObject = scannerStream;
-        video.play();
-        document.getElementById('scannerBox').style.display  = 'block';
-        document.getElementById('btnScanner').style.display  = 'none';
 
-        const canvas = document.getElementById('scannerCanvas');
-        scannerInterval = setInterval(() => {
-          if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-          canvas.width  = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = jsQR(img.data, img.width, img.height);
-          if (code?.data) {
-            try {
-              const url    = new URL(code.data);
-              const sessao = url.searchParams.get('sessao');
-              if (sessao) {
-                pararScanner();
-                document.getElementById('inputCodigoSessao').value = sessao.toUpperCase();
-                entrarComCodigo();
-              }
-            } catch(_) {}
-          }
-        }, 250);
-      } catch(e) {
-        document.getElementById('codigoError').textContent = 'Não foi possível acessar a câmera.';
+        if (!ativas.length) {
+          avisarSessoes('Nenhuma casa com sessão aberta agora.');
+          return;
+        }
+
+        avisarSessoes('');
+        ativas.forEach(doc => {
+          const d = doc.data();
+          const item = document.createElement('div');
+          item.className = 'card';
+          item.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;';
+          item.innerHTML =
+            '<div style="min-width:0;">' +
+              '<div style="font-weight:700;font-size:0.98rem;">' +
+                escHtml(d.nomeCasa || ('Sessão ' + (d.codigo || ''))) +
+              '</div>' +
+              '<div style="font-size:0.76rem;color:var(--muted);margin-top:3px;">' +
+                escHtml(faixaHorario(d)) +
+              '</div>' +
+            '</div>';
+          const btn = document.createElement('button');
+          btn.textContent = 'Entrar';
+          btn.style.cssText = 'padding:11px 18px;background:var(--accent2);color:#fff;border:none;border-radius:8px;font-size:0.9rem;font-weight:700;cursor:pointer;flex-shrink:0;';
+          btn.onclick = () => entrarNaSessao(doc.id);
+          item.appendChild(btn);
+          lista.appendChild(item);
+        });
+      } catch (e) {
+        console.error('[VOXLY] Falha ao listar sessões:', e);
+        avisarSessoes('Não foi possível carregar as sessões.');
       }
     }
 
-    function pararScanner() {
-      clearInterval(scannerInterval);
-      scannerInterval = null;
-      if (scannerStream) {
-        scannerStream.getTracks().forEach(t => t.stop());
-        scannerStream = null;
-      }
-      document.getElementById('scannerVideo').srcObject = null;
-      document.getElementById('scannerBox').style.display = 'none';
-      document.getElementById('btnScanner').style.display = 'block';
-    }
-
-    async function entrarComCodigo() {
-      const errEl  = document.getElementById('codigoError');
-      const codigo = (document.getElementById('inputCodigoSessao').value || '').trim().toUpperCase();
-      errEl.textContent = '';
-
-      if (codigo.length !== 6) {
-        errEl.textContent = 'O código deve ter 6 caracteres.';
+    async function entrarNaSessao(id) {
+      const snap = await db.collection('sessoes').doc(id).get();
+      if (!snap.exists || snap.data().status !== 'ativa') {
+        avisarSessoes('Essa sessão já foi encerrada.');
+        listarSessoesAtivas();
         return;
       }
-
-      const snap = await db.collection('sessoes')
-        .where('codigo', '==', codigo)
-        .where('status', '==', 'ativa')
-        .limit(1).get();
-
-      if (snap.empty) {
-        errEl.textContent = 'Sessão não encontrada ou encerrada.';
-        return;
-      }
-
-      SESSAO_ID   = snap.docs[0].id;
+      SESSAO_ID   = id;
       sessaoAtiva = true;
       localStorage.setItem('voxly_sessao_id', SESSAO_ID);
+      localStorage.setItem('voxly_sessao_cod', snap.data().codigo || '');
       await ativarConteudoSessao();
     }
 
@@ -1299,10 +1268,6 @@ function escutarFila() {
 
     document.getElementById('modalOverlay').addEventListener('click', e => {
       if (e.target===document.getElementById('modalOverlay')) fecharModal();
-    });
-
-    document.getElementById('inputCodigoSessao').addEventListener('keydown', e => {
-      if (e.key === 'Enter') entrarComCodigo();
     });
 
     // ── Navegação por tabs ───────────────────────────────────

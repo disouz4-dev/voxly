@@ -169,6 +169,13 @@
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
 
   <script>
+    // Preserva o deep link do QR (?sessao=<id>) atraves do login: o cantor que
+    // escaneou o codigo da casa precisa cair naquela sessao, e nao na lista.
+    function comSessao(destino) {
+      const sessao = new URLSearchParams(location.search).get('sessao');
+      return sessao ? `${destino}?sessao=${encodeURIComponent(sessao)}` : destino;
+    }
+
     firebase.initializeApp({
       apiKey: "AIzaSyB5sPKpmPVWDDhwprU8TB0Bn0N0WSiafoI",
       authDomain: "voxly-karaoke.firebaseapp.com",
@@ -195,7 +202,7 @@
     // Atualiza preview do avatar
     let currentUser = null;
     auth.onAuthStateChanged(u => {
-      if (!u) { window.location.href = '/index.html'; return; }
+      if (!u) { window.location.href = comSessao('/index.html'); return; }
       currentUser = u;
       updateAvatarPreview('');
     });
@@ -291,7 +298,7 @@
           email:          user.email,
           createdAt:      firebase.firestore.FieldValue.serverTimestamp()
         });
-        window.location.href = '/profile.html';
+        window.location.href = comSessao('/profile.html');
       } catch(e) {
         console.error(e);
         msg.textContent = e.message || 'Falha ao cadastrar.';

@@ -744,6 +744,31 @@ https://www.youtube.com/@canal/videos"></textarea>
   </div>
 </div>
 
+<div class="modal-overlay" id="modalSessao">
+  <div class="modal-box">
+    <h2>▶ Iniciar Sessão</h2>
+    <p style="font-size:.78rem;color:var(--mudo);line-height:1.6;margin:10px 0 4px;">
+      Estes dados aparecem para os cantores na lista de sessões ativas do app.
+    </p>
+
+    <label class="modal-label">Nome da casa</label>
+    <input class="modal-input" type="text" id="sessaoNomeCasa" placeholder="Ex: Bar do Zé" maxlength="60">
+
+    <label class="modal-label">Início da sessão</label>
+    <input class="modal-input" type="datetime-local" id="sessaoHorarioInicio">
+
+    <label class="modal-label">Término da sessão</label>
+    <input class="modal-input" type="datetime-local" id="sessaoHorarioTermino">
+
+    <p id="sessaoErro" style="display:none;font-size:.78rem;color:var(--perigo);margin-top:12px;"></p>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalSessao()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarIniciarSessao()">Iniciar sessão</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalAjustes">
   <div class="modal-box" style="width:min(460px,94vw);">
     <h2>⚙ Configurações</h2>
@@ -782,11 +807,22 @@ https://www.youtube.com/@canal/videos"></textarea>
   });
 
   const db  = firebase.firestore();
+
+  // O host sempre gravou no Firestore sem autenticar — so funcionava porque as
+  // regras eram "if true". Com as regras exigindo request.auth, ele precisa de
+  // uma identidade. Anonima ja satisfaz a regra e nao muda o fluxo do KJ.
+  // Requer o provedor "Anonimo" habilitado no console do Firebase.
+  const authPronta = firebase.auth().currentUser
+    ? Promise.resolve(firebase.auth().currentUser)
+    : firebase.auth().signInAnonymously()
+        .then(cred => cred.user)
+        .catch(e => { console.error('[HOST] Falha ao autenticar:', e); return null; });
   const APP_URL = "https://voxly-karaoke.web.app";
   let appUrlLocal = null; // URL LAN do servidor local
 
   let SESSAO_ID        = null;
   let sessaoCodigo     = null;
+  let dadosSessaoAtual = null;  // { nomeCasa, inicio, termino } da sessao aberta
   let currentSong      = null;
   let filaData         = [];
   let presencasData    = [];
@@ -891,6 +927,13 @@ https://www.youtube.com/@canal/videos"></textarea>
         if (snap.exists && snap.data().status === 'ativa') {
           SESSAO_ID    = sessaoSalva;
           sessaoCodigo = snap.data().codigo;
+          const dSes   = snap.data();
+          const emMs   = t => t ? (t.toDate ? t.toDate().getTime() : t) : null;
+          dadosSessaoAtual = {
+            nomeCasa: dSes.nomeCasa || null,
+            inicio:   emMs(dSes.horarioInicio),
+            termino:  emMs(dSes.horarioTermino),
+          };
           regras       = snap.data().regras || regras;
           cicloAtual   = snap.data().cicloAtual || 1;
           popularInputsRegras();
@@ -926,23 +969,78 @@ https://www.youtube.com/@canal/videos"></textarea>
   });
 
   // ── Sessão ────────────────────────────────────────────────
-  async function iniciarSessao() {
+  // Converte um <input type="datetime-local"> em epoch ms (ou null se vazio).
+  function lerDataHora(id) {
+    const v = document.getElementById(id).value;
+    if (!v) return null;
+    const ms = new Date(v).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  function abrirModalSessao() {
+    // Sugere a janela tipica de um show: comeca na proxima hora cheia, 4h de duracao.
+    const inicio = new Date();
+    inicio.setMinutes(0, 0, 0);
+    inicio.setHours(inicio.getHours() + 1);
+    const termino = new Date(inicio.getTime() + 4 * 60 * 60 * 1000);
+    const paraInput = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 16);
+
+    document.getElementById('sessaoNomeCasa').value        = '';
+    document.getElementById('sessaoHorarioInicio').value   = paraInput(inicio);
+    document.getElementById('sessaoHorarioTermino').value  = paraInput(termino);
+    document.getElementById('sessaoErro').style.display    = 'none';
+    document.getElementById('modalSessao').classList.add('open');
+    document.getElementById('sessaoNomeCasa').focus();
+  }
+
+  function fecharModalSessao() {
+    document.getElementById('modalSessao').classList.remove('open');
+  }
+
+  async function confirmarIniciarSessao() {
+    const erro     = document.getElementById('sessaoErro');
+    const nomeCasa = document.getElementById('sessaoNomeCasa').value.trim();
+    const inicio   = lerDataHora('sessaoHorarioInicio');
+    const termino  = lerDataHora('sessaoHorarioTermino');
+
+    const mostrarErro = msg => { erro.textContent = msg; erro.style.display = 'block'; };
+    if (!nomeCasa)            return mostrarErro('Informe o nome da casa.');
+    if (!inicio || !termino)  return mostrarErro('Informe o início e o término da sessão.');
+    if (termino <= inicio)    return mostrarErro('O término precisa ser depois do início.');
+
+    erro.style.display = 'none';
+    fecharModalSessao();
+    await iniciarSessao({ nomeCasa, inicio, termino });
+  }
+
+  async function iniciarSessao(dados) {
     const codigo   = gerarCodigo();
     const sessaoId = `${new Date().toISOString().slice(0,10)}-${codigo}`;
 
+    const usuario = await authPronta;
+
     await db.collection('sessoes').doc(sessaoId).set({
       codigo,
+      nomeCasa:        dados.nomeCasa,
+      horarioInicio:   firebase.firestore.Timestamp.fromMillis(dados.inicio),
+      horarioTermino:  firebase.firestore.Timestamp.fromMillis(dados.termino),
+      criadaPor:       usuario ? usuario.uid : null,
       status:      'ativa',
       filaAberta:  true,
       regras,
       cicloAtual:  1,
-      horarioInicioShow: null,
+      // Contagem regressiva do show ja comeca valendo o inicio declarado; o KJ
+      // ainda pode reajustar pelo controle de "Horario do Show".
+      horarioInicioShow: firebase.firestore.Timestamp.fromMillis(dados.inicio),
       showIniciado: false,
       iniciadaEm:  firebase.firestore.FieldValue.serverTimestamp()
     });
+    horarioInicioShow = dados.inicio;
 
     SESSAO_ID    = sessaoId;
     sessaoCodigo = codigo;
+    dadosSessaoAtual = { nomeCasa: dados.nomeCasa, inicio: dados.inicio, termino: dados.termino };
     localStorage.setItem('voxly_sessao_id', sessaoId);
 
     ativarInterfaceSessao();
@@ -959,6 +1057,9 @@ https://www.youtube.com/@canal/videos"></textarea>
         cmd:     'sessao-iniciada',
         codigo,
         sessaoId,
+        nomeCasa: dados.nomeCasa,
+        inicio:   dados.inicio,
+        termino:  dados.termino,
         appUrl:  appUrlLocal || APP_URL
       }));
     }
@@ -973,7 +1074,13 @@ https://www.youtube.com/@canal/videos"></textarea>
     setTimeout(() => {
       if (window.electronAPI) {
         window.electronAPI.playerCommand(JSON.stringify({
-          cmd: 'sessao-iniciada', codigo: sessaoCodigo, appUrl: appBase
+          cmd: 'sessao-iniciada',
+          codigo:   sessaoCodigo,
+          sessaoId: SESSAO_ID,
+          nomeCasa: dadosSessaoAtual && dadosSessaoAtual.nomeCasa,
+          inicio:   dadosSessaoAtual && dadosSessaoAtual.inicio,
+          termino:  dadosSessaoAtual && dadosSessaoAtual.termino,
+          appUrl:   appBase
         }));
       }
     }, 2000);
@@ -1023,6 +1130,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     localStorage.removeItem('voxly_backup_presencas');
     SESSAO_ID    = null;
     sessaoCodigo = null;
+    dadosSessaoAtual = null;
     modoOffline  = false;
 
     clearInterval(timerCountdownHost);
