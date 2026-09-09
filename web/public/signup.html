@@ -10,6 +10,15 @@
     @font-face { font-family:'Space Mono'; src:url('assets/fonts/SpaceMono-Regular.ttf') format('truetype'); font-weight:400; font-display:swap; }
     @font-face { font-family:'Space Mono'; src:url('assets/fonts/SpaceMono-Bold.ttf')    format('truetype'); font-weight:700; font-display:swap; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Design system "Noite de Palco" — mesmos tokens das telas do app. */
+    :root {
+      --noite:#0b0c11; --palco:#12141b; --palco2:#1a1d26; --linha:#262b37;
+      --texto:#ece7dd; --mudo:#8d93a4;
+      --ambar:#ffb454; --rosa:#ff5c8a; --azul:#58c4dd;
+      --ok:#67d9a4; --perigo:#ff6b6b;
+      --radius:12px;
+    }
     body {
       font-family: 'Sora', system-ui, sans-serif;
       background:
@@ -71,10 +80,10 @@
     .genre-count { font-family:'Space Mono', monospace; font-size: .72rem; color: #8d93a4; margin-top: 5px; }
     .checkbox-label { display: flex; align-items: center; gap: 8px; color: #b9becd; cursor: pointer; font-weight:400; }
     .checkbox-label input { width: auto; }
-    .btn { width: 100%; padding: 13px; background: linear-gradient(135deg,#58c4dd,#2f93ab); color: #06242c; border: none; border-radius: 11px; cursor: pointer; font-family:'Sora'; font-weight:600; font-size: .95rem; margin-top: 10px; letter-spacing:.02em; transition: filter 0.2s, transform 0.2s; }
+    .btn { width: 100%; padding: 13px; background: linear-gradient(135deg, var(--ambar), #e0932e); color: #241608; border: none; border-radius: 11px; cursor: pointer; font-family:'Sora'; font-weight:700; font-size: .95rem; margin-top: 10px; letter-spacing:.02em; box-shadow:0 2px 14px rgba(255,180,84,.22); transition: filter 0.2s, transform 0.2s; }
     .btn:hover { filter: brightness(1.07); transform: translateY(-1px); }
-    .btn.back { background: #1a1d26; color: #ece7dd; border: 1px solid #262b37; }
-    .btn.back:hover { background: #22262f; }
+    .btn.back { background: transparent; color: var(--texto); border: 1px solid var(--linha); box-shadow:none; }
+    .btn.back:hover { background: var(--palco2); }
     .error { color: #ff6b6b; margin-top: 5px; font-size: .85rem; font-family:'Space Mono', monospace; }
     .footer { margin-top: 20px; text-align: center; font-size: .78rem; font-family:'Space Mono', monospace; color: #8d93a4; }
     .footer a { color: #58c4dd; text-decoration: none; }

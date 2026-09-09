@@ -10,55 +10,71 @@
     @font-face { font-family:'Space Mono'; src:url('assets/fonts/SpaceMono-Regular.ttf') format('truetype'); font-weight:400; font-display:swap; }
     @font-face { font-family:'Space Mono'; src:url('assets/fonts/SpaceMono-Bold.ttf')    format('truetype'); font-weight:700; font-display:swap; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Design system "Noite de Palco" — mesmos tokens das telas do app. */
+    :root {
+      --noite:#0b0c11; --palco:#12141b; --palco2:#1a1d26; --linha:#262b37;
+      --texto:#ece7dd; --mudo:#8d93a4;
+      --ambar:#ffb454; --rosa:#ff5c8a; --azul:#58c4dd;
+      --ok:#67d9a4; --perigo:#ff6b6b;
+      --radius:12px;
+    }
     body {
       font-family: 'Sora', system-ui, sans-serif;
       background:
         radial-gradient(110% 70% at 85% -10%, #1b1626 0%, transparent 55%),
         radial-gradient(90% 60% at 0% 110%, #0e1c22 0%, transparent 55%),
-        #0b0c11;
+        var(--noite);
       min-height: 100vh;
       display: flex; align-items: center; justify-content: center;
-      padding: 20px; color: #ece7dd;
+      padding: 20px; color: var(--texto);
     }
-    ::selection { background:#ffb454; color:#1c1206; }
+    ::selection { background:var(--ambar); color:#1c1206; }
     .container {
       position: relative;
       background: rgba(18,20,27,.72);
       padding: 40px; border-radius: 22px;
       width: 100%; max-width: 400px;
       box-shadow: 0 30px 80px rgba(0,0,0,.55);
-      border: 1px solid #262b37;
+      border: 1px solid var(--linha);
       overflow: hidden;
     }
     .container::before {
       content:""; position:absolute; left:0; top:0; width:26px; height:26px;
-      border-left:2px solid #ffb454; border-top:2px solid #ffb454;
+      border-left:2px solid var(--ambar); border-top:2px solid var(--ambar);
       border-top-left-radius:22px; pointer-events:none;
     }
-    .logo-container { display: flex; justify-content: center; align-items: center; margin-bottom: 30px; width: 100%; height: 200px; }
+    .logo-container { display: flex; justify-content: center; align-items: center; margin-bottom: 22px; width: 100%; height: 132px; }
     .logo-container img { max-height: 100%; max-width: 100%; height: auto; display: block; }
-    .subtitle { text-align: center; color: #8d93a4; margin-bottom: 30px; font-size: .98rem; font-family:'Space Mono', monospace; letter-spacing:.06em; }
+    .subtitle { text-align: center; color: var(--mudo); margin-bottom: 30px; font-size: .98rem; font-family:'Space Mono', monospace; letter-spacing:.06em; }
     .login-methods { display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px; }
     .btn { display: block; width: 100%; padding: 15px; border: none; border-radius: 12px; font-size: .95rem; font-weight: 600; letter-spacing:.02em; font-family:'Sora'; cursor: pointer; transition: all 0.2s; text-align: center; }
     .google-btn { background:#ffffff; color:#000000; display:flex; align-items:center; justify-content:center; gap:10px; }
     .google-btn:hover { filter:brightness(.95); transform: translateY(-2px); }
     .google-icon { width: 24px; height: 24px; }
-    .email-btn { background: linear-gradient(135deg,#58c4dd,#2f93ab); color:#06242c; }
+    /* Acao primaria e ambar em todo o produto; o gradiente ciano daqui era o
+       unico ponto do front que nao falava a lingua do app. */
+    .email-btn {
+      background:linear-gradient(135deg, var(--ambar), #e0932e); color:#241608; font-weight:700;
+      box-shadow:0 2px 14px rgba(255,180,84,.22);
+    }
     .email-btn:hover { filter:brightness(1.07); transform: translateY(-2px); }
-    .back-btn { background:#1a1d26; color:#ece7dd; border:1px solid #262b37; }
+    .ghost-btn { background:transparent; color:var(--texto); border:1px solid var(--linha); }
+    .ghost-btn:hover { background:var(--palco2); transform: translateY(-2px); }
+    .back-btn { background:var(--palco2); color:var(--texto); border:1px solid var(--linha); }
     .back-btn:hover { background:#22262f; transform: translateY(-2px); }
-    .or-divider { text-align: center; margin: 20px 0; color: #8d93a4; font-size: .78rem; font-family:'Space Mono',monospace; position: relative; }
-    .or-divider::before, .or-divider::after { content: ""; border-bottom: 1px solid #262b37; position: absolute; top: 50%; width: 45%; }
+    .or-divider { text-align: center; margin: 20px 0; color: var(--mudo); font-size: .78rem; font-family:'Space Mono',monospace; position: relative; }
+    .or-divider::before, .or-divider::after { content: ""; border-bottom: 1px solid var(--linha); position: absolute; top: 50%; width: 45%; }
     .or-divider::before { left: 0; }
     .or-divider::after { right: 0; }
-    .or-divider span { position: relative; padding: 0 10px; background: #12141b; }
+    .or-divider span { position: relative; padding: 0 10px; background: var(--palco); }
     .form-group { margin-bottom: 20px; }
-    .form-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size:.82rem; color: #ece7dd; }
-    .form-group input { width: 100%; padding: 12px; border: 1px solid #262b37; border-radius: 10px; background: rgba(255,255,255,0.05); color: #ece7dd; font-size: 1rem; }
-    .form-group input:focus { outline: none; border-color: #ffb454; }
-    .footer { margin-top: 30px; text-align: center; color: #8d93a4; font-size: .8rem; font-family:'Space Mono',monospace; }
-    .footer strong { color:#ffb454; text-transform:uppercase; letter-spacing:.08em; }
-    .footer a { color: #58c4dd; text-decoration: none; }
+    .form-group label { display: block; margin-bottom: 8px; font-weight: 600; font-size:.82rem; color: var(--texto); }
+    .form-group input { width: 100%; padding: 12px; border: 1px solid var(--linha); border-radius: 10px; background: rgba(255,255,255,0.05); color: var(--texto); font-size: 1rem; }
+    .form-group input:focus { outline: none; border-color: var(--ambar); }
+    .footer { margin-top: 30px; text-align: center; color: var(--mudo); font-size: .8rem; font-family:'Space Mono',monospace; }
+    .footer strong { color:var(--ambar); text-transform:uppercase; letter-spacing:.08em; }
+    .footer a { color: var(--azul); text-decoration: none; }
   </style>
 </head>
 <body>
@@ -75,7 +91,7 @@
       </button>
       <div class="or-divider"><span>OU</span></div>
       <button id="email-login" class="btn email-btn">Entrar com E-mail</button>
-      <button id="signup-login" class="btn email-btn">Cadastrar</button>
+      <button id="signup-login" class="btn ghost-btn">Cadastrar</button>
     </div>
 
     <div id="email-form" style="display:none;">
@@ -96,7 +112,7 @@
 
     <div class="footer">
       Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong><br>
-      <a href="#" onclick="alert('Versão 1.0.0 - © 2026 Nexus Solutions')">Versão</a>
+      <a href="#" onclick="alert('Voxly 1.1.1 — © 2026 Nexus Solutions'); return false;">Versão 1.1.1</a>
     </div>
   </div>
 
