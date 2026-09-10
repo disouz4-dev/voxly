@@ -473,7 +473,10 @@ function escolherDisplayOcupado() {
 // ver. Em tela unica a tela vira faixas: Gerencia em cima, as outras duas lado
 // a lado embaixo.
 const FOLGA = 8;
-const ALTURA_SECUNDARIA = 0.45;
+// 0.45 deixava a Gerencia com ~518px uteis: fila espremida e barra de
+// botoes colada no conteudo. As secundarias em tela unica sao previa —
+// quem precisa de espaco e o console do KJ.
+const ALTURA_SECUNDARIA = 0.32;
 
 function geometriaSecundaria(display, canto) {
   const externo = display.bounds.x !== 0 || display.bounds.y !== 0;
@@ -940,6 +943,13 @@ ipcMain.handle("sincronizar-publico", (_, { filePath, tempo }) => {
   if (!audienceWindow || audienceWindow.isDestroyed() || !filePath) return false;
   audienceWindow.webContents.send("play-video", filePath, tempo || 0);
   return true;
+});
+
+// "sessao-iniciada" (QR, nome da casa, horarios) e enviado uma unica vez. Uma
+// tela recarregada perdia tudo e ficava no aviso de espera para sempre. Agora
+// ela pede o estado de volta ao nascer, e a Gerencia reenvia.
+ipcMain.on("pedir-estado", () => {
+  if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("pedir-estado");
 });
 
 ipcMain.handle("play-song", (_, filePath) => {

@@ -66,4 +66,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onSongEnded:          (cb) => ipcRenderer.on("song-ended", cb),
   onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp, t) => cb(fp, t)),
   onPlayerCmd:          (cb) => ipcRenderer.on("player-cmd", (_e, cmd) => cb(cmd)),
+  pedirEstado:          () => ipcRenderer.send("pedir-estado"),
+  onPedirEstado:        (cb) => ipcRenderer.on("pedir-estado", () => cb()),
 });

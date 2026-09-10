@@ -240,6 +240,17 @@ body.modo-publico #entrada-publica { display:flex; }
   display:flex; align-items:center; gap:10px; margin-bottom:clamp(20px,4vh,36px);
 }
 .pub-left-header .pub-dot { width:9px; height:9px; border-radius:50%; background:var(--perigo); box-shadow:0 0 0 0 rgba(255,107,107,.6); animation:vivoPulse 1.6s infinite; }
+.pub-avatars { display:flex; align-items:center; gap:14px; margin-bottom:clamp(12px,2vh,20px); }
+.pub-avatar {
+  width:clamp(64px,9vw,120px); height:clamp(64px,9vw,120px);
+  border-radius:50%; background-size:cover; background-position:center;
+  background-color:var(--palco2); border:3px solid var(--ambar);
+  box-shadow:0 0 0 6px rgba(255,180,84,.12);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Unbounded'; font-weight:700; color:var(--ambar);
+  font-size:clamp(1.6rem,3.5vw,2.8rem); flex:none;
+}
+.pub-avatar-amp { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1rem,2vw,1.6rem); }
 .pub-singer-name {
   font-family:'Unbounded'; font-weight:800;
   font-size:clamp(1.8rem, 5vw, 3.5rem); line-height:1.05; letter-spacing:.01em;
@@ -495,6 +506,7 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
       <div class="pub-left">
         <div class="pub-left-header"><span class="pub-dot"></span><span id="pub-casa">Voxly Ao Vivo</span></div>
         <div class="pub-periodo" id="pub-periodo"></div>
+        <div class="pub-avatars" id="pub-avatars" style="display:none;"></div>
         <div class="pub-singer-name" id="pub-singer">—</div>
         <div class="pub-duo-name"    id="pub-duo" style="display:none;"></div>
         <div class="pub-song-title"  id="pub-song">Aguardando o próximo cantor...</div>
@@ -682,7 +694,28 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Painel da tela do público (tela 3)
+  function pubAvatarHtml(nome, url) {
+    return url
+      ? `<div class="pub-avatar" style="background-image:url('${url}')"></div>`
+      : `<div class="pub-avatar">${(nome || "?")[0].toUpperCase()}</div>`;
+  }
+
+  // A foto do Google chega em photoURL junto com o resto do preview; ate aqui o
+  // painel usava so o texto e descartava a imagem. resolveUrl e o mesmo caminho
+  // da intro do Palco, que trata foto inacessivel caindo na inicial do nome.
+  async function atualizarAvatarPublico(dados) {
+    const el = document.getElementById("pub-avatars");
+    if (!el) return;
+    if (!dados || (!dados.cantor && !dados.photoURL)) { el.style.display = "none"; el.innerHTML = ""; return; }
+    const [foto, fotoDuo] = await resolveAvatarPair(dados.photoURL || null, dados.duoPhotoURL || null);
+    el.innerHTML = dados.duo
+      ? pubAvatarHtml(dados.cantor, foto) + `<div class="pub-avatar-amp">&amp;</div>` + pubAvatarHtml(dados.duo, fotoDuo)
+      : pubAvatarHtml(dados.cantor, foto);
+    el.style.display = "flex";
+  }
+
   function atualizarPainelPublico(dados) {
+    atualizarAvatarPublico(dados);
     if (!dados) {
       document.getElementById("pub-singer").textContent = "—";
       document.getElementById("pub-duo").style.display = "none";
@@ -1532,6 +1565,9 @@ intervaloDeck = [];
       aoTerminarMusica();
     }
   });
+  // Recarregou (ou abriu depois da sessao comecar): pede o QR e os dados da
+  // casa de volta, senao a tela fica presa no aviso de espera.
+  if (window.electronAPI.pedirEstado) window.electronAPI.pedirEstado();
 }); // DOMContentLoaded
 </script>
 </body>

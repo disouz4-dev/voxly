@@ -782,8 +782,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     <div id="candidatosQualidadeBox">
     <label class="modal-label">Qualidade do download</label>
     <select class="modal-select" id="candidatosQualidade" onchange="salvarQualidade()">
-      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4</option>
       <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4 (padrão)</option>
+      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4</option>
       <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
       <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
     </select>
@@ -841,8 +841,8 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     <label class="modal-label">Qualidade dos downloads</label>
     <select class="modal-select" id="pref-qualidade" onchange="salvarPrefsDownload()">
-      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4</option>
       <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4 (padrão)</option>
+      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4</option>
       <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
       <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
     </select>
@@ -1437,9 +1437,13 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Levanta as versoes do YouTube sob demanda, quando o KJ pede.
   function logDownload(msg) { console.log('[BUSCA]', msg); }
 
+  const _procurando = new Set();
+
   async function procurarVersoes(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item) return;
+    if (_procurando.has(itemId)) { mostrarToast('Já estou procurando — aguarde'); return; }
+    _procurando.add(itemId);
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     mostrarToast('🔎 Procurando versões no YouTube...');
     try {
@@ -1458,10 +1462,15 @@ https://www.youtube.com/@canal/videos"></textarea>
         return;
       }
       await ref.update({ statusDownload: 'escolher', candidatos: candidatos.slice(0, 6) }).catch(() => {});
+      // Busca lenta que voltou depois de o KJ ja ter escolhido em outro modal
+      // nao pode abrir uma janela por cima do download em andamento.
+      if (_baixando.has(itemId)) return;
       abrirModalCandidatos(itemId);
     } catch (e) {
       await ref.update({ statusDownload: 'erro' }).catch(() => {});
       mostrarToast('❌ ' + e.message);
+    } finally {
+      _procurando.delete(itemId);
     }
   }
 
@@ -1546,12 +1555,13 @@ https://www.youtube.com/@canal/videos"></textarea>
     mostrarToast(`🎚 Versão de "${v.canal || v.arquivo}" selecionada`);
   }
 
-  function abrirModalCandidatos(itemId) {
+  async function abrirModalCandidatos(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item || !item.candidatos || !item.candidatos.length) {
       mostrarToast('Nenhuma versão encontrada para esta música');
       return;
     }
+    await aplicarQualidadePadrao();
     document.getElementById('candidatosTitulo').textContent = `${item.artista} — ${item.musica}`;
     document.getElementById('candidatosSubtitulo').textContent =
       'Versões de karaokê encontradas no YouTube. Clique para baixar.';
@@ -1566,12 +1576,23 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('modalCandidatos').classList.add('open');
   }
 
+  // Deixa o select na qualidade que o KJ definiu em Ajustes. Sem isto ele abria
+  // sempre na primeira <option> e era esse valor que ia para o yt-dlp.
+  async function aplicarQualidadePadrao() {
+    const sel = document.getElementById('candidatosQualidade');
+    if (!sel || !window.electronAPI || !window.electronAPI.getPrefsDownload) return;
+    const p = await window.electronAPI.getPrefsDownload();
+    if (p && p.qualidade) sel.value = p.qualidade;
+  }
+
   async function salvarQualidade() {
-    const v = document.getElementById('candidatosQualidade').value;
-    if (window.electronAPI && window.electronAPI.setYtQualidade) {
-      await window.electronAPI.setYtQualidade(v);
-      mostrarToast('Qualidade salva como padrão');
-    }
+    if (!window.electronAPI || !window.electronAPI.setPrefsDownload) return;
+    const escolhida = document.getElementById('candidatosQualidade').value;
+    const p = await window.electronAPI.getPrefsDownload();
+    await window.electronAPI.setPrefsDownload({ ...p, qualidade: escolhida });
+    const outro = document.getElementById('pref-qualidade');
+    if (outro) outro.value = escolhida;
+    mostrarToast('Qualidade salva como padrão');
   }
 
   function fecharModalCandidatos() {
@@ -3154,6 +3175,12 @@ https://www.youtube.com/@canal/videos"></textarea>
   if (window.electronAPI && window.electronAPI.getAudienceState) {
     window.electronAPI.getAudienceState().then(ativa => atualizarBotaoAudiencia(ativa));
   }
+  // Tela recarregada pede o estado de volta: sem isto ela some com o QR, o nome
+  // da casa e os horarios, e fica no aviso de espera ate a sessao ser reaberta.
+  if (window.electronAPI && window.electronAPI.onPedirEstado) {
+    window.electronAPI.onPedirEstado(() => reenviarEstadoAoPublico());
+  }
+
   if (window.electronAPI && window.electronAPI.onAudienceState) {
     window.electronAPI.onAudienceState(ativa => {
       atualizarBotaoAudiencia(ativa);
