@@ -367,6 +367,33 @@ header {
 }
 .modal-result-item:hover { border-color:var(--ambar); }
 
+/* ── Faixa de download ──
+   O progresso so existia dentro do modal do YouTube: fechando o modal, o KJ
+   ficava sem saber se ainda estava baixando. Esta faixa acompanha os mesmos
+   eventos e fica visivel em qualquer tela do console. */
+#dl-faixa {
+  display:none; position:fixed; left:18px; bottom:18px; z-index:250;
+  min-width:280px; max-width:380px;
+  background:var(--palco2); border:1px solid var(--linha);
+  border-left:3px solid var(--azul); border-radius:11px;
+  padding:11px 14px; box-shadow:0 14px 40px rgba(0,0,0,.5);
+}
+#dl-faixa.pronto { border-left-color:var(--ok); }
+#dl-faixa.erro   { border-left-color:var(--perigo); }
+.dl-linha { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.dl-rotulo {
+  font-family:'Space Mono', monospace; font-size:.68rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--texto);
+}
+.dl-pct { margin-left:auto; font-family:'Space Mono', monospace; font-size:.68rem; color:var(--azul); }
+#dl-faixa.pronto .dl-pct { color:var(--ok); }
+#dl-faixa.erro   .dl-pct { color:var(--perigo); }
+#dl-barra { width:100%; height:6px; }
+.dl-detalhe {
+  font-size:.66rem; color:var(--mudo); margin-top:6px; line-height:1.4;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
 /* ── Toast / footer ── */
 .toast {
   position:fixed; bottom:22px; left:50%; transform:translate(-50%,20px);
@@ -789,6 +816,15 @@ https://www.youtube.com/@canal/videos"></textarea>
       <button class="btn btn-ghost" onclick="fecharModalAjustes()">Fechar</button>
     </div>
   </div>
+</div>
+
+<div id="dl-faixa">
+  <div class="dl-linha">
+    <span class="dl-rotulo" id="dl-rotulo">Baixando</span>
+    <span class="dl-pct" id="dl-pct">0%</span>
+  </div>
+  <progress id="dl-barra" value="0" max="100"></progress>
+  <div class="dl-detalhe" id="dl-detalhe"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -2059,18 +2095,21 @@ https://www.youtube.com/@canal/videos"></textarea>
       if (info.status) document.getElementById('yt-status').textContent = info.status;
       if (info.progress !== undefined) document.getElementById('yt-progress').value = info.progress;
       if (info.log) logYt(info.log, info.logTipo || 'info');
+      mostrarDownload(info);
     });
     window.electronAPI.onYtDone(info => {
       document.getElementById('yt-btn-baixar').style.display = '';
       document.getElementById('yt-btn-parar').style.display = 'none';
       if (info && info.sucesso) {
         document.getElementById('yt-status').textContent = '✅ Concluído!';
+        encerrarDownload(info);
         mostrarToast('Download do YouTube concluído');
       } else if (info && info.cancelado) {
         document.getElementById('yt-status').textContent = '⏹ Cancelado';
       } else {
         // Mostra o motivo real: "yt-dlp nao encontrado" pede uma acao do KJ,
         // e o texto generico escondia isso.
+        encerrarDownload(info);
         const motivo = (info && info.erro) ? info.erro : 'Erro no download';
         document.getElementById('yt-status').textContent = '❌ ' + motivo;
         logYt(motivo, 'erro');
@@ -2231,6 +2270,44 @@ https://www.youtube.com/@canal/videos"></textarea>
   function atualizarBotaoAudiencia(ativa) {
     const b = document.getElementById('btnAudiencia');
     if (b) b.classList.toggle('ativa', !!ativa);
+  }
+
+  // ── Faixa de download (visivel fora do modal) ─────────────
+  // O progresso so existia dentro do modal do YouTube: fechado o modal, o KJ
+  // ficava sem saber se ainda estava baixando.
+  let _dlTimerOcultar = null;
+
+  function mostrarDownload(info) {
+    const faixa = document.getElementById('dl-faixa');
+    if (!faixa) return;
+    clearTimeout(_dlTimerOcultar);
+    faixa.className = '';
+    faixa.style.display = 'block';
+    document.getElementById('dl-rotulo').textContent = 'Baixando';
+    if (info.progress !== undefined) {
+      document.getElementById('dl-barra').value = info.progress;
+      document.getElementById('dl-pct').textContent = Math.round(info.progress) + '%';
+    }
+    if (info.status) document.getElementById('dl-detalhe').textContent = info.status;
+  }
+
+  function encerrarDownload(resultado) {
+    const faixa = document.getElementById('dl-faixa');
+    if (!faixa) return;
+    clearTimeout(_dlTimerOcultar);
+    faixa.style.display = 'block';
+
+    const ok = resultado && resultado.sucesso;
+    faixa.className = ok ? 'pronto' : 'erro';
+    document.getElementById('dl-rotulo').textContent = ok ? 'Pronto' : 'Falhou';
+    document.getElementById('dl-barra').value = 100;
+    document.getElementById('dl-pct').textContent = ok ? '100%' : '—';
+    document.getElementById('dl-detalhe').textContent = ok
+      ? `${resultado.totalBaixados || 0} musica(s) na pasta`
+      : (resultado && resultado.erro ? resultado.erro : 'Erro no download');
+
+    // Sucesso some sozinho; erro fica ate o KJ ler.
+    if (ok) _dlTimerOcultar = setTimeout(() => { faixa.style.display = 'none'; }, 6000);
   }
 
   function reenviarEstadoAoPublico() {

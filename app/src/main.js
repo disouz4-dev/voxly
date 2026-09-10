@@ -45,7 +45,7 @@ function construirCatalogo(folder) {
   if (!folder || !fs.existsSync(folder)) return [];
   const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
   return listarArquivosRecursivo(folder, exts).map(fullPath => {
-    const base   = path.basename(fullPath, path.extname(fullPath)).replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
+    const base   = path.basename(fullPath, path.extname(fullPath)).replace(RE_ID_SUFIXO, "").trim();
     const partes = base.split(" - ");
     return {
       artista:   partes.length >= 2 ? partes[0].trim() : "Desconhecido",
@@ -489,7 +489,7 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
 
   let melhor = null, melhorScore = 0;
   for (const fullPath of files) {
-    const base   = path.basename(fullPath, path.extname(fullPath)).replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
+    const base   = path.basename(fullPath, path.extname(fullPath)).replace(RE_ID_SUFIXO, "").trim();
     const partes = base.split(" - ");
     let scoreArtista = 0, scoreMusica = 0;
     if (partes.length >= 2) {
@@ -722,9 +722,42 @@ function ytArchiveLoad() {
 }
 function ytArchiveSave(ids) { fs.writeFileSync(YT_ARCHIVE_FILE, Array.from(ids).join("\n") + "\n"); }
 
+// O id no nome do arquivo e a identidade da faixa. Era um MD5 de
+// artista+musica, que nao aponta para lugar nenhum e ainda COLIDE: dois
+// karaokes da mesma musica, de canais diferentes, geravam o mesmo id. Agora
+// guardamos o id do video do YouTube, que volta ao link original
+// (https://www.youtube.com/watch?v=<id>) e serve para saber se ja baixamos.
+// O padrao aceita os dois formatos para nao quebrar o acervo ja existente.
+const RE_ID_ARQUIVO = /\[(?:[0-9a-f]{6}|[A-Za-z0-9_-]{11})\]/;
+const RE_ID_SUFIXO  = /\s*-?\s*\[(?:[0-9a-f]{6}|[A-Za-z0-9_-]{11})\]\s*$/i;
+const RE_ID_VIDEO   = /\[([A-Za-z0-9_-]{11})\]/;
+
 function gerarIdYt(nome) {
   const crypto = require("crypto");
   return crypto.createHash("md5").update(nome).digest("hex").slice(0, 6);
+}
+
+// Conjunto de ids de video ja presentes na pasta de musicas. E assim que o
+// Voxly sabe que nao precisa baixar de novo.
+function idsBaixados(folder) {
+  const set = new Set();
+  if (!folder || !fs.existsSync(folder)) return set;
+  const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
+  for (const fp of listarArquivosRecursivo(folder, exts)) {
+    const m = path.basename(fp).match(RE_ID_VIDEO);
+    if (m) set.add(m[1]);
+  }
+  return set;
+}
+
+// Caminho local de um video ja baixado, ou null.
+function caminhoLocalDoVideo(folder, idVideo) {
+  if (!folder || !idVideo || !fs.existsSync(folder)) return null;
+  const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
+  for (const fp of listarArquivosRecursivo(folder, exts)) {
+    if (path.basename(fp).includes(`[${idVideo}]`)) return fp;
+  }
+  return null;
 }
 
 function limparNomeYt(s) {
@@ -1007,7 +1040,8 @@ async function baixarUrl(opts) {
         const artista = limparNomeYt(normalizarCaseYt(identificado.artista));
         const musica = limparNomeYt(normalizarCaseYt(identificado.musica));
         const ext = path.extname(arquivoBaixado);
-        const idHex = gerarIdYt(artista + musica);
+        // idVideo vem do yt-dlp; o hash so entra se o video nao tiver id.
+        const idHex = idVideo || gerarIdYt(artista + musica);
         // Novo formato: Artista - Música - Canal [id]
         const novoNome = `${artista} - ${musica} - ${limparNomeYt(canal)} [${idHex}]${ext}`;
 
