@@ -580,6 +580,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // src, entao basta marcar uma vez.
   if (isAudience) {
     document.querySelectorAll("video, audio").forEach(el => { el.muted = true; });
+    falaAudio.muted = true; // o painel do publico nunca fala
 
     // O <video> nasce fora do painel; no modo publico ele precisa estar dentro
     // da coluna central, que e onde .pub-center video o dimensiona.
@@ -1115,20 +1116,36 @@ document.addEventListener("DOMContentLoaded", () => {
     return pt[0];
   }
 
-  function chamarPorVoz(cantor, duo) {
+  const falaAudio = new Audio();
+
+  function textoDaChamada(cantor, duo) {
+    return duo
+      ? `Atenção, ${cantor} e ${duo}! Vocês são os próximos a cantar. Confirmem sua presença no celular.`
+      : `Atenção, ${cantor}! Você é o próximo a cantar. Confirme sua presença no seu celular.`;
+  }
+
+  async function chamarPorVoz(cantor, duo) {
     if (isAudience) return; // locucao sai so pelo Palco, senao fala em dobro
+    const texto = textoDaChamada(cantor, duo);
+
+    // Piper primeiro: voz neural local, muito melhor que a do navegador.
+    try {
+      const wav = await window.electronAPI.piperFalar(texto, _vozPreferida);
+      if (wav) {
+        falaAudio.pause();
+        falaAudio.src = toFileUrl(wav);
+        falaAudio.volume = 1;
+        falaAudio.muted = false;
+        await falaAudio.play().catch(() => {});
+        return;
+      }
+    } catch (e) { console.warn('[VOZ] Piper indisponivel:', e.message); }
+
+    // Reserva: sem Piper instalado, usa a voz do sistema.
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
-
-    const texto = duo
-      ? `${cantor} e ${duo}, preparem-se! Vocês são os próximos no palco.`
-      : `${cantor}, prepare-se! Você é o próximo no palco.`;
-
     const fala = new SpeechSynthesisUtterance(texto);
-    fala.lang   = 'pt-BR';
-    fala.rate   = 1;    // 0.88 arrastava e deixava a voz robotica
-    fala.pitch  = 1;    // 1.05 desafinava a voz
-    fala.volume = 1;
+    fala.lang = 'pt-BR'; fala.rate = 1; fala.pitch = 1; fala.volume = 1;
     const voz = escolherVoz();
     if (voz) fala.voice = voz;
     speechSynthesis.speak(fala);
@@ -1151,6 +1168,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function pararLoopChamada() {
     if (_loopChamada) { clearInterval(_loopChamada); _loopChamada = null; }
     if (window.speechSynthesis) speechSynthesis.cancel();
+    try { falaAudio.pause(); falaAudio.currentTime = 0; } catch (_) {}
   }
 
   // ── Timer SVG ────────────────────────────────────────────
@@ -1289,7 +1307,10 @@ intervaloDeck = [];
 
           // Chamada por voz — aguarda 0.8s para o TTS não sobrepor o fade-in
           definirVozPreferida(dados.voz);
-          setTimeout(() => iniciarLoopChamada(cantor, duo, dados.segundos || 30), 800);
+          // Chamada por voz e opcional: o KJ liga ou desliga em Ajustes.
+          if (dados.chamadaVoz !== false) {
+            setTimeout(() => iniciarLoopChamada(cantor, duo, dados.segundos || 30), 800);
+          }
 
           // Timer regressivo
           prevTotalSecs = dados.segundos || 15;

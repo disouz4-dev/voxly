@@ -188,6 +188,114 @@ async function sugerirNoDeezer(termo) {
   })).filter(x => x.artista && x.musica);
 }
 
+// ── Locucao com Piper ─────────────────────────────────────
+// A voz do navegador (speechSynthesis) soa robotica: as vozes compactas do
+// sistema nao foram feitas para locucao. O Piper roda um modelo neural local —
+// sem nuvem, sem chave — e as vozes pt-BR do projeto rhasspy sao bem melhores.
+// Se o Piper nao estiver instalado, o player cai de volta no speechSynthesis.
+const PIPER_DIR   = path.join(app.getPath("userData"), "piper");
+const PIPER_BIN   = path.join(PIPER_DIR, "venv", "bin", "piper");
+const PIPER_VOZES = path.join(PIPER_DIR, "vozes");
+
+function piperDisponivel() {
+  try { fs.accessSync(PIPER_BIN, fs.constants.X_OK); return true; } catch { return false; }
+}
+
+function vozesPiper() {
+  try {
+    return fs.readdirSync(PIPER_VOZES)
+      .filter(f => f.endsWith(".onnx"))
+      .map(f => ({ arquivo: f, nome: f.replace(/^pt_BR-/, "").replace(/-medium\.onnx$|-low\.onnx$/, "") }));
+  } catch { return []; }
+}
+
+// Prosodia: os valores padrao do Piper soam chapados para chamar alguem num
+// salao. Um pouco mais lento e com mais variacao de ritmo fica de locutor.
+const PIPER_PROSODIA = ["--length_scale", "1.08", "--noise_scale", "0.85", "--noise_w", "0.9"];
+
+function sintetizarFala(texto, arquivoVoz) {
+  return new Promise((resolve) => {
+    if (!piperDisponivel()) return resolve(null);
+    const vozes = vozesPiper();
+    if (!vozes.length) return resolve(null);
+
+    const escolhida = vozes.find(v => v.arquivo === arquivoVoz || v.nome === arquivoVoz) || vozes[0];
+    const modelo = path.join(PIPER_VOZES, escolhida.arquivo);
+    const saida  = path.join(app.getPath("temp"), `voxly-fala-${Date.now()}.wav`);
+
+    const proc = spawn(PIPER_BIN, ["--model", modelo, "--output_file", saida, ...PIPER_PROSODIA]);
+    proc.on("error", () => resolve(null));
+    proc.on("close", (code) => resolve(code === 0 && fs.existsSync(saida) ? saida : null));
+    proc.stdin.write(texto);
+    proc.stdin.end();
+  });
+}
+
+// Instalacao sob demanda: o Piper pesa ~60 MB por voz, mais um ambiente
+// Python. Nada disso vem junto do app — o KJ marca em Ajustes e o Voxly baixa,
+// instala e configura sozinho.
+const PIPER_VOZ_URL = (v) =>
+  `https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/${v}/medium/pt_BR-${v}-medium.onnx`;
+
+function rodar(cmd, args, opcoes = {}) {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, opcoes);
+    let saida = "";
+    proc.stdout?.on("data", d => saida += d);
+    proc.stderr?.on("data", d => saida += d);
+    proc.on("error", e => resolve({ ok: false, saida: e.message }));
+    proc.on("close", c => resolve({ ok: c === 0, saida }));
+  });
+}
+
+async function baixarArquivo(url, destino) {
+  const r = await rodar("/usr/bin/curl", ["-sL", "--max-time", "600", "-o", destino, url]);
+  return r.ok && fs.existsSync(destino) && fs.statSync(destino).size > 1024 * 100;
+}
+
+ipcMain.handle("piper-instalar", async (evento, voz) => {
+  const avisar = (etapa) => evento.sender.send("piper-progresso", etapa);
+  const nomeVoz = voz || "cadu";
+
+  try {
+    fs.mkdirSync(PIPER_VOZES, { recursive: true });
+
+    if (!piperDisponivel()) {
+      // O venv usa o Python do sistema de proposito: o do Homebrew costuma ser
+      // novo demais e o onnxruntime ainda nao tem wheel para ele.
+      avisar("Criando ambiente Python...");
+      const venv = await rodar("/usr/bin/python3", ["-m", "venv", path.join(PIPER_DIR, "venv")]);
+      if (!venv.ok) throw new Error("Falha ao criar o ambiente: " + venv.saida.slice(-200));
+
+      avisar("Instalando o Piper (pode demorar)...");
+      const pip = path.join(PIPER_DIR, "venv", "bin", "pip");
+      const inst = await rodar(pip, ["install", "--quiet", "piper-tts"]);
+      if (!inst.ok) throw new Error("Falha ao instalar o Piper: " + inst.saida.slice(-200));
+    }
+
+    const modelo = path.join(PIPER_VOZES, `pt_BR-${nomeVoz}-medium.onnx`);
+    if (!fs.existsSync(modelo)) {
+      avisar(`Baixando a voz ${nomeVoz} (60 MB)...`);
+      const okModelo = await baixarArquivo(PIPER_VOZ_URL(nomeVoz), modelo);
+      const okJson = await baixarArquivo(PIPER_VOZ_URL(nomeVoz) + ".json", modelo + ".json");
+      if (!okModelo || !okJson) throw new Error("Falha ao baixar a voz.");
+    }
+
+    avisar("Pronto!");
+    return { ok: true, vozes: vozesPiper() };
+  } catch (e) {
+    return { ok: false, erro: e.message };
+  }
+});
+
+ipcMain.handle("piper-instalado", () => ({
+  instalado: piperDisponivel() && vozesPiper().length > 0,
+  vozes: piperDisponivel() ? vozesPiper() : [],
+}));
+
+ipcMain.handle("piper-vozes", () => (piperDisponivel() ? vozesPiper() : []));
+ipcMain.handle("piper-falar", async (_, { texto, voz }) => sintetizarFala(texto, voz));
+
 // Consulta o YouTube e devolve so o que serve para uma fila de karaoke.
 async function buscarKaraokeYt(termo, artista) {
   const ytDlp = resolverBinario("yt-dlp");
@@ -625,7 +733,7 @@ ipcMain.handle("select-music-folder", async () => {
 
 ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
 // Preferencias de download, definidas uma vez pelo KJ e usadas em todo pedido.
-const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false, voz: "" };
+const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false, voz: "", chamadaVoz: true };
 ipcMain.handle("get-prefs-download", () => ({ ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) }));
 ipcMain.handle("set-prefs-download", (_, p) => {
   store.set("prefsDownload", { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}), ...p });

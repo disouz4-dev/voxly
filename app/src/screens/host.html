@@ -851,12 +851,37 @@ https://www.youtube.com/@canal/videos"></textarea>
       </label>
     </div>
 
-    <label class="modal-label">Voz que chama o cantor</label>
+    <label class="modal-label">Chamada por voz</label>
+    <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;cursor:pointer;margin-bottom:8px;">
+      <input type="checkbox" id="pref-chamada-voz" onchange="salvarPrefsDownload()">
+      <span>🔊 Anunciar o próximo cantor em voz alta</span>
+    </label>
+
     <div style="display:flex;gap:6px;">
       <select class="modal-select" id="pref-voz" onchange="salvarPrefsDownload()" style="flex:1;">
-        <option value="">Automática (melhor pt-BR disponível)</option>
+        <option value="">Automática</option>
       </select>
       <button class="btn btn-ghost btn-sm" onclick="testarVoz()" title="Ouvir">▶</button>
+    </div>
+
+    <div id="piper-box" style="margin-top:10px;padding:10px 12px;border:1px solid var(--linha);border-radius:9px;background:var(--palco2);">
+      <div style="font-size:.76rem;color:var(--texto);margin-bottom:6px;">
+        🎙 <strong>Voz neural (Piper)</strong> — bem mais natural que a voz do sistema
+      </div>
+      <div id="piper-status" style="font-size:.72rem;color:var(--mudo);margin-bottom:8px;line-height:1.5;"></div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select class="modal-select" id="piper-voz-instalar" style="flex:1;">
+          <option value="cadu">Cadu — masculina</option>
+          <option value="faber">Faber — masculina</option>
+          <option value="jeff">Jeff — masculina</option>
+          <option value="edresson">Edresson — masculina</option>
+        </select>
+        <button class="btn btn-primary btn-sm" id="btn-instalar-piper" onclick="instalarPiper()">⬇ Instalar</button>
+      </div>
+      <p style="font-size:.68rem;color:var(--mudo);margin-top:7px;line-height:1.5;">
+        Baixa ~60 MB e roda 100% no seu computador — sem nuvem e sem chave de API.
+        Não é instalado por padrão.
+      </p>
     </div>
     <p style="font-size:.72rem;color:var(--mudo);line-height:1.5;margin-top:6px;">
       A chamada se repete durante os 30 segundos de confirmação, para quem
@@ -2170,9 +2195,12 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     let filePath = null;
     let vozEscolhida = '';
+    let chamadaVozAtiva = true;
     if (window.electronAPI) {
       filePath = await arquivoDoItem(proxima);
-      vozEscolhida = (await window.electronAPI.getPrefsDownload()).voz || '';
+      const _p = await window.electronAPI.getPrefsDownload();
+      vozEscolhida = _p.voz || '';
+      chamadaVozAtiva = _p.chamadaVoz !== false;
     }
 
     if (window.electronAPI) {
@@ -2181,7 +2209,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         musica: proxima.musica, artista: proxima.artista,
         cantor: proxima.nomeArtistico, duo: proxima.duoNome || null,
         photoURL: proxima.photoURL || null, duoPhotoURL: proxima.duoPhotoURL || null,
-        itemId: proxima.id, segundos: SEGUNDOS_CONFIRMACAO, voz: vozEscolhida
+        itemId: proxima.id, segundos: SEGUNDOS_CONFIRMACAO,
+        voz: vozEscolhida, chamadaVoz: chamadaVozAtiva
       }));
     }
 
@@ -2504,28 +2533,89 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('pref-qualidade').value    = p.qualidade;
     document.getElementById('pref-renomear').checked   = p.renomear !== false;
     document.getElementById('pref-organizar').checked  = !!p.organizar;
-    popularVozes();
+    document.getElementById('pref-chamada-voz').checked = p.chamadaVoz !== false;
+    await popularVozes();
     document.getElementById('pref-voz').value = p.voz || '';
+    atualizarStatusPiper();
   }
 
   // As vozes vem do motor do sistema e so ficam disponiveis depois que o
   // navegador carrega os pacotes — dai o onvoiceschanged.
-  function popularVozes() {
+  // Vozes do Piper primeiro (neurais, muito melhores); se ele nao estiver
+  // instalado, cai nas vozes do sistema.
+  async function popularVozes() {
     const sel = document.getElementById('pref-voz');
-    if (!sel || !window.speechSynthesis) return;
+    if (!sel) return;
     const atual = sel.value;
-    const vozes = speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang));
-    sel.innerHTML = '<option value="">Automática (melhor pt-BR disponível)</option>' +
-      vozes.map(v => '<option value="' + escHtml(v.name) + '">' + escHtml(v.name) + '</option>').join('');
+
+    let opcoes = [];
+    if (window.electronAPI && window.electronAPI.piperVozes) {
+      const piper = await window.electronAPI.piperVozes();
+      opcoes = piper.map(v => ({ valor: v.arquivo, rotulo: '🎙 ' + v.nome + ' (Piper)' }));
+    }
+    if (!opcoes.length && window.speechSynthesis) {
+      opcoes = speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang))
+        .map(v => ({ valor: v.name, rotulo: v.name }));
+    }
+
+    sel.innerHTML = '<option value="">Automática</option>' +
+      opcoes.map(o => '<option value="' + escHtml(o.valor) + '">' + escHtml(o.rotulo) + '</option>').join('');
     sel.value = atual;
   }
 
-  function testarVoz() {
+  const _audioTeste = new Audio();
+
+  async function atualizarStatusPiper() {
+    const el = document.getElementById('piper-status');
+    const btn = document.getElementById('btn-instalar-piper');
+    if (!el || !window.electronAPI || !window.electronAPI.piperInstalado) return;
+    const { instalado, vozes } = await window.electronAPI.piperInstalado();
+    if (instalado) {
+      el.innerHTML = `✅ Instalado — ${vozes.length} voz(es): ${vozes.map(v => v.nome).join(', ')}`;
+      btn.textContent = '⬇ Baixar outra voz';
+    } else {
+      el.textContent = 'Não instalado. O Voxly usa a voz do sistema, que soa mais robótica.';
+      btn.textContent = '⬇ Instalar';
+    }
+  }
+
+  async function instalarPiper() {
+    const btn = document.getElementById('btn-instalar-piper');
+    const el = document.getElementById('piper-status');
+    const voz = document.getElementById('piper-voz-instalar').value;
+    btn.disabled = true;
+    el.textContent = 'Preparando...';
+
+    const r = await window.electronAPI.piperInstalar(voz);
+    btn.disabled = false;
+    if (r && r.ok) {
+      mostrarToast('🎙 Voz neural instalada');
+      await atualizarStatusPiper();
+      await popularVozes();
+    } else {
+      el.innerHTML = `<span style="color:var(--perigo);">Falhou: ${escHtml((r && r.erro) || 'erro desconhecido')}</span>`;
+    }
+  }
+
+  if (window.electronAPI && window.electronAPI.onPiperProgresso) {
+    window.electronAPI.onPiperProgresso(etapa => {
+      const el = document.getElementById('piper-status');
+      if (el) el.textContent = etapa;
+    });
+  }
+
+  async function testarVoz() {
+    const nome = document.getElementById('pref-voz').value;
+    const texto = 'Atenção, Diego! Você é o próximo a cantar. Confirme sua presença no seu celular.';
+
+    if (window.electronAPI && window.electronAPI.piperFalar) {
+      const wav = await window.electronAPI.piperFalar(texto, nome);
+      if (wav) { _audioTeste.src = 'file://' + wav; _audioTeste.play().catch(() => {}); return; }
+    }
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
-    const f = new SpeechSynthesisUtterance('Diego, prepare-se! Você é o próximo no palco.');
+    const f = new SpeechSynthesisUtterance(texto);
     f.lang = 'pt-BR'; f.rate = 1; f.pitch = 1;
-    const nome = document.getElementById('pref-voz').value;
     const v = speechSynthesis.getVoices().find(x => x.name === nome);
     if (v) f.voice = v;
     speechSynthesis.speak(f);
@@ -2537,7 +2627,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!window.electronAPI || !window.electronAPI.setPrefsDownload) return;
     await window.electronAPI.setPrefsDownload({
       qualidade: document.getElementById('pref-qualidade').value,
-      voz:       document.getElementById('pref-voz').value,
+      voz:        document.getElementById('pref-voz').value,
+      chamadaVoz: document.getElementById('pref-chamada-voz').checked,
       renomear:  document.getElementById('pref-renomear').checked,
       organizar: document.getElementById('pref-organizar').checked,
     });
