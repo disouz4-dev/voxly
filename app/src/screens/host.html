@@ -2027,14 +2027,25 @@ https://www.youtube.com/@canal/videos"></textarea>
             return (a.ordemFila || 0) - (b.ordemFila || 0);
           });
 
-        // Restaura currentSong após reinício do app
-        const tocandoItem = filaData.find(d => d.status === 'tocando');
-        if (tocandoItem && !currentSong) {
-          currentSong = { ...tocandoItem };
-          document.getElementById('np-song').textContent   = tocandoItem.musica  || '—';
-          document.getElementById('np-artist').textContent = tocandoItem.artista || '—';
-          document.getElementById('np-singer').textContent = '🎤 ' + (tocandoItem.nomeArtistico || '—') + (tocandoItem.duoNome ? ' & ' + tocandoItem.duoNome : '');
+        // Restaura currentSong depois de o app reiniciar no meio de uma
+        // musica. So enquanto ESTE host ainda nao mexeu na fila: o write de
+        // 'cantada' e assincrono, entao logo depois de uma musica acabar o
+        // item ainda consta como 'tocando' aqui — e isto ressuscitava a musica
+        // morta, prendia o painel nela e fazia o Play "retomar" em vez de
+        // tocar quem estava sendo chamado.
+        if (!_jaGerenciouMusica) {
+          const tocandoItem = filaData.find(d => d.status === 'tocando');
+          if (tocandoItem && !currentSong) {
+            currentSong = { ...tocandoItem };
+            _jaGerenciouMusica = true;
+            mostrarNoPainel(tocandoItem);
+          }
         }
+
+        // O painel do meio precisa acompanhar quem esta sendo chamado, senao o
+        // KJ nao sabe para quem esta dando Play antes de o tempo acabar.
+        const sendoChamado = filaData.find(d => d.status === 'confirmando' || d.status === 'pronto');
+        if (!currentSong && sendoChamado) mostrarNoPainel(sendoChamado, true);
 
         renderQueue();
         salvarBackupLocal();
@@ -2221,9 +2232,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     const filePath = await arquivoDoItem(item);
     currentSong = { id: itemId, ...item, filePath, iniciadoEm: Date.now() };
 
-    document.getElementById('np-song').textContent   = item.musica  || '—';
-    document.getElementById('np-artist').textContent = item.artista || '—';
-    document.getElementById('np-singer').textContent = '🎤 ' + (item.nomeArtistico||'—') + (item.duoNome ? ' & ' + item.duoNome : '');
+    _jaGerenciouMusica = true;
+    mostrarNoPainel(item);
     // Aplica tom salvo no pedido do cantor, depois reseta o display para o host
     const semitons = item.semitons || 0;
     tomAtual = semitons;
@@ -2429,11 +2439,23 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // Um lugar so para escrever no painel do meio: tres pontos diferentes o
+  // faziam a mao, e um deles ressuscitava a musica anterior.
+  function mostrarNoPainel(item, chamando) {
+    document.getElementById('np-song').textContent   = (item && item.musica)  || '—';
+    document.getElementById('np-artist').textContent = (item && item.artista) || '—';
+    document.getElementById('np-singer').textContent = item
+      ? (chamando ? '⏱ Chamando: ' : '🎤 ') + (item.nomeArtistico || '—') +
+        (item.duoNome ? ' & ' + item.duoNome : '')
+      : '—';
+  }
+
+  let _jaGerenciouMusica = false;
+
   async function marcarCantada(itemId) {
+    _jaGerenciouMusica = true;
     currentSong = null;
-    document.getElementById('np-song').textContent   = '—';
-    document.getElementById('np-artist').textContent = '—';
-    document.getElementById('np-singer').textContent = '—';
+    mostrarNoPainel(null);
 
     // Dispara o preview do próximo cantor IMEDIATAMENTE, sem aguardar os writes
     iniciarConfirmacaoProxima();

@@ -948,22 +948,52 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function criarRubberbandNode() {
     const node = new AudioWorkletNode(audioCtx, 'rubberband-processor', {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]
+      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+      // Arquivo com audio MONO derrubava o processador com "Invalid channel
+      // index 1": ele espera dois canais e recebia um. Forcar a entrada a dois
+      // faz o proprio Web Audio duplicar o canal antes de chegar la.
+      channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers",
     });
     node.port.postMessage(JSON.stringify(["tempo", 1.0]));
     node.port.postMessage(JSON.stringify(["quality", true]));
     node.port.postMessage(JSON.stringify(["pitch", Math.pow(2, currentSemitons / 12)]));
+
+    // Se o processador morrer, TODO o audio morre junto: ele esta no meio do
+    // caminho entre o video e a saida. Num show, perder o ajuste de tom e um
+    // detalhe; ficar mudo e o fim. Aqui ele sai do circuito e o som segue.
+    node.onprocessorerror = () => {
+      console.warn("[AUDIO] processador de tom falhou — tocando sem ajuste de tom");
+      contornarPitch();
+    };
     return node;
   }
 
+  // Liga a fonte direto no compressor, tirando o ajuste de tom do caminho.
+  function contornarPitch() {
+    if (!srcNode || !compNode) return;
+    try { srcNode.disconnect(); } catch (e) {}
+    if (pitchNode) { try { pitchNode.disconnect(); } catch (e) {} }
+    pitchNode = null;
+    try { srcNode.connect(compNode); } catch (e) {}
+  }
+
   function resetarPitchNode() {
-    if (!pitchNode || !srcNode || !compNode || !audioCtx) return;
-    try { srcNode.disconnect(pitchNode); } catch(e) {}
-    try { pitchNode.disconnect(compNode); } catch(e) {}
-    try { pitchNode.port.postMessage(JSON.stringify(["close"])); } catch(e) {}
-    pitchNode = criarRubberbandNode();
-    srcNode.connect(pitchNode);
-    pitchNode.connect(compNode);
+    if (!srcNode || !compNode || !audioCtx) return;
+    // Sem "!pitchNode" na guarda: depois de um contorno ele fica nulo, e antes
+    // isso impedia o ajuste de tom de voltar na musica seguinte.
+    try { srcNode.disconnect(); } catch(e) {}
+    if (pitchNode) {
+      try { pitchNode.disconnect(); } catch(e) {}
+      try { pitchNode.port.postMessage(JSON.stringify(["close"])); } catch(e) {}
+    }
+    try {
+      pitchNode = criarRubberbandNode();
+      srcNode.connect(pitchNode);
+      pitchNode.connect(compNode);
+    } catch (e) {
+      console.warn("[AUDIO] nao consegui criar o ajuste de tom:", e.message);
+      contornarPitch();
+    }
   }
 
   function setSemitons(n) {
