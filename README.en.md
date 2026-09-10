@@ -16,24 +16,30 @@ Latest versions are always at: **[github.com/disouz4-dev/voxly/releases/latest](
 
 **Option A — .deb (Ubuntu/Debian, recommended):**
 ```bash
-# Download and install (replace VERSION with the latest, e.g. 1.1.1)
-wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.1/voxly_1.1.1_amd64.deb
-sudo dpkg -i voxly_1.1.1_amd64.deb
+# Download and install 
+# Resolves the latest version automatically
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+wget https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
+sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f   # fix dependencies, if needed
 ```
 
 **Option B — AppImage (portable):**
 ```bash
-# Download, make executable and run (replace VERSION with the latest)
-wget https://github.com/disouz4-dev/voxly/releases/download/v1.1.1/Voxly-1.1.1.AppImage
-chmod +x Voxly-1.1.1.AppImage
-./Voxly-1.1.1.AppImage
+# Download, make executable and run 
+# Resolves the latest version automatically
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+wget https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
+chmod +x Voxly-${VER}.AppImage
+./Voxly-${VER}.AppImage
 ```
 
 ### 🍎 macOS
 ```bash
-# Download the .dmg (replace VERSION with the latest)
-curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v1.1.1/Voxly-1.1.1.dmg
+# Download the .dmg 
+# Resolves the latest version automatically
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.dmg
 
 # Mount and copy to /Applications
 hdiutil attach Voxly.dmg
