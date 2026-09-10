@@ -918,6 +918,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
 <script src="../fila.js"></script>
 <script src="../limite.js"></script>
+<script src="../orfaos.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -1414,7 +1415,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     fecharModalCandidatos();
     if (_baixando.has(itemId)) { mostrarToast('Já está baixando esta música'); return; }
     _baixando.add(itemId);
-    await ref.update({ statusDownload: 'baixando', videoId: c.id, videoUrl: c.url }).catch(() => {});
+    await ref.update({ statusDownload: 'baixando', baixandoDesde: Date.now(), videoId: c.id, videoUrl: c.url }).catch(() => {});
     mostrarToast(`⬇ Baixando "${c.titulo.slice(0, 40)}"...`);
 
     try {
@@ -1837,7 +1838,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       }
 
       mostrarToast(`⬇ Baixando "${item.musica}"...`);
-      await ref.update({ statusDownload: 'baixando' }).catch(() => {});
+      await ref.update({ statusDownload: 'baixando', baixandoDesde: Date.now() }).catch(() => {});
 
       // Sem qualidade/renomear/organizar explicitos: valem as preferencias que
       // o KJ definiu em Ajustes.
@@ -1908,6 +1909,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   function renderQueue() {
     enviarFilaAoPublico();
+    destravarDownloadsOrfaos();
     const el = document.getElementById('queue-list');
     if (!filaData.length) {
       el.innerHTML = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
@@ -2404,6 +2406,26 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Fechar o app (ou uma queda) mata o timer e o item fica preso nesse estado
   // para sempre — a fila trava e nenhuma musica avanca. Na abertura, resolve o
   // que ficou pendurado usando o prazo que estava gravado no proprio pedido.
+  // Roda na abertura e junto de cada render: quem sabe o que esta realmente
+  // baixando e a memoria deste processo (_baixando), nao o Firestore.
+  let _primeiraFaxinaDownloads = true;
+  async function destravarDownloadsOrfaos() {
+    if (!SESSAO_ID || !filaData.length) return;
+    const presos = VoxlyOrfaos.downloadsOrfaos(filaData, {
+      agora: Date.now(),
+      emAndamento: _baixando,
+      recemAberto: _primeiraFaxinaDownloads,
+    });
+    _primeiraFaxinaDownloads = false;
+    if (!presos.length) return;
+
+    for (const id of presos) {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(id)
+        .update({ statusDownload: null, baixandoDesde: null }).catch(() => {});
+    }
+    mostrarToast(`⏱ ${presos.length} download(s) travado(s) foram liberados`, 6000);
+  }
+
   async function destravarConfirmacoesOrfas() {
     if (!SESSAO_ID) return;
     try {
@@ -2958,6 +2980,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         mostrarToast('Download do YouTube concluído');
       } else if (info && info.cancelado) {
         document.getElementById('yt-status').textContent = '⏹ Cancelado';
+        // Sem isto a faixa ficava presa em "Baixando" ate o app fechar.
+        encerrarDownload({ sucesso: false, erro: 'Download cancelado' });
       } else {
         // Mostra o motivo real: "yt-dlp nao encontrado" pede uma acao do KJ,
         // e o texto generico escondia isso.
