@@ -804,23 +804,6 @@ async function baixarUrl(opts) {
   const db = ytDbLoad();
   let totalBaixados = 0;
 
-  // --no-playlist isola o video quando a URL e "watch?v=X&list=Y", mas nao tem
-  // o que isolar numa URL que ja E uma playlist ou um canal: ali ele baixa tudo
-  // (medido: 183 videos numa playlist comum). Sem este aviso, colar um link
-  // desses enche a pasta sem o KJ entender de onde veio.
-  if (!playlist) {
-    const coletiva = urls.find(u => /[?&]list=/.test(u) && /\/playlist\b/.test(u)
-      || /youtube\.com\/(channel\/|user\/|@)/.test(u)
-      || /[?&]list=/.test(u) && !/[?&]v=/.test(u));
-    if (coletiva) {
-      throw new Error(
-        "Esse link e de uma playlist ou canal, nao de uma musica: baixaria varios " +
-        "videos de uma vez. Cole o link de um video, ou marque \"Baixar playlist " +
-        "inteira\" se e isso mesmo que voce quer."
-      );
-    }
-  }
-
   for (let i = 0; i < urls.length && !ytCancelado; i++) {
     const url = urls[i];
     enviarProgresso({ status: `[${i+1}/${urls.length}] Processando: ${url}`, progress: Math.round(i/urls.length*100), log: `Iniciando: ${url}`, logTipo: 'canal' });
