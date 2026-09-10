@@ -467,10 +467,13 @@ function escolherDisplayOcupado() {
 }
 
 // Palco e Publico ocupam o display inteiro — o que so faz sentido quando ha
-// monitor externo. Em tela unica eles cobririam por completo a Gerencia, que
-// continua aberta mas invisivel atras. Nesse caso a janela e reduzida e
-// encostada num canto, deixando a Gerencia alcancavel.
-const PROPORCAO_TELA_UNICA = 0.6;
+// monitor externo. Em tela unica as tres janelas disputam o mesmo espaco: com
+// 60% da largura cada, Palco e Publico somavam 2150px numa tela de 1792 e se
+// cobriam; a Gerencia (1440x900) enterrava as duas. O video tocava sem ninguem
+// ver. Em tela unica a tela vira faixas: Gerencia em cima, as outras duas lado
+// a lado embaixo.
+const FOLGA = 8;
+const ALTURA_SECUNDARIA = 0.45;
 
 function geometriaSecundaria(display, canto) {
   const externo = display.bounds.x !== 0 || display.bounds.y !== 0;
@@ -481,19 +484,44 @@ function geometriaSecundaria(display, canto) {
 
   // workArea (e nao bounds) para a janela nao nascer sob a barra de menu / Dock.
   const area = display.workArea;
-  const width  = Math.round(area.width  * PROPORCAO_TELA_UNICA);
-  const height = Math.round(area.height * PROPORCAO_TELA_UNICA);
+  const width  = Math.floor((area.width - FOLGA * 3) / 2);
+  const height = Math.round(area.height * ALTURA_SECUNDARIA);
   return {
-    x: canto === "esquerda" ? area.x : area.x + area.width - width,
+    x: canto === "esquerda" ? area.x + FOLGA : area.x + area.width - width - FOLGA,
     y: area.y + area.height - height,
     width,
     height,
   };
 }
 
+function temMonitorExterno() {
+  return screen.getAllDisplays().some(d => d.bounds.x !== 0 || d.bounds.y !== 0);
+}
+
+// Reposiciona as tres janelas sempre que uma secundaria abre ou fecha. Sem
+// isto a Gerencia continua com os 1440x900 do nascimento e volta a cobrir tudo
+// no primeiro clique. Nao mexe em janela em tela cheia — ali a escolha e do KJ.
+function arrumarJanelasTelaUnica() {
+  if (temMonitorExterno()) return;
+
+  const principal = screen.getPrimaryDisplay();
+  const area = principal.workArea;
+  const viva = j => j && !j.isDestroyed() && !j.isFullScreen();
+
+  if (viva(playerWindow))   playerWindow.setBounds(geometriaSecundaria(principal, "direita"));
+  if (viva(audienceWindow)) audienceWindow.setBounds(geometriaSecundaria(principal, "esquerda"));
+
+  if (!viva(hostWindow)) return;
+  const temSecundaria = viva(playerWindow) || viva(audienceWindow);
+  const altura = temSecundaria
+    ? area.height - Math.round(area.height * ALTURA_SECUNDARIA) - FOLGA
+    : area.height;
+  hostWindow.setBounds({ x: area.x, y: area.y, width: area.width, height: altura });
+}
+
 function createHostWindow() {
   hostWindow = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 1100, minHeight: 720,
+    width: 1440, height: 900, minWidth: 960, minHeight: 480,
     title: "Voxly - Gerência",
     icon: ICONE_APP,
     backgroundColor: "#101014",
@@ -534,7 +562,8 @@ function createPlayerWindow() {
   playerWindow.webContents.once("did-finish-load", () => {
     console.log("[MAIN] Player carregado e pronto.");
   });
-  playerWindow.on("closed", () => { playerWindow = null; });
+  playerWindow.on("closed", () => { playerWindow = null; arrumarJanelasTelaUnica(); });
+  arrumarJanelasTelaUnica();
 }
 
 // Tela 3: auditório/público — painel opcional ligado pelo host.
@@ -563,10 +592,14 @@ function createAudienceWindow() {
     search: "tela=publico",
   });
   audienceWindow.once("ready-to-show", () => {
+    arrumarJanelasTelaUnica();
+    audienceWindow.show();
+    audienceWindow.moveTop();
     if (hostWindow) hostWindow.webContents.send("audiencia-estado", true);
   });
   audienceWindow.on("closed", () => {
     audienceWindow = null;
+    arrumarJanelasTelaUnica();
     if (hostWindow) hostWindow.webContents.send("audiencia-estado", false);
   });
 }
