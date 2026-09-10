@@ -115,6 +115,18 @@ class ServidorLocal {
       this._tratarEstatico(req, res, caminho);
     });
 
+    // Sem este tratamento, porta ocupada (tipicamente outra instancia do Voxly
+    // ainda aberta) virava excecao nao capturada e derrubava o app inteiro.
+    this.servidor.on("error", (e) => {
+      if (e.code === "EADDRINUSE") {
+        console.error(`[LOCAL] Porta ${this.porta} ja esta em uso. ` +
+          `O modo offline por LAN fica indisponivel nesta instancia.`);
+      } else {
+        console.error("[LOCAL] Erro no servidor:", e.message);
+      }
+      this.servidor = null;
+    });
+
     this.servidor.listen(this.porta, "0.0.0.0", () => {
       const ip = this._ipLocal();
       console.log(`[LOCAL] Servidor LAN: http://${ip}:${this.porta}`);

@@ -221,6 +221,15 @@ function iniciarServidorCatalogo() {
       res.end("{}");
     }
   });
+  servidorCatalogo.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.error("[CATALOGO] Porta 7432 ja esta em uso — outra instancia do Voxly aberta?");
+    } else {
+      console.error("[CATALOGO] Erro no servidor:", e.message);
+    }
+    servidorCatalogo = null;
+  });
+
   servidorCatalogo.listen(7432, "0.0.0.0", () => {
     console.log(`[CATALOGO] Servidor HTTP: 0.0.0.0:7432 — ${catalogoLocal.length} músicas`);
   });
@@ -358,6 +367,21 @@ function createAudienceWindow() {
   audienceWindow.on("closed", () => {
     audienceWindow = null;
     if (hostWindow) hostWindow.webContents.send("audiencia-estado", false);
+  });
+}
+
+// Duas instancias do Voxly disputam as portas 8030 e 7432 e a segunda morria
+// com EADDRINUSE. Em vez disso, a segunda encerra e traz a primeira para frente.
+const instanciaUnica = app.requestSingleInstanceLock();
+if (!instanciaUnica) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (hostWindow && !hostWindow.isDestroyed()) {
+      if (hostWindow.isMinimized()) hostWindow.restore();
+      hostWindow.show();
+      hostWindow.focus();
+    }
   });
 }
 
