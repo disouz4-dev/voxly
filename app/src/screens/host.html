@@ -957,6 +957,8 @@ https://www.youtube.com/@canal/videos"></textarea>
   // ── Inicialização ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
     atualizarQrHost();
+    limparSessoesVencidas();
+    setInterval(limparSessoesVencidas, 3600e3);
 
     // appUrlLocal era declarada e nunca recebia valor, entao
     // "appUrlLocal || APP_URL" caia sempre no site HTTPS. Como o navegador
@@ -1252,6 +1254,56 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Fila ──────────────────────────────────────────────────
+  // ── Faxina de sessoes vencidas ────────────────────────────
+  // Sessao encerrada nunca era removida: elas se acumulavam no Firestore e
+  // apareciam para sempre na lista de sessoes ativas do cantor. Agora, passado
+  // o horario de termino declarado pelo KJ, a sessao e apagada com suas
+  // subcolecoes.
+  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas'];
+  const HORAS_LIMITE_SEM_TERMINO = 24; // sessoes antigas, criadas antes do campo existir
+
+  async function apagarSessao(ref) {
+    for (const sub of SUBCOLECOES_SESSAO) {
+      const snap = await ref.collection(sub).get().catch(() => null);
+      if (!snap) continue;
+      await Promise.all(snap.docs.map(d => d.ref.delete().catch(() => {})));
+    }
+    await ref.delete();
+  }
+
+  async function limparSessoesVencidas() {
+    const agora = Date.now();
+    try {
+      const snap = await db.collection('sessoes').get();
+      let apagadas = 0;
+
+      for (const doc of snap.docs) {
+        if (doc.id === SESSAO_ID) continue; // nunca a sessao em uso
+        const d = doc.data() || {};
+
+        const termino = d.horarioTermino && d.horarioTermino.toDate
+          ? d.horarioTermino.toDate().getTime() : null;
+
+        let vencida;
+        if (termino) {
+          vencida = termino < agora;
+        } else {
+          // Sem termino declarado, usa a criacao como referencia.
+          const criada = d.iniciadaEm && d.iniciadaEm.toDate ? d.iniciadaEm.toDate().getTime() : null;
+          vencida = criada ? (agora - criada) > HORAS_LIMITE_SEM_TERMINO * 3600e3 : false;
+        }
+        if (!vencida) continue;
+
+        await apagarSessao(doc.ref);
+        apagadas++;
+      }
+
+      if (apagadas) console.log(`[FAXINA] ${apagadas} sessao(oes) vencida(s) removida(s)`);
+    } catch (e) {
+      console.warn('[FAXINA] falhou:', e.message);
+    }
+  }
+
   // ── Ponte de busca no YouTube ─────────────────────────────
   // O app do cantor roda em HTTPS e nao pode falar com o host, que e http na
   // rede local — o navegador proibe. Em vez de o celular chamar o Voxly, ele
