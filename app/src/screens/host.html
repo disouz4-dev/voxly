@@ -926,6 +926,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <div class="toast" id="toast"></div>
 
 <script src="../fila.js"></script>
+<script src="../prioridade.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
@@ -3880,8 +3881,13 @@ https://www.youtube.com/@canal/videos"></textarea>
     const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
 
     const cantor    = presencasData.find(p => (p.id || p.uid) === uid);
-    const filaLonga = filaData.filter(d => d.status === 'aguardando').length * 4 > (regras.prioridadeMinutos || 40);
-    const tipo      = (regras.prioridadeAtiva && cantor && !cantor.primeiraMusicaCantada && filaLonga) ? 'prioridade' : 'normal';
+    // Regra unica, compartilhada com o app do cantor: as duas contas eram
+    // diferentes e nenhuma descontava o slot de espera.
+    const tipo = VoxlyPrioridade.ehPrioridade({
+      regras,
+      jaCantou: !!(cantor && cantor.primeiraMusicaCantada),
+      fila: filaData,
+    }) ? 'prioridade' : 'normal';
 
     const item = {
       cantorUid: uid, nomeArtistico: nome,

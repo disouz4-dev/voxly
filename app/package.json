@@ -14,7 +14,9 @@
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
     "test": "node --test test/*.test.js",
-    "lint": "node --check src/main.js && node --check src/preload.js"
+    "lint": "node --check src/main.js && node --check src/preload.js",
+    "fumaca": "node test/fumaca.mjs",
+    "sincronizar-regras": "cp src/prioridade.js ../web/public/prioridade.js"
   },
   "dependencies": {
     "chokidar": "^3.5.3",

@@ -36,10 +36,14 @@ const CONHECIDAS = [
 // versao de meses atras. Mantem o texto original junto: o KJ pode precisar dele.
 const RE_YTDLP_VELHO = /HTTP Error 40[34]|nsig extraction failed|player response|signature extraction/i;
 
+// Nao mande "yt-dlp -U": ele se recusa a atualizar instalacao vinda de
+// gerenciador de pacotes, que e justamente o caso do .deb. E "pip install"
+// esbarra em externally-managed-environment nas distros recentes. O caminho
+// que funciona e o proprio Voxly, que mantem a copia dele.
 const COMO_ATUALIZAR =
-  "Provavelmente o yt-dlp desta máquina está desatualizado — o YouTube muda e a " +
-  "versão da distro fica para trás. Atualize com: sudo yt-dlp -U   (ou, se veio do " +
-  "apt: sudo apt remove yt-dlp && sudo pip install -U yt-dlp)";
+  "Provavelmente o yt-dlp desta máquina está desatualizado — o YouTube muda e " +
+  "versões antigas param de funcionar. Abra ⚙ Config e clique em " +
+  "\"Atualizar agora\" no Motor de download.";
 
 function motivoFalha(codigoSaida, stderr) {
   if (codigoSaida === 0) return null;

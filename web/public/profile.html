@@ -391,6 +391,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
   <script src="/offline-client.js"></script>
   <script src="/sessao-regras.js"></script>
+  <script src="/prioridade.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -1024,8 +1025,13 @@ function escutarFila() {
         const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').where('status','==','aguardando').get();
         ordemFila = filaSnap.size + 1;
         const presSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(currentUser.uid).get();
-        const filaLonga = filaSnap.size * 4 > (sessaoRegras.prioridadeMinutos ?? 40);
-        tipo = (sessaoRegras.prioridadeAtiva && presSnap.exists && !presSnap.data().primeiraMusicaCantada && filaLonga) ? 'prioridade' : 'normal';
+        // Mesma regra da Gerencia, do mesmo arquivo. A conta daqui contava as
+        // musicas em espera como tempo de fila e promovia gente a toa.
+        tipo = VoxlyPrioridade.ehPrioridade({
+          regras: sessaoRegras,
+          jaCantou: !!(presSnap.exists && presSnap.data().primeiraMusicaCantada),
+          fila: filaSnap.docs.map(d => d.data()),
+        }) ? 'prioridade' : 'normal';
       }
 
       const filaRef = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').add({

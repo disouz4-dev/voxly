@@ -621,12 +621,6 @@ if (!instanciaUnica) {
 let bloqueioSuspensao = null;
 
 app.whenReady().then(() => {
-  // Em segundo plano: sem rede ou com o GitHub fora do ar, o yt-dlp que ja
-  // existe continua valendo e o app sobe igual.
-  garantirYtDlpAtual().then(r => {
-    if (r.atualizou) console.log(`[YTDLP] ${r.anterior || "ausente"} -> ${r.versao}`);
-  }).catch(() => {});
-
   try {
     bloqueioSuspensao = powerSaveBlocker.start("prevent-app-suspension");
     console.log("[MAIN] Suspensao em segundo plano desativada:", bloqueioSuspensao);
@@ -648,6 +642,15 @@ app.whenReady().then(() => {
   });
   servidorLocal.iniciar();
   configurarAutoUpdate();
+
+  // DEPOIS das janelas, e sem esperar: o binario independente leva ~20s na
+  // primeira execucao, e essa espera antes da criacao das janelas deixava o
+  // app com a tela preta. Sem rede, o yt-dlp que ja existe continua valendo.
+  setTimeout(() => {
+    garantirYtDlpAtual()
+      .then(r => { if (r.atualizou) console.log(`[YTDLP] ${r.anterior || "ausente"} -> ${r.versao}`); })
+      .catch(() => {});
+  }, 3000);
 });
 
 function abrirHost() {
@@ -1166,15 +1169,24 @@ function caminhoYtDlpProprio() {
 // vindo quebrado e apagava um arquivo perfeitamente bom. Depois da primeira
 // vez responde na hora, entao o valor fica em cache.
 const _versaoYtDlp = new Map();
+const execFile = require("util").promisify(require("child_process").execFile);
 
-function versaoDoYtDlp(caminho, { timeout = 90000 } = {}) {
+// ASSINCRONA de proposito. Com execFileSync o processo principal — e portanto
+// TODA a interface e todo o IPC — congelava ate 90s: o app abria com a tela
+// preta enquanto o bundle se extraia.
+async function versaoDoYtDlp(caminho, { timeout = 90000 } = {}) {
   if (_versaoYtDlp.has(caminho)) return _versaoYtDlp.get(caminho);
   try {
-    const v = require("child_process")
-      .execFileSync(caminho, ["--version"], { timeout }).toString().trim();
+    const { stdout } = await execFile(caminho, ["--version"], { timeout });
+    const v = stdout.toString().trim();
     _versaoYtDlp.set(caminho, v);
     return v;
-  } catch { return null; }
+  } catch {
+    // Guarda a falha tambem: sem isto um binario travado custava 90s a CADA
+    // download.
+    _versaoYtDlp.set(caminho, null);
+    return null;
+  }
 }
 
 // Qual a ultima versao publicada. Uma consulta pequena, guardada por algumas
@@ -1211,51 +1223,70 @@ async function baixarYtDlp() {
 
   const destino = caminhoYtDlpProprio();
   fs.mkdirSync(path.dirname(destino), { recursive: true });
-  const temporario = destino + ".novo";
+  // Sufixo unico: dois downloads simultaneos escreviam no MESMO arquivo, e o
+  // que renomeasse primeiro deixava o outro escrevendo por cima do binario ja
+  // em uso.
+  const temporario = `${destino}.${process.pid}.${Date.now()}.parcial`;
 
-  const curl = resolverBinario("curl") || "/usr/bin/curl";
-  const r = await rodar(curl, ["-fsSL", "--max-time", "300", "-o", temporario, url]);
-  if (!r.ok) throw new Error(`Falha ao baixar o yt-dlp: ${(r.saida || "").trim().slice(0, 120)}`);
+  try {
+    const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(300000) });
+    if (!res.ok) throw new Error(`GitHub respondeu ${res.status}`);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    // Truncado nao serve: o binario passa de 30 MB.
+    if (bytes.length < 1024 * 1024) throw new Error(`download incompleto (${bytes.length} bytes)`);
+    fs.writeFileSync(temporario, bytes);
+    fs.chmodSync(temporario, 0o755);
 
-  fs.chmodSync(temporario, 0o755);
-  const versao = versaoDoYtDlp(temporario);
-  if (!versao) {
-    // Nao troca o que funciona por um arquivo que nem responde --version.
+    const versao = await versaoDoYtDlp(temporario);
+    if (!versao) throw new Error("o yt-dlp baixado nao executou nesta maquina");
+
+    _versaoYtDlp.delete(destino);
+    fs.renameSync(temporario, destino);
+    _versaoYtDlp.set(destino, versao);
+    console.log(`[YTDLP] atualizado para ${versao}`);
+    return versao;
+  } catch (e) {
+    // Parcial na pasta so atrapalha a proxima tentativa.
     try { fs.unlinkSync(temporario); } catch (_) {}
-    throw new Error("O yt-dlp baixado nao executou nesta maquina");
+    throw new Error(`Falha ao baixar o yt-dlp: ${e.message}`);
+  } finally {
+    _versaoYtDlp.delete(temporario);
   }
-  _versaoYtDlp.delete(temporario);
-  _versaoYtDlp.delete(destino);
-  fs.renameSync(temporario, destino);
-  _versaoYtDlp.set(destino, versao);
-  console.log(`[YTDLP] atualizado para ${versao}`);
-  return versao;
 }
 
 // Roda na abertura. Nunca derruba o app: sem rede, o yt-dlp que existe segue
 // valendo.
-async function garantirYtDlpAtual({ forcar } = {}) {
-  const atual = resolverBinario("yt-dlp");
-  const versao = atual ? versaoDoYtDlp(atual) : null;
-  const publicada = await ultimaVersaoPublicada();
+// Uma atualizacao por vez. O botao de Ajustes e a checagem da abertura podiam
+// rodar juntos e disputar o mesmo arquivo.
+let _atualizacaoEmCurso = null;
 
-  if (!forcar && !ytdlp.precisaAtualizar(versao, publicada)) {
-    return { atualizou: false, versao, publicada };
-  }
-  try {
-    const nova = await baixarYtDlp();
-    return { atualizou: true, versao: nova, anterior: versao };
-  } catch (e) {
-    console.warn("[YTDLP] nao consegui atualizar:", e.message);
-    return { atualizou: false, versao, erro: e.message };
-  }
+async function garantirYtDlpAtual({ forcar } = {}) {
+  if (_atualizacaoEmCurso) return _atualizacaoEmCurso;
+
+  _atualizacaoEmCurso = (async () => {
+    const atual = resolverBinario("yt-dlp");
+    const versao = atual ? await versaoDoYtDlp(atual) : null;
+    const publicada = await ultimaVersaoPublicada();
+
+    if (!forcar && !ytdlp.precisaAtualizar(versao, publicada)) {
+      return { atualizou: false, versao, publicada };
+    }
+    try {
+      const nova = await baixarYtDlp();
+      return { atualizou: true, versao: nova, anterior: versao };
+    } catch (e) {
+      console.warn("[YTDLP] nao consegui atualizar:", e.message);
+      return { atualizou: false, versao, erro: e.message };
+    }
+  })().finally(() => { _atualizacaoEmCurso = null; });
+
+  return _atualizacaoEmCurso;
 }
 
-function versaoDoFfmpeg(caminho) {
+async function versaoDoFfmpeg(caminho) {
   try {
-    const saida = require("child_process")
-      .execFileSync(caminho, ["-version"], { timeout: 8000 }).toString();
-    const m = saida.match(/ffmpeg version (\S+)/i);
+    const { stdout } = await execFile(caminho, ["-version"], { timeout: 8000 });
+    const m = stdout.toString().match(/ffmpeg version (\S+)/i);
     return m ? m[1] : "instalado";
   } catch { return null; }
 }
@@ -1264,7 +1295,7 @@ function versaoDoFfmpeg(caminho) {
 // muito: quem quebra o download e o yt-dlp velho, nao a versao do Voxly.
 ipcMain.handle("ytdlp-estado", async () => {
   const caminho = resolverBinario("yt-dlp");
-  const versao = caminho ? versaoDoYtDlp(caminho) : null;
+  const versao = caminho ? await versaoDoYtDlp(caminho) : null;
   const publicada = await ultimaVersaoPublicada();
 
   const ffmpeg = resolverBinario("ffmpeg");
@@ -1275,7 +1306,7 @@ ipcMain.handle("ytdlp-estado", async () => {
     proprio: caminho === caminhoYtDlpProprio(),
     idadeDias: ytdlp.idadeEmDias(versao),
     precisaAtualizar: ytdlp.precisaAtualizar(versao, publicada),
-    ffmpeg: ffmpeg ? { caminho: ffmpeg, versao: versaoDoFfmpeg(ffmpeg) } : null,
+    ffmpeg: ffmpeg ? { caminho: ffmpeg, versao: await versaoDoFfmpeg(ffmpeg) } : null,
   };
 });
 
@@ -1416,7 +1447,7 @@ async function baixarUrl(opts) {
   // A versao do yt-dlp e o dado que mais explica falha de download: o YouTube
   // muda e a versao empacotada pela distro fica meses atras. Fica no log para
   // essa duvida nao precisar ser levantada de novo.
-  const versaoYt = versaoDoYtDlp(ytDlp);
+  const versaoYt = await versaoDoYtDlp(ytDlp);
   if (versaoYt) enviarProgresso({ log: `yt-dlp ${versaoYt}`, logTipo: 'info' });
 
   ytCancelado = false;
