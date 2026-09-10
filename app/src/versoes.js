@@ -45,20 +45,52 @@ function mesmoArtista(a, b) {
   return comuns / menor.length >= 0.7;
 }
 
+// Ruido que o titulo do YouTube carrega e que nao faz parte do nome da musica.
+const RE_RUIDO_MUSICA = /\s*[\[(](?:[^\])]*(?:karaoke|karaoke|playback|instrumental|official|video|lyrics?|hd|4k|remaster)[^\])]*)[\])]/gi;
+
+// Pedidos antigos foram gravados com o titulo inteiro do YouTube na musica e o
+// canal no artista ("Satellites - JustusVidyo" / "Periphery"). Escolher "o
+// pedaco maior" nao resolve: em "Satellites - JustusVidyo" o canal e mais
+// longo que a musica. Comparamos TODOS os pedacos dos dois lados — se algum
+// casar, e a mesma musica.
+function pedacos(txt) {
+  const limpo = String(txt || "").replace(RE_RUIDO_MUSICA, " ");
+  const partes = limpo.split(/\s+-\s+/).map(x => normalizar(x)).filter(Boolean);
+  const inteiro = normalizar(limpo);
+  return [...new Set([inteiro, ...partes])].filter(x => x.length > 2);
+}
+
+function casaPedaco(a, b) {
+  if (a === b) return true;
+  const pa = a.split(" ").filter(x => x.length > 2);
+  const pb = new Set(b.split(" ").filter(x => x.length > 2));
+  if (!pa.length || !pb.size) return false;
+  const comuns = pa.filter(x => pb.has(x)).length;
+  return comuns === Math.min(pa.length, pb.size);
+}
+
+function mesmaMusica(a, b) {
+  const pa = pedacos(a), pb = pedacos(b);
+  return pa.some(x => pb.some(y => casaPedaco(x, y)));
+}
+
 function versoesLocais(arquivos, pedido) {
   if (!Array.isArray(arquivos) || !pedido) return [];
   const musica  = normalizar(pedido.musica);
   const artista = normalizar(pedido.artista);
   if (!musica) return [];
 
-  return arquivos
-    .map(decompor)
-    .filter(v => {
-      if (normalizar(v.musica) !== musica) return false;
-      // Artista "Desconhecido" ou ausente nao deve excluir a versao.
-      if (!artista || artista === "desconhecido") return true;
-      return mesmoArtista(v.artista, pedido.artista);
-    });
+  const porMusica = arquivos.map(decompor).filter(v => mesmaMusica(v.musica, pedido.musica));
+  if (porMusica.length <= 1) return porMusica;
+
+  // O artista serve para DESEMPATAR, nao para barrar. Nos pedidos antigos ele
+  // pode ser o canal ("_luizgnz"), e usar isso como filtro descartava a musica
+  // certa. Com varias versoes, o artista escolhe entre elas; se nenhuma casar,
+  // devolve todas e o KJ decide.
+  if (!artista || artista === "desconhecido") return porMusica;
+  const doArtista = porMusica.filter(v =>
+    mesmoArtista(v.artista, pedido.artista) || mesmoArtista(v.canal, pedido.artista));
+  return doArtista.length ? doArtista : porMusica;
 }
 
-module.exports = { versoesLocais, decompor, normalizar, mesmoArtista };
+module.exports = { versoesLocais, decompor, normalizar, mesmoArtista, mesmaMusica, pedacos };
