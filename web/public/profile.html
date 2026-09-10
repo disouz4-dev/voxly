@@ -510,7 +510,11 @@
       const sessaoSalva = localStorage.getItem('voxly_sessao_id');
       if (sessaoSalva) {
         const snap = await db.collection('sessoes').doc(sessaoSalva).get();
-        if (snap.exists && snap.data().status === 'ativa') {
+        // Alem de existir e estar ativa, precisa estar dentro do horario: uma
+        // sessao esquecida aberta nao pode capturar o cantor de novo.
+        const fim = snap.exists ? emMs(snap.data().horarioTermino) : null;
+        const noHorario = !fim || fim > Date.now();
+        if (snap.exists && snap.data().status === 'ativa' && noHorario) {
           SESSAO_ID   = sessaoSalva;
           sessaoAtiva = true;
           return true;
@@ -1209,9 +1213,34 @@ function escutarFila() {
       esconderConfirmacao();
     }
 
+    // Desconecta e devolve o cantor para a lista de sessoes.
+    function sairDaSessaoEncerrada() {
+      try {
+        localStorage.removeItem('voxly_sessao_id');
+        localStorage.removeItem('voxly_sessao_cod');
+      } catch (_) {}
+      SESSAO_ID = null;
+      sessaoAtiva = false;
+      clearInterval(showContagemWebTimer);
+
+      const conteudo = document.getElementById('sessao-conteudo');
+      if (conteudo) conteudo.style.display = 'none';
+      const entrada = document.getElementById('sessao-entrada');
+      if (entrada) entrada.style.display = '';
+
+      mostrarToast('A sessão foi encerrada pelo KJ', 4000);
+      if (typeof listarSessoesAtivas === 'function') listarSessoesAtivas();
+    }
+
     function escutarSessao() {
       db.collection('sessoes').doc(SESSAO_ID).onSnapshot(snap => {
-        if (!snap.exists) return;
+        // Sessao apagada ou encerrada pelo KJ: o cantor tem que sair. Antes o
+        // codigo dava "return" e ele ficava preso numa sessao que nao existe
+        // mais — e voltava para ela ao reabrir o app, pelo id salvo no celular.
+        if (!snap.exists || snap.data().status !== 'ativa') {
+          sairDaSessaoEncerrada();
+          return;
+        }
         const data = snap.data();
         const novaFilaAberta = data.filaAberta !== false;
         if (novaFilaAberta !== filaAberta) {

@@ -803,6 +803,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       Estes dados aparecem para os cantores na lista de sessões ativas do app.
     </p>
 
+    <div id="avisoSessaoUnica" style="display:none;margin:12px 0 4px;padding:11px 13px;border:1px solid var(--perigo);border-left-width:3px;border-radius:9px;background:rgba(255,107,107,.07);">
+      <div style="font-size:.8rem;font-weight:700;color:var(--perigo);margin-bottom:5px;">⚠️ Isto encerra a sessão atual</div>
+      <div id="avisoSessaoUnicaTexto" style="font-size:.75rem;color:var(--texto);line-height:1.6;"></div>
+    </div>
+
     <label class="modal-label">Nome da casa</label>
     <input class="modal-input" type="text" id="sessaoNomeCasa" placeholder="Ex: Bar do Zé" maxlength="60">
 
@@ -1169,6 +1174,56 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('sessaoErro').style.display    = 'none';
     document.getElementById('modalSessao').classList.add('open');
     document.getElementById('sessaoNomeCasa').focus();
+    mostrarAvisoSessaoUnica();
+  }
+
+  // O Voxly opera uma sessao por vez. Abrir uma nova apaga a anterior com tudo
+  // dentro — e o KJ precisa saber disso ANTES de confirmar, nao depois.
+  async function mostrarAvisoSessaoUnica() {
+    const box = document.getElementById('avisoSessaoUnica');
+    const txt = document.getElementById('avisoSessaoUnicaTexto');
+    if (!box) return;
+    box.style.display = 'none';
+
+    try {
+      const snap = await db.collection('sessoes').get();
+      if (snap.empty) return;
+
+      let cantores = 0, musicas = 0;
+      for (const doc of snap.docs) {
+        const [pres, fila] = await Promise.all([
+          doc.ref.collection('presencas').get().catch(() => ({ size: 0 })),
+          doc.ref.collection('fila').get().catch(() => ({ size: 0 })),
+        ]);
+        cantores += pres.size || 0;
+        musicas  += fila.size || 0;
+      }
+
+      txt.innerHTML =
+        `Existe(m) <strong>${snap.size}</strong> sessão(ões) aberta(s), com ` +
+        `<strong>${cantores}</strong> cantor(es) e <strong>${musicas}</strong> música(s) na fila.<br>` +
+        `Ao iniciar uma nova, tudo isso é apagado e os cantores são desconectados. ` +
+        `Os arquivos já baixados na pasta <strong>não</strong> são afetados.`;
+      box.style.display = 'block';
+    } catch (e) {
+      console.warn('[SESSAO] nao consegui contar o que sera perdido:', e.message);
+    }
+  }
+
+  // Expurga tudo antes de abrir a nova: e isso que impede o cantor de continuar
+  // preso numa sessao antiga que ficou marcada como ativa.
+  async function expurgarSessoesAnteriores() {
+    try {
+      const snap = await db.collection('sessoes').get();
+      for (const doc of snap.docs) {
+        // Avisa quem estava dentro antes de apagar, para o app do cantor sair.
+        await doc.ref.update({ status: 'encerrada', encerradaEm: Date.now() }).catch(() => {});
+        await apagarSessao(doc.ref);
+      }
+      if (snap.size) console.log(`[SESSAO] ${snap.size} sessao(oes) anterior(es) expurgada(s)`);
+    } catch (e) {
+      console.warn('[SESSAO] falha ao expurgar:', e.message);
+    }
   }
 
   function fecharModalSessao() {
@@ -1192,6 +1247,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function iniciarSessao(dados) {
+    await expurgarSessoesAnteriores();
     const codigo   = gerarCodigo();
     const sessaoId = `${new Date().toISOString().slice(0,10)}-${codigo}`;
 
