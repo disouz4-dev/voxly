@@ -772,6 +772,20 @@ https://www.youtube.com/@canal/videos"></textarea>
   </div>
 </div>
 
+<div class="modal-overlay" id="modalCandidatos">
+  <div class="modal-box" style="width:min(560px,94vw);">
+    <h2>🎬 Escolher versão</h2>
+    <p id="candidatosTitulo" style="font-size:.85rem;color:var(--ambar);margin:8px 0 4px;"></p>
+    <p style="font-size:.75rem;color:var(--mudo);margin-bottom:12px;">
+      Versões de karaokê encontradas no YouTube, filtradas e ordenadas. Clique para baixar.
+    </p>
+    <div id="candidatosLista" style="max-height:320px;overflow-y:auto;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModalCandidatos()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalSessao">
   <div class="modal-box">
     <h2>▶ Iniciar Sessão</h2>
@@ -958,6 +972,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   document.addEventListener('DOMContentLoaded', async () => {
     atualizarQrHost();
     limparSessoesVencidas();
+    publicarCatalogo();
     setInterval(limparSessoesVencidas, 3600e3);
 
     // appUrlLocal era declarada e nunca recebia valor, entao
@@ -1254,6 +1269,94 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Fila ──────────────────────────────────────────────────
+  // Download do candidato que o KJ escolheu para um item da fila.
+  async function baixarEscolhido(itemId, indice) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item || !item.candidatos || !item.candidatos[indice]) return;
+    const c = item.candidatos[indice];
+    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
+
+    fecharModalCandidatos();
+    await ref.update({ statusDownload: 'baixando', videoId: c.id, videoUrl: c.url }).catch(() => {});
+    mostrarToast(`⬇ Baixando "${c.titulo.slice(0, 40)}"...`);
+
+    try {
+      const r = await window.electronAPI.ytDownload({
+        urls: [c.url], pasta: pastaMusicasAtual || undefined,
+        qualidade: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+        renomear: true, organizar: false, cookies: false, navegador: null, playlist: false,
+      });
+      const ok = r && r.sucesso;
+      await ref.update({ disponivel: !!ok, statusDownload: ok ? 'pronto' : 'erro' }).catch(() => {});
+      mostrarToast(ok ? `✅ "${item.musica}" pronta` : `❌ Falha ao baixar`);
+    } catch (e) {
+      await ref.update({ statusDownload: 'erro' }).catch(() => {});
+      mostrarToast(`❌ ${e.message}`);
+    }
+  }
+
+  function abrirModalCandidatos(itemId) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item || !item.candidatos || !item.candidatos.length) {
+      mostrarToast('Nenhuma versão encontrada para esta música');
+      return;
+    }
+    document.getElementById('candidatosTitulo').textContent = `${item.artista} — ${item.musica}`;
+    document.getElementById('candidatosLista').innerHTML = item.candidatos.map((c, i) => {
+      const mm = Math.floor(c.duracao / 60) + ':' + String(c.duracao % 60).padStart(2, '0');
+      return `<div class="modal-result-item" onclick="baixarEscolhido('${itemId}', ${i})">
+        <div style="font-weight:600;margin-bottom:2px;">${escaparHtml(c.titulo)}</div>
+        <div style="font-size:.7rem;color:var(--mudo);">${escaparHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views</div>
+      </div>`;
+    }).join('');
+    document.getElementById('modalCandidatos').classList.add('open');
+  }
+
+  function fecharModalCandidatos() {
+    document.getElementById('modalCandidatos').classList.remove('open');
+  }
+
+  // ── Catalogo publicado ────────────────────────────────────
+  // O cantor precisa saber o que pode pedir sem falar com o host: pelo link
+  // publicado (https) o navegador nao alcanca a rede local. Publicamos so o
+  // texto — artista e musica — enquanto os arquivos seguem no disco do KJ.
+  const LIMITE_CATALOGO = 5000; // documento do Firestore tem teto de 1 MB
+
+  async function publicarCatalogo() {
+    if (!window.electronAPI) return;
+    try {
+      const resp = await fetch('http://127.0.0.1:7432/catalogo');
+      if (!resp.ok) return;
+      const songs = await resp.json();
+
+      // Deduplica: o mesmo par artista+musica pode existir em varios arquivos.
+      const vistos = new Set();
+      const itens = [];
+      for (const s of songs) {
+        const artista = (s.artista || '').trim();
+        const musica  = (s.musica  || '').trim();
+        if (!musica) continue;
+        const chave = (artista + '|' + musica).toLowerCase();
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
+        itens.push({ artista: artista || 'Desconhecido', musica });
+        if (itens.length >= LIMITE_CATALOGO) break;
+      }
+
+      itens.sort((a, b) => a.artista.localeCompare(b.artista, 'pt-BR') ||
+                           a.musica.localeCompare(b.musica, 'pt-BR'));
+
+      await db.collection('catalogo').doc('musicas').set({
+        itens,
+        total: itens.length,
+        atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log(`[CATALOGO] publicado: ${itens.length} musicas`);
+    } catch (e) {
+      console.warn('[CATALOGO] falha ao publicar:', e.message);
+    }
+  }
+
   // ── Faxina de sessoes vencidas ────────────────────────────
   // Sessao encerrada nunca era removida: elas se acumulavam no Firestore e
   // apareciam para sempre na lista de sessoes ativas do cantor. Agora, passado
@@ -1353,12 +1456,39 @@ https://www.youtube.com/@canal/videos"></textarea>
   let pastaMusicasAtual = null;
 
   async function garantirArquivoDaFila(item) {
-    if (!item.videoId || !item.videoUrl) return;
-    if (_baixando.has(item.videoId)) return;
     if (item.disponivel) return;
+    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id);
+
+    // Pedido veio do catalogo (sem videoId): confere se o arquivo existe na
+    // pasta e, se nao existir, levanta os candidatos para o KJ escolher. Quem
+    // decide o que baixar e ele, nao o automatico.
+    if (!item.videoId) {
+      if (item.statusDownload === 'escolher' || item.statusDownload === 'baixando') return;
+      if (_baixando.has(item.id)) return;
+      _baixando.add(item.id);
+      try {
+        const arquivo = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
+        if (arquivo) { await ref.update({ disponivel: true }).catch(() => {}); return; }
+
+        const termo = [item.artista, item.musica].filter(t => t && t !== 'Desconhecido').join(' ');
+        const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(termo)}`);
+        const { candidatos } = await resp.json();
+        await ref.update({
+          statusDownload: 'escolher',
+          candidatos: (candidatos || []).slice(0, 6),
+        }).catch(() => {});
+        mostrarToast(`🎬 "${item.musica}" precisa de download — escolha a versão`);
+      } catch (e) {
+        await ref.update({ statusDownload: 'erro', erro: e.message }).catch(() => {});
+      } finally {
+        _baixando.delete(item.id);
+      }
+      return;
+    }
+
+    if (_baixando.has(item.videoId)) return;
 
     const local = await window.electronAPI.localizarVideo(item.videoId);
-    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id);
 
     if (local) {
       await ref.update({ disponivel: true }).catch(() => {});
@@ -3002,6 +3132,9 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // ── Electron listeners ────────────────────────────────────
   if (window.electronAPI) {
+    // Pasta mudou (musica nova baixada, arquivo removido): republica o menu.
+    window.electronAPI.onMusicFolderChanged(() => publicarCatalogo());
+
     let processandoFim = false;
     window.electronAPI.onSongEnded(async () => {
       if (processandoFim) return;

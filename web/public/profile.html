@@ -814,10 +814,29 @@ function escutarFila() {
     }
 
     let _catalogoLocalCache = null;
+
+    // Catalogo publicado pelo host no Firestore: e o que permite buscar e
+    // autocompletar pelo link https, sem depender de alcancar a rede local.
+    async function catalogoPublicado() {
+      try {
+        const doc = await db.collection('catalogo').doc('musicas').get();
+        return doc.exists ? (doc.data().itens || []) : [];
+      } catch (e) {
+        console.warn('[CATALOGO] publicado indisponivel:', e.message);
+        return [];
+      }
+    }
+
     async function garantirCatalogo() {
       if (_catalogoLocalCache) return _catalogoLocalCache;
       const url = urlCatalogoLocal();
-      if (!url) { _catalogoIndisponivel = 'https'; return null; }
+      if (!url) {
+        // Pelo link publicado nao ha rede local alcancavel: usa o catalogo que
+        // o host mantem no Firestore.
+        _catalogoLocalCache = await catalogoPublicado();
+        _catalogoIndisponivel = _catalogoLocalCache.length ? null : 'vazio';
+        return _catalogoLocalCache;
+      }
       try {
         const resp = await fetch(url);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
