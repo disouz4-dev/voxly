@@ -390,6 +390,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
   <script src="/offline-client.js"></script>
+  <script src="/sessao-regras.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -470,6 +471,7 @@
     let SESSAO_ID    = null;
     let sessaoAtiva  = false;
     let sessaoRegras = { permitirDuo: true, maxParticipacoesDuo: 1, prioridadeAtiva: true, prioridadeMinutos: 40 };
+    let sessaoTermino = null;   // horario que o KJ marcou para acabar
     let showHorarioWeb       = null;
     let showContagemWebTimer = null;
     let presencasSessao = []; // cantores ativos na sessão (para o seletor de duo)
@@ -512,8 +514,8 @@
         const snap = await db.collection('sessoes').doc(sessaoSalva).get();
         // Alem de existir e estar ativa, precisa estar dentro do horario: uma
         // sessao esquecida aberta nao pode capturar o cantor de novo.
-        const fim = snap.exists ? emMs(snap.data().horarioTermino) : null;
-        const noHorario = !fim || fim > Date.now();
+        const noHorario = !snap.exists
+          || VoxlySessao.podePedirMusica(snap.data().horarioTermino, Date.now());
         if (snap.exists && snap.data().status === 'ativa' && noHorario) {
           SESSAO_ID   = sessaoSalva;
           sessaoAtiva = true;
@@ -995,6 +997,10 @@ function escutarFila() {
     async function confirmarPedido() {
       const errEl = document.getElementById('modalError');
       if (!musicaSelecionada) { errEl.textContent = 'Selecione uma música.'; return; }
+      if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
+        errEl.textContent = 'A sessão desta casa já encerrou — não dá mais para colocar música.';
+        return;
+      }
       // Bloqueia ocupação de slot somente quando não é troca
       if (!itemTrocando) {
         if (slotAtivo === 'ativa'  && filhaAtiva)  { errEl.textContent = 'Você já tem uma música na fila principal.'; return; }
@@ -1328,7 +1334,10 @@ function escutarFila() {
       // Carrega regras e presencas da sessão
       try {
         const sessaoDoc = await db.collection('sessoes').doc(SESSAO_ID).get();
-        if (sessaoDoc.exists) sessaoRegras = { ...sessaoRegras, ...(sessaoDoc.data().regras || {}) };
+        if (sessaoDoc.exists) {
+          sessaoRegras  = { ...sessaoRegras, ...(sessaoDoc.data().regras || {}) };
+          sessaoTermino = sessaoDoc.data().horarioTermino || null;
+        }
       } catch(e) {}
       await registrarPresenca();
       escutarSessao();
@@ -1367,10 +1376,8 @@ function escutarFila() {
 
         // Filtro de horario no cliente para nao exigir indice composto — e para
         // que uma sessao esquecida aberta pelo KJ pare de aparecer no fim dela.
-        const ativas = snap.docs.filter(doc => {
-          const fim = emMs(doc.data().horarioTermino);
-          return !fim || fim > agora;
-        });
+        const ativas = snap.docs.filter(doc =>
+          VoxlySessao.podePedirMusica(doc.data().horarioTermino, agora));
 
         if (!ativas.length) {
           avisarSessoes('Nenhuma casa com sessão aberta agora.');

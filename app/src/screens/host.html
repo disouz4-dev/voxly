@@ -916,6 +916,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
 <div class="toast" id="toast"></div>
 
+<script src="../fila.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -1432,6 +1433,18 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  async function vincularArquivo(itemId) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item || !window.electronAPI) return;
+    const caminho = await window.electronAPI.linkMusicFile(itemId);
+    if (!caminho) return;
+    const nome = caminho.split(/[/\\]/).pop();
+    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
+      .update({ disponivel: true, statusDownload: null, candidatos: [] }).catch(() => {});
+    if (currentSong && currentSong.id === itemId) currentSong = { ...currentSong, filePath: caminho };
+    mostrarToast(`📎 "${item.musica}" vinculada a ${nome}`);
+  }
+
   // Levanta as versoes do YouTube sob demanda, quando o KJ pede.
   function logDownload(msg) { console.log('[BUSCA]', msg); }
 
@@ -1648,6 +1661,10 @@ https://www.youtube.com/@canal/videos"></textarea>
   // subcolecoes.
   const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas'];
   const HORAS_LIMITE_SEM_TERMINO = 24; // sessoes antigas, criadas antes do campo existir
+  // Mesma tolerancia de web/public/sessao-regras.js, onde ela e testada. A
+  // sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila mesmo
+  // depois do prazo — quem para de pedir e o cantor.
+  const TOLERANCIA_SESSAO_MS = 5 * 60 * 1000;
 
   async function apagarSessao(ref) {
     for (const sub of SUBCOLECOES_SESSAO) {
@@ -1673,7 +1690,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
         let vencida;
         if (termino) {
-          vencida = termino < agora;
+          vencida = (termino + TOLERANCIA_SESSAO_MS) < agora;
         } else {
           // Sem termino declarado, usa a criacao como referencia.
           const criada = d.iniciadaEm && d.iniciadaEm.toDate ? d.iniciadaEm.toDate().getTime() : null;
@@ -1939,6 +1956,9 @@ https://www.youtube.com/@canal/videos"></textarea>
           baixarBtn = `<button class="btn btn-secondary btn-sm" onclick="procurarVersoes('${item.id}')" title="Procurar no YouTube">🔎 Procurar versões</button>`;
         }
       }
+      const vincularBtn = !item.disponivel
+        ? `<button class="btn btn-ghost btn-sm" onclick="vincularArquivo('${item.id}')" title="Apontar um arquivo do disco para esta música">📎 Vincular</button>`
+        : '';
       const trocarBtn = (!isPlaying && !isPronto)
         ? `<button class="btn btn-ghost btn-sm" onclick="trocarMusicaFila('${item.id}')" title="Trocar a música deste cantor">🔄 Trocar</button>`
         : '';
@@ -1970,7 +1990,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
-          <div class="queue-actions">${baixarBtn}${playBtn}${restartBtn}${skipBtn}${trocarBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
+          <div class="queue-actions">${baixarBtn}${vincularBtn}${playBtn}${restartBtn}${skipBtn}${trocarBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
         </div>
         ${badge}
       </div>`;
@@ -2061,7 +2081,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
         }));
       } else {
-        alert(`Arquivo não encontrado: ${item.musica}\nVincule manualmente.`);
+        alert(`Arquivo não encontrado: ${item.musica}\n\nUse "🔎 Procurar versões" para baixar, ou "📎 Vincular" para apontar um arquivo que já está no disco.`);
       }
     }
   }
@@ -3052,15 +3072,15 @@ https://www.youtube.com/@canal/videos"></textarea>
   // nada enquanto ninguem tivesse confirmado. Aqui ele e a decisao do KJ:
   // corta a contagem e poe o proximo da fila para tocar na hora.
   async function playAgora() {
-    if (filaData.some(i => i.status === 'tocando')) { playerCmd('play'); return; }
-
-    const alvo = filaData.find(i => i.status === 'confirmando' || i.status === 'pronto')
-              || filaData.find(i => i.status === 'aguardando' && i.slot !== 'espera');
-    if (!alvo) { mostrarToast('Não há ninguém na fila para tocar'); return; }
+    // currentSong e a unica fonte confiavel de "tem musica no ar": o status
+    // 'tocando' da anterior pode ainda nao ter chegado no Firestore.
+    const d = VoxlyFila.escolherParaTocar(filaData, { temMusicaNoAr: !!currentSong });
+    if (d.acao === 'nada')    { mostrarToast('Não há ninguém na fila para tocar'); return; }
+    if (d.acao === 'retomar') { playerCmd('play'); return; }
 
     clearTimeout(timerConfirmacao);
     proximaConfirmando = null;
-    await tocarMusica(alvo.id);
+    await tocarMusica(d.id);
   }
 
   function ajustarTom(delta) {

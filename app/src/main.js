@@ -775,6 +775,10 @@ ipcMain.handle("resolver-arquivo-item", (_, item) => {
   const pasta = store.get("musicFolder", null);
   if (!pasta || !fs.existsSync(pasta) || !item) return null;
 
+  // Vinculo manual do KJ vale mais que qualquer palpite: ele apontou o arquivo.
+  const links = store.get("musicLinks", {});
+  if (item.id && links[item.id] && fs.existsSync(links[item.id])) return links[item.id];
+
   if (item.arquivoEscolhido) {
     const alvo = path.join(pasta, item.arquivoEscolhido);
     if (fs.existsSync(alvo)) return alvo;
@@ -840,16 +844,6 @@ ipcMain.handle("scan-music-folder", () => {
   return catalogoLocal.length;
 });
 
-ipcMain.handle("list-music-files", () => {
-  const folder = store.get("musicFolder", null);
-  if (!folder || !fs.existsSync(folder)) return [];
-  const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
-  return listarArquivosRecursivo(folder, exts).map(fullPath => ({
-    name:     path.relative(folder, fullPath),
-    fullPath
-  }));
-});
-
 ipcMain.handle("select-music-files", async () => {
   const result = await dialog.showOpenDialog(hostWindow, {
     properties: ["openFile", "multiSelections"],
@@ -904,13 +898,6 @@ ipcMain.handle("link-music-file", async (_, songId) => {
   return null;
 });
 
-ipcMain.handle("get-music-links", () => store.get("musicLinks", {}));
-
-// ── IPC: Player ────────────────────────────────────────────
-// Manda o video SO para a tela do publico, com o tempo atual do Palco. Serve
-// para quando essa tela e ligada no meio de uma musica: "play-video" e enviado
-// uma unica vez, no play, entao quem abre depois nao recebia nada e ficava no
-// aviso de espera. Reenviar "play-song" nao serve: reiniciaria o Palco.
 ipcMain.handle("sincronizar-publico", (_, { filePath, tempo }) => {
   if (!audienceWindow || audienceWindow.isDestroyed() || !filePath) return false;
   audienceWindow.webContents.send("play-video", filePath, tempo || 0);
@@ -929,26 +916,6 @@ ipcMain.on("pedir-estado", () => {
 ipcMain.on("ajustar-tempo-publico", (_e, tempo) => {
   if (!audienceWindow || audienceWindow.isDestroyed()) return;
   audienceWindow.webContents.send("ajustar-tempo", tempo);
-});
-
-ipcMain.handle("play-song", (_, filePath) => {
-  // O video precisa ir para o Palco E para o painel do publico: a plateia
-  // acompanha a letra na tela, sem audio (o painel nasce mudo, o som e so do
-  // Palco). Antes so o Palco recebia, entao a tela do publico ficava parada.
-  const enviarVideo = (janela) => {
-    if (!janela || janela.isDestroyed()) return;
-    if (janela.webContents.isLoading()) {
-      janela.webContents.once("did-finish-load", () => {
-        janela.webContents.send("play-video", filePath);
-      });
-    } else {
-      janela.webContents.send("play-video", filePath);
-    }
-  };
-
-  enviarVideo(playerWindow);
-  enviarVideo(audienceWindow);
-  console.log(`[PLAY] → ${filePath}`);
 });
 
 ipcMain.handle("player-command", (_, cmd) => {
@@ -1562,67 +1529,6 @@ ipcMain.handle("yt-download", async (_, opts) => {
 // O app do cantor roda no navegador e nao alcanca o yt-dlp; quem busca e
 // ranqueia e sempre o host. O renderer so recebe a lista pronta.
 const YT_BUSCA_TIMEOUT_MS = 45000;
-
-ipcMain.handle("yt-buscar", async (_, pedido) => {
-  const ytDlp = resolverBinario("yt-dlp");
-  if (!ytDlp) {
-    return { sucesso: false, erro: 'yt-dlp nao encontrado. Instale com "brew install yt-dlp ffmpeg".' };
-  }
-  if (!pedido || !pedido.musica) {
-    return { sucesso: false, erro: "Informe ao menos o nome da musica." };
-  }
-
-  const consulta = montarConsulta(pedido);
-  const args = [
-    `ytsearch12:${consulta}`,
-    "--dump-json", "--skip-download", "--no-warnings",
-    "--socket-timeout", "15",
-    "--extractor-args", "youtubetab:skip=authcheck",
-  ];
-
-  return await new Promise((resolve) => {
-    const child = spawn(ytDlp, args, { windowsHide: true });
-    let saida = "", erroSaida = "", encerrado = false;
-
-    // Sem isto uma busca travada deixaria a fila do KJ pendurada para sempre.
-    const relogio = setTimeout(() => {
-      encerrado = true;
-      child.kill();
-      resolve({ sucesso: false, erro: "A busca no YouTube demorou demais." });
-    }, YT_BUSCA_TIMEOUT_MS);
-
-    child.stdout.on("data", d => saida += d.toString());
-    child.stderr.on("data", d => erroSaida += d.toString());
-
-    child.on("error", (e) => {
-      clearTimeout(relogio);
-      if (!encerrado) resolve({ sucesso: false, erro: `Falha ao executar o yt-dlp: ${e.message}` });
-    });
-
-    child.on("close", () => {
-      clearTimeout(relogio);
-      if (encerrado) return;
-
-      // Cada linha de --dump-json e um video. Uma linha corrompida nao pode
-      // derrubar a busca inteira, entao o parse e por item.
-      const videos = saida.split("\n").map(l => l.trim()).filter(Boolean).flatMap(l => {
-        try { return [JSON.parse(l)]; } catch { return []; }
-      });
-
-      if (!videos.length) {
-        const ultima = erroSaida.trim().split("\n").pop();
-        resolve({ sucesso: false, erro: ultima || "Nenhum resultado encontrado." });
-        return;
-      }
-
-      const candidatos = ordenarCandidatos(videos, pedido, {
-        canaisPreferidos: store.get("canaisPreferidos", []),
-      });
-      console.log(`[YT] "${consulta}" → ${videos.length} brutos, ${candidatos.length} candidatos`);
-      resolve({ sucesso: true, consulta, candidatos });
-    });
-  });
-});
 
 ipcMain.handle("yt-cancel", () => {
   ytCancelado = true;
