@@ -1655,10 +1655,7 @@ function escutarFila() {
       const bruto = (document.getElementById(_sugCtx.campo)?.value || '').trim();
       if (bruto.length < 2) { fecharSugestoes(); return; }
 
-      // A lista so era preenchida ao abrir a aba Catalogo; indo direto pedir
-      // musica, ficava vazia e nenhuma sugestao aparecia.
       if (!_catalogoSongs.length) _catalogoSongs = (await garantirCatalogo()) || [];
-      if (!_catalogoSongs.length) { fecharSugestoes(); return; }
 
       const termo = normCat(bruto);
       const porPrefixo = [], porTrecho = [];
@@ -1675,14 +1672,31 @@ function escutarFila() {
       }
 
       _sugestoes = porPrefixo.concat(porTrecho).slice(0, 8);
-      _sugAtiva  = -1;
 
+      // Acervo pequeno (ou vazio, quando a pasta ainda nao foi configurada)
+      // deixava o campo sem nenhuma sugestao. O iTunes cobre o resto: responde
+      // direto do navegador e conhece praticamente tudo. Marcamos essas como
+      // "nao esta no acervo" para o cantor saber que vai precisar de download.
+      if (_sugestoes.length < 5) {
+        const externas = await sugerirNoItunes(bruto);
+        const jaTem = new Set(_sugestoes.map(x => (x.artista + '|' + x.musica).toLowerCase()));
+        for (const e of externas) {
+          const chave = (e.artista + '|' + e.musica).toLowerCase();
+          if (jaTem.has(chave)) continue;
+          jaTem.add(chave);
+          _sugestoes.push({ artista: e.artista, musica: e.musica, disponivel: false, externa: true });
+          if (_sugestoes.length >= 8) break;
+        }
+      }
+
+      _sugAtiva = -1;
       if (!_sugestoes.length) { fecharSugestoes(); return; }
 
       box.innerHTML = _sugestoes.map((s, i) =>
         '<div class="cat-sug" data-i="' + i + '">' +
           '<span class="cat-sug-musica">' + realcar(s.musica, bruto) + '</span>' +
-          '<span class="cat-sug-artista">' + escHtml(s.artista) + '</span>' +
+          '<span class="cat-sug-artista">' + escHtml(s.artista) +
+            (s.externa ? ' · ⬇' : '') + '</span>' +
         '</div>').join('');
       box.style.display = 'block';
 
