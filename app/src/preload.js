@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   linkMusicFile:      (songId) => ipcRenderer.invoke("link-music-file", songId),
   getMusicLinks:      () => ipcRenderer.invoke("get-music-links"),
   playSong:           (filePath) => ipcRenderer.invoke("play-song", filePath),
+  sincronizarPublico: (filePath, tempo) => ipcRenderer.invoke("sincronizar-publico", { filePath, tempo }),
   playerCommand:      (cmd) => ipcRenderer.invoke("player-command", cmd),
   getWebAppUrl:       () => ipcRenderer.invoke("get-webapp-url"),
   setWebAppUrl:       (url) => ipcRenderer.invoke("set-webapp-url", url),
@@ -63,6 +64,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onUpdateStatus:       (cb) => ipcRenderer.on("status-atualizacao", (_e, info) => cb(info)),
   songEnded:            () => ipcRenderer.invoke("song-ended"),
   onSongEnded:          (cb) => ipcRenderer.on("song-ended", cb),
-  onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp) => cb(fp)),
+  onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp, t) => cb(fp, t)),
   onPlayerCmd:          (cb) => ipcRenderer.on("player-cmd", (_e, cmd) => cb(cmd)),
 });

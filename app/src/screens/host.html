@@ -1998,7 +1998,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     const itemSnap = await itemRef.get();
     const item = itemSnap.data();
     const filePath = await arquivoDoItem(item);
-    currentSong = { id: itemId, ...item, filePath };
+    currentSong = { id: itemId, ...item, filePath, iniciadoEm: Date.now() };
 
     document.getElementById('np-song').textContent   = item.musica  || '—';
     document.getElementById('np-artist').textContent = item.artista || '—';
@@ -3063,6 +3063,13 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (ok) _dlTimerOcultar = setTimeout(() => { faixa.style.display = 'none'; }, 6000);
   }
 
+  // Quanto tempo de musica ja passou, para o publico entrar no mesmo ponto.
+  function tempoAtualDoPalco() {
+    return (currentSong && currentSong.iniciadoEm)
+      ? Math.max(0, (Date.now() - currentSong.iniciadoEm) / 1000)
+      : 0;
+  }
+
   function reenviarEstadoAoPublico() {
     if (!window.electronAPI || !SESSAO_ID) return;
     // Pequeno atraso: a janela precisa ter carregado para receber o comando.
@@ -3076,6 +3083,12 @@ https://www.youtube.com/@canal/videos"></textarea>
         termino:  dadosSessaoAtual && dadosSessaoAtual.termino,
         appUrl:   appUrlLocal || APP_URL,
       }));
+      // Musica tocando: a tela recem-aberta precisa do video tambem, senao
+      // fica so com o painel e o aviso de espera.
+      if (currentSong && currentSong.filePath) {
+        window.electronAPI.sincronizarPublico(currentSong.filePath, tempoAtualDoPalco());
+      }
+
       // Reenvia tambem quem esta cantando agora, senao o painel abre vazio
       // mesmo com musica tocando.
       const atual = filaData.find(i => i.status === 'tocando' || i.status === 'confirmando');

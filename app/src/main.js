@@ -899,6 +899,16 @@ ipcMain.handle("link-music-file", async (_, songId) => {
 ipcMain.handle("get-music-links", () => store.get("musicLinks", {}));
 
 // ── IPC: Player ────────────────────────────────────────────
+// Manda o video SO para a tela do publico, com o tempo atual do Palco. Serve
+// para quando essa tela e ligada no meio de uma musica: "play-video" e enviado
+// uma unica vez, no play, entao quem abre depois nao recebia nada e ficava no
+// aviso de espera. Reenviar "play-song" nao serve: reiniciaria o Palco.
+ipcMain.handle("sincronizar-publico", (_, { filePath, tempo }) => {
+  if (!audienceWindow || audienceWindow.isDestroyed() || !filePath) return false;
+  audienceWindow.webContents.send("play-video", filePath, tempo || 0);
+  return true;
+});
+
 ipcMain.handle("play-song", (_, filePath) => {
   // O video precisa ir para o Palco E para o painel do publico: a plateia
   // acompanha a letra na tela, sem audio (o painel nasce mudo, o som e so do

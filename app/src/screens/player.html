@@ -1027,7 +1027,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Play video (canal legado)
-  window.electronAPI.onPlayVideo(filePath => {
+  window.electronAPI.onPlayVideo((filePath, tempo) => {
     pararLoopChamada(); // a musica comecou: a chamada nao pode continuar por cima
     idle.style.display  = "none";
     // No painel do publico quem sai de cena e o aviso de espera, nao o idle.
@@ -1036,6 +1036,10 @@ document.addEventListener("DOMContentLoaded", () => {
     video.style.display = "block";
     video.src = toFileUrl(filePath);
     video.load();
+    // Tela do publico ligada no meio da musica entra no mesmo ponto do Palco.
+    if (tempo > 0) {
+      video.addEventListener("loadedmetadata", () => { try { video.currentTime = tempo; } catch (_) {} }, { once: true });
+    }
     video.play().catch(e => console.error("[PLAYER] Erro ao tocar:", e));
   });
 
