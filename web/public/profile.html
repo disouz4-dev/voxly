@@ -839,7 +839,11 @@ function escutarFila() {
     let _buscaUnsub = null;
 
     async function buscarNoYoutube(termo) {
-      if (!SESSAO_ID) return null;
+      // Sem sessao nao ha para quem perguntar: o pedido e gravado dentro da
+      // sessao, e o host so escuta a que esta aberta.
+      if (!SESSAO_ID) {
+        return { erro: 'Entre numa sessão para buscar músicas.' };
+      }
       if (_buscaUnsub) { _buscaUnsub(); _buscaUnsub = null; }
 
       const ref = await db.collection('sessoes').doc(SESSAO_ID).collection('buscas').add({
@@ -923,7 +927,15 @@ function escutarFila() {
         naoEncontrada.style.display = 'none';
         el.innerHTML = '<div style="padding:14px;text-align:center;color:var(--muted);font-size:.82rem;">🔎 Procurando no YouTube...</div>';
         const r = await buscarNoYoutube(termo);
+
+        // Cada motivo de falha ganha explicacao. Antes tudo caia em "nao
+        // encontrada" — inclusive nao estar numa sessao, que nao tem nada a ver
+        // com a musica existir ou nao.
         if (r && r.candidatos && r.candidatos.length) { renderCandidatos(r.candidatos); return; }
+        if (r && r.erro) {
+          el.innerHTML = `<div style="padding:14px;text-align:center;color:var(--danger);font-size:.82rem;">${escHtml(r.erro)}</div>`;
+          return;
+        }
         el.style.display = 'none';
         document.getElementById('termoBusca').textContent = termo;
         naoEncontrada.style.display = 'block';
