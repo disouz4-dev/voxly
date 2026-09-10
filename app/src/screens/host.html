@@ -1028,6 +1028,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           popularInputsRegras();
           ativarInterfaceSessao();
           escutarFila();
+    escutarBuscas();
           escutarPresencas();
           escutarConfirmacoes();
           escutarHistorico();
@@ -1133,6 +1134,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     ativarInterfaceSessao();
     escutarFila();
+    escutarBuscas();
     escutarPresencas();
     escutarConfirmacoes();
     escutarHistorico();
@@ -1249,6 +1251,48 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Fila ──────────────────────────────────────────────────
+  // ── Ponte de busca no YouTube ─────────────────────────────
+  // O app do cantor roda em HTTPS e nao pode falar com o host, que e http na
+  // rede local — o navegador proibe. Em vez de o celular chamar o Voxly, ele
+  // grava o pedido no Firestore; o host, que ja escuta a sessao, executa o
+  // yt-dlp e devolve os candidatos no mesmo documento. Assim a busca funciona
+  // pelo link publicado, de qualquer rede, e os arquivos seguem locais.
+  let _buscasAtendidas = new Set();
+
+  function escutarBuscas() {
+    if (!SESSAO_ID) return;
+    db.collection('sessoes').doc(SESSAO_ID).collection('buscas')
+      .where('status', '==', 'pendente')
+      .onSnapshot(snap => {
+        snap.docs.forEach(doc => {
+          if (_buscasAtendidas.has(doc.id)) return;
+          _buscasAtendidas.add(doc.id);
+          atenderBusca(doc.id, doc.data());
+        });
+      }, e => console.warn('[BUSCA] listener:', e));
+  }
+
+  async function atenderBusca(id, dados) {
+    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('buscas').doc(id);
+    const termo = (dados && dados.termo || '').trim();
+    if (!termo) { await ref.update({ status: 'erro', erro: 'termo vazio' }); return; }
+
+    try {
+      const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(termo)}`);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const { candidatos } = await resp.json();
+      await ref.update({
+        status: 'pronto',
+        candidatos: (candidatos || []).slice(0, 8),
+        respondidoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log(`[BUSCA] "${termo}" -> ${(candidatos || []).length} candidatos`);
+    } catch (e) {
+      console.error('[BUSCA] falhou:', e);
+      await ref.update({ status: 'erro', erro: e.message }).catch(() => {});
+    }
+  }
+
   function escutarFila() {
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
       .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])

@@ -832,6 +832,77 @@ function escutarFila() {
     }
     let _catalogoIndisponivel = null;
 
+    // Busca no YouTube atraves do host. O celular nao alcanca o Voxly (https
+    // nao chama http local), entao o pedido vai pelo Firestore: gravamos aqui,
+    // o host executa o yt-dlp e devolve os candidatos no mesmo documento.
+    let _buscaAtual = null;
+    let _buscaUnsub = null;
+
+    async function buscarNoYoutube(termo) {
+      if (!SESSAO_ID) return null;
+      if (_buscaUnsub) { _buscaUnsub(); _buscaUnsub = null; }
+
+      const ref = await db.collection('sessoes').doc(SESSAO_ID).collection('buscas').add({
+        termo,
+        status: 'pendente',
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      _buscaAtual = ref.id;
+
+      return new Promise(resolve => {
+        const limite = setTimeout(() => {
+          if (_buscaUnsub) { _buscaUnsub(); _buscaUnsub = null; }
+          resolve({ erro: 'O host nao respondeu. Ele esta aberto?' });
+        }, 60000);
+
+        _buscaUnsub = ref.onSnapshot(doc => {
+          const d = doc.data();
+          if (!d || d.status === 'pendente') return;
+          clearTimeout(limite);
+          if (_buscaUnsub) { _buscaUnsub(); _buscaUnsub = null; }
+          resolve(d.status === 'pronto' ? { candidatos: d.candidatos || [] } : { erro: d.erro || 'falha na busca' });
+        });
+      });
+    }
+
+    function renderCandidatos(lista) {
+      const el = document.getElementById('resultadosBusca');
+      const naoEncontrada = document.getElementById('naoEncontradaBox');
+      naoEncontrada.style.display = 'none';
+      el.style.display = 'block';
+      el._candidatos = lista;
+      el.innerHTML = lista.map((c, i) => `
+        <div class="resultado-item" onclick="escolherCandidato(${i})">
+          <div style="flex:1">
+            <div class="resultado-musica">${escHtml(c.titulo)}</div>
+            <div class="resultado-artista">${escHtml(c.canal)} · ${Math.floor(c.duracao/60)}:${String(c.duracao%60).padStart(2,'0')}</div>
+          </div>
+          <span class="resultado-status ${c.jaBaixado ? 'status-disponivel' : 'status-download'}">
+            ${c.jaBaixado ? '✓ Pronta' : '⬇ Baixar'}
+          </span>
+        </div>`).join('');
+    }
+
+    function escolherCandidato(i) {
+      const el = document.getElementById('resultadosBusca');
+      const c = (el._candidatos || [])[i];
+      if (!c) return;
+      musicaSelecionada = {
+        catalogoId: null, musica: c.titulo, artista: c.canal,
+        disponivel: !!c.jaBaixado, semitons: 0,
+        videoId: c.id, videoUrl: c.url,
+      };
+      document.getElementById('musicaSelecionadaNome').textContent    = c.titulo;
+      document.getElementById('musicaSelecionadaArtista').textContent = c.canal;
+      document.getElementById('musicaSelecionadaStatus').innerHTML    = c.jaBaixado
+        ? '<span style="color:#00e676;font-size:0.7rem;">✓ Já disponível</span>'
+        : '<span style="color:#ffb454;font-size:0.7rem;">⬇ Será baixada</span>';
+      document.getElementById('musicaSelecionadaBox').style.display = 'block';
+      document.getElementById('tomContainer').style.display = 'block';
+      el.style.display = 'none';
+      document.getElementById('btnConfirmar').disabled = false;
+    }
+
     async function buscarCatalogo(termo) {
       const palavras = termo.toLowerCase().trim().split(/\s+/).filter(Boolean);
 
@@ -846,7 +917,15 @@ function escutarFila() {
       document.getElementById('termoBusca').textContent = termo;
 
       if (resultados.length === 0) {
+        // Sem catalogo local alcancavel (caso normal pelo link publicado):
+        // pergunta ao host, que consulta o YouTube.
+        el.style.display = 'block';
+        naoEncontrada.style.display = 'none';
+        el.innerHTML = '<div style="padding:14px;text-align:center;color:var(--muted);font-size:.82rem;">🔎 Procurando no YouTube...</div>';
+        const r = await buscarNoYoutube(termo);
+        if (r && r.candidatos && r.candidatos.length) { renderCandidatos(r.candidatos); return; }
         el.style.display = 'none';
+        document.getElementById('termoBusca').textContent = termo;
         naoEncontrada.style.display = 'block';
         return;
       }
