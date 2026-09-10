@@ -444,7 +444,8 @@ footer strong { color:var(--ambar); font-weight:700; }
     <h1>Voxly</h1>
   </div>
   <div class="header-controls">
-    <span class="session-badge inativa" id="sessionBadge">● Sem Sessão</span>
+    <span class="session-badge inativa" id="sessionBadge" onclick="editarSessaoAtiva()"
+          title="Clique para editar nome, data e horário sem derrubar a sessão">● Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="abrirModalSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-danger btn-sm" id="btnDerrubarSessao" onclick="derrubarSessoes()" title="Apaga do servidor qualquer sessão em aberto, inclusive as presas de outra máquina">💥 Derrubar sessão</button>
@@ -800,7 +801,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
 <div class="modal-overlay" id="modalSessao">
   <div class="modal-box">
-    <h2>▶ Iniciar Sessão</h2>
+    <h2 id="modalSessaoTitulo">▶ Iniciar Sessão</h2>
     <p style="font-size:.78rem;color:var(--mudo);line-height:1.6;margin:10px 0 4px;">
       Estes dados aparecem para os cantores na lista de sessões ativas do app.
     </p>
@@ -823,7 +824,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalSessao()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarIniciarSessao()">Iniciar sessão</button>
+      <button class="btn btn-primary" id="btnConfirmarSessao" onclick="confirmarIniciarSessao()">Iniciar sessão</button>
     </div>
   </div>
 </div>
@@ -1175,7 +1176,66 @@ https://www.youtube.com/@canal/videos"></textarea>
     return Number.isFinite(ms) ? ms : null;
   }
 
+  // O badge mostrava so o codigo, que nao diz nada ao KJ no meio da noite.
+  // Nome da casa e faixa de horario sao o que ele precisa conferir de relance.
+  function atualizarBadgeSessao() {
+    const el = document.getElementById('sessionBadge');
+    if (!el) return;
+    const d = dadosSessaoAtual || {};
+    const hm = t => {
+      const ms = t && t.toDate ? t.toDate().getTime() : t;
+      return ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
+    };
+    const faixa = (hm(d.inicio) && hm(d.termino)) ? ` · ${hm(d.inicio)}–${hm(d.termino)}` : '';
+    el.textContent = `● ${d.nomeCasa || 'Sessão ' + (sessaoCodigo || '')}${faixa}`;
+    el.title = `Sessão ${sessaoCodigo || ''} — clique para editar sem derrubar`;
+    el.style.cursor = 'pointer';
+  }
+
+  // Editar sem derrubar: muda nome, data e horario da sessao EM CURSO. O
+  // caminho de criar expurga as sessoes anteriores e troca o SESSAO_ID; aqui
+  // nada disso pode acontecer, senao os cantores conectados caem.
+  let _editandoSessao = false;
+
+  function editarSessaoAtiva() {
+    if (!SESSAO_ID || !dadosSessaoAtual) return;
+    _editandoSessao = true;
+
+    const paraInput = ms => {
+      const d = new Date(ms && ms.toDate ? ms.toDate().getTime() : ms);
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+
+    document.getElementById('modalSessaoTitulo').textContent = '✏️ Editar sessão';
+    document.getElementById('btnConfirmarSessao').textContent = 'Salvar';
+    document.getElementById('avisoSessaoUnica').style.display = 'none';
+    document.getElementById('sessaoErro').style.display = 'none';
+    document.getElementById('sessaoNomeCasa').value       = dadosSessaoAtual.nomeCasa || '';
+    document.getElementById('sessaoHorarioInicio').value  = paraInput(dadosSessaoAtual.inicio);
+    document.getElementById('sessaoHorarioTermino').value = paraInput(dadosSessaoAtual.termino);
+    document.getElementById('modalSessao').classList.add('open');
+    document.getElementById('sessaoNomeCasa').focus();
+  }
+
+  async function salvarEdicaoSessao(dados) {
+    await db.collection('sessoes').doc(SESSAO_ID).update({
+      nomeCasa:        dados.nomeCasa,
+      horarioInicio:   firebase.firestore.Timestamp.fromMillis(dados.inicio),
+      horarioTermino:  firebase.firestore.Timestamp.fromMillis(dados.termino),
+    });
+    dadosSessaoAtual = { ...dadosSessaoAtual, ...dados };
+    atualizarBadgeSessao();
+    // As telas mostram nome da casa e horarios: sem reenviar, elas ficariam
+    // com os dados antigos ate a proxima abertura.
+    reenviarEstadoAoPublico();
+    mostrarToast('✅ Sessão atualizada', 5000);
+  }
+
   function abrirModalSessao() {
+    _editandoSessao = false;
+    document.getElementById('modalSessaoTitulo').textContent = '▶ Iniciar Sessão';
+    document.getElementById('btnConfirmarSessao').textContent = 'Iniciar sessão';
     // Sugere a janela tipica de um show: comeca na proxima hora cheia, 4h de duracao.
     const inicio = new Date();
     inicio.setMinutes(0, 0, 0);
@@ -1259,6 +1319,12 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     erro.style.display = 'none';
     fecharModalSessao();
+    if (_editandoSessao) {
+      _editandoSessao = false;
+      try { await salvarEdicaoSessao({ nomeCasa, inicio, termino }); }
+      catch (e) { mostrarToast('❌ ' + e.message, 8000); }
+      return;
+    }
     await iniciarSessao({ nomeCasa, inicio, termino });
   }
 
@@ -1317,7 +1383,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   function ativarInterfaceSessao() {
     const appBase = appUrlLocal || APP_URL;
-    document.getElementById('sessionBadge').textContent  = `● Sessão ${sessaoCodigo}`;
+    atualizarBadgeSessao();
     atualizarQrHost();
 
     // O botao de adicionar cantor a mao nascia com display:none no HTML e era
@@ -1439,6 +1505,8 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     document.getElementById('sessionBadge').textContent = '● Sem Sessão';
     document.getElementById('sessionBadge').className   = 'session-badge inativa';
+    document.getElementById('sessionBadge').title        = '';
+    document.getElementById('sessionBadge').style.cursor = 'default';
     document.getElementById('startSessionBtn').style.display = 'inline-block';
     document.getElementById('startQueueBtn').style.display   = 'none';
     document.getElementById('stopSessionBtn').style.display  = 'none';
