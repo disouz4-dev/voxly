@@ -13,6 +13,7 @@ const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identifica
 const { escolherArquivoBaixado, idDaUrl, arquivoDaSaida } = require("./baixado");
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
+const ytdlp = require("./ytdlp");
 const { autoUpdater } = require("electron-updater");
 
 // mp4 1080p por padrao: qualidade de projecao sem pegar 4K, que incha o arquivo
@@ -620,6 +621,12 @@ if (!instanciaUnica) {
 let bloqueioSuspensao = null;
 
 app.whenReady().then(() => {
+  // Em segundo plano: sem rede ou com o GitHub fora do ar, o yt-dlp que ja
+  // existe continua valendo e o app sobe igual.
+  garantirYtDlpAtual().then(r => {
+    if (r.atualizou) console.log(`[YTDLP] ${r.anterior || "ausente"} -> ${r.versao}`);
+  }).catch(() => {});
+
   try {
     bloqueioSuspensao = powerSaveBlocker.start("prevent-app-suspension");
     console.log("[MAIN] Suspensao em segundo plano desativada:", bloqueioSuspensao);
@@ -1131,6 +1138,14 @@ const PASTAS_BIN = [
 function resolverBinario(nome) {
   const salvo = store.get(`bin.${nome}`);
   if (salvo && fs.existsSync(salvo)) return salvo;
+
+  // Copia mantida pelo proprio Voxly. Vem antes da do sistema porque e a unica
+  // que ele consegue manter atualizada: o yt-dlp do apt fica meses atras e
+  // "yt-dlp -U" se recusa a mexer numa instalacao vinda de gerenciador.
+  if (nome === "yt-dlp") {
+    const proprio = caminhoYtDlpProprio();
+    try { fs.accessSync(proprio, fs.constants.X_OK); return proprio; } catch { /* segue */ }
+  }
   for (const dir of PASTAS_BIN) {
     const alvo = path.join(dir, nome);
     try {
@@ -1140,6 +1155,131 @@ function resolverBinario(nome) {
   }
   return null; // nao encontrado: quem chama decide o que dizer ao KJ
 }
+
+// ── yt-dlp mantido pelo Voxly ──────────────────────────────
+function caminhoYtDlpProprio() {
+  return path.join(app.getPath("userData"), "bin", ytdlp.nomeDoBinario(process.platform));
+}
+
+// O binario independente e um bundle que se extrai na PRIMEIRA execucao —
+// medido: 23s no macOS. Com limite curto o Voxly concluia que o download tinha
+// vindo quebrado e apagava um arquivo perfeitamente bom. Depois da primeira
+// vez responde na hora, entao o valor fica em cache.
+const _versaoYtDlp = new Map();
+
+function versaoDoYtDlp(caminho, { timeout = 90000 } = {}) {
+  if (_versaoYtDlp.has(caminho)) return _versaoYtDlp.get(caminho);
+  try {
+    const v = require("child_process")
+      .execFileSync(caminho, ["--version"], { timeout }).toString().trim();
+    _versaoYtDlp.set(caminho, v);
+    return v;
+  } catch { return null; }
+}
+
+// Qual a ultima versao publicada. Uma consulta pequena, guardada por algumas
+// horas: sem ela o app so sabia a IDADE da versao local, e como a ultima
+// publicada pode ter semanas, ele se declarava desatualizado para sempre.
+let _ultimaPublicada = { versao: null, em: 0 };
+const HORAS_CACHE_VERSAO = 6;
+
+async function ultimaVersaoPublicada() {
+  if (_ultimaPublicada.versao && Date.now() - _ultimaPublicada.em < HORAS_CACHE_VERSAO * 3600e3) {
+    return _ultimaPublicada.versao;
+  }
+  try {
+    const res = await fetch(ytdlp.API_ULTIMA, {
+      headers: { "User-Agent": "Voxly" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`GitHub respondeu ${res.status}`);
+    const versao = String((await res.json()).tag_name || "").trim() || null;
+    _ultimaPublicada = { versao, em: Date.now() };
+    return versao;
+  } catch (e) {
+    console.warn("[YTDLP] nao consegui consultar a ultima versao:", e.message);
+    return null;   // sem saber, nao mexe no que funciona
+  }
+}
+
+// Baixa o binario independente do repositorio oficial do yt-dlp. Independente
+// porque nao exige Python na maquina do KJ, e oficial porque executavel nao se
+// pega de qualquer lugar.
+async function baixarYtDlp() {
+  const url = ytdlp.urlDoBinario(process.platform);
+  if (!url) throw new Error(`Sem binario do yt-dlp para ${process.platform}`);
+
+  const destino = caminhoYtDlpProprio();
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  const temporario = destino + ".novo";
+
+  const curl = resolverBinario("curl") || "/usr/bin/curl";
+  const r = await rodar(curl, ["-fsSL", "--max-time", "300", "-o", temporario, url]);
+  if (!r.ok) throw new Error(`Falha ao baixar o yt-dlp: ${(r.saida || "").trim().slice(0, 120)}`);
+
+  fs.chmodSync(temporario, 0o755);
+  const versao = versaoDoYtDlp(temporario);
+  if (!versao) {
+    // Nao troca o que funciona por um arquivo que nem responde --version.
+    try { fs.unlinkSync(temporario); } catch (_) {}
+    throw new Error("O yt-dlp baixado nao executou nesta maquina");
+  }
+  _versaoYtDlp.delete(temporario);
+  _versaoYtDlp.delete(destino);
+  fs.renameSync(temporario, destino);
+  _versaoYtDlp.set(destino, versao);
+  console.log(`[YTDLP] atualizado para ${versao}`);
+  return versao;
+}
+
+// Roda na abertura. Nunca derruba o app: sem rede, o yt-dlp que existe segue
+// valendo.
+async function garantirYtDlpAtual({ forcar } = {}) {
+  const atual = resolverBinario("yt-dlp");
+  const versao = atual ? versaoDoYtDlp(atual) : null;
+  const publicada = await ultimaVersaoPublicada();
+
+  if (!forcar && !ytdlp.precisaAtualizar(versao, publicada)) {
+    return { atualizou: false, versao, publicada };
+  }
+  try {
+    const nova = await baixarYtDlp();
+    return { atualizou: true, versao: nova, anterior: versao };
+  } catch (e) {
+    console.warn("[YTDLP] nao consegui atualizar:", e.message);
+    return { atualizou: false, versao, erro: e.message };
+  }
+}
+
+function versaoDoFfmpeg(caminho) {
+  try {
+    const saida = require("child_process")
+      .execFileSync(caminho, ["-version"], { timeout: 8000 }).toString();
+    const m = saida.match(/ffmpeg version (\S+)/i);
+    return m ? m[1] : "instalado";
+  } catch { return null; }
+}
+
+// Verificar atualizacao do app sem verificar o que ele DEPENDE nao serve de
+// muito: quem quebra o download e o yt-dlp velho, nao a versao do Voxly.
+ipcMain.handle("ytdlp-estado", async () => {
+  const caminho = resolverBinario("yt-dlp");
+  const versao = caminho ? versaoDoYtDlp(caminho) : null;
+  const publicada = await ultimaVersaoPublicada();
+
+  const ffmpeg = resolverBinario("ffmpeg");
+  return {
+    caminho,
+    versao,
+    publicada,
+    proprio: caminho === caminhoYtDlpProprio(),
+    idadeDias: ytdlp.idadeEmDias(versao),
+    precisaAtualizar: ytdlp.precisaAtualizar(versao, publicada),
+    ffmpeg: ffmpeg ? { caminho: ffmpeg, versao: versaoDoFfmpeg(ffmpeg) } : null,
+  };
+});
+
+ipcMain.handle("ytdlp-atualizar", () => garantirYtDlpAtual({ forcar: true }));
 
 const YT_ARCHIVE_FILE = path.join(app.getPath("userData"), "yt-archive.txt");
 const YT_DB_FILE = path.join(app.getPath("userData"), "yt-db.json");
@@ -1276,11 +1416,8 @@ async function baixarUrl(opts) {
   // A versao do yt-dlp e o dado que mais explica falha de download: o YouTube
   // muda e a versao empacotada pela distro fica meses atras. Fica no log para
   // essa duvida nao precisar ser levantada de novo.
-  try {
-    const v = require("child_process").execFileSync(ytDlp, ["--version"], { timeout: 5000 })
-      .toString().trim();
-    enviarProgresso({ log: `yt-dlp ${v}`, logTipo: 'info' });
-  } catch (_) {}
+  const versaoYt = versaoDoYtDlp(ytDlp);
+  if (versaoYt) enviarProgresso({ log: `yt-dlp ${versaoYt}`, logTipo: 'info' });
 
   ytCancelado = false;
   const archive = ytArchiveLoad();

@@ -837,6 +837,15 @@ https://www.youtube.com/@canal/videos"></textarea>
       A verificação funciona no app instalado (no modo desenvolvedor ela fica desativada).
     </p>
 
+    <div id="ytdlp-caixa" style="border:1px solid var(--linha);border-radius:8px;padding:11px 13px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;">
+        <span style="font-family:'Space Mono',monospace;font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mudo);">Motor de download</span>
+        <span id="ytdlp-versao" style="font-family:'Space Mono',monospace;font-size:.72rem;color:var(--texto);">—</span>
+        <button class="btn btn-secondary btn-sm" style="margin-left:auto;" onclick="atualizarYtDlp()" id="ytdlp-btn">Atualizar agora</button>
+      </div>
+      <div id="ytdlp-detalhe" style="font-size:.74rem;color:var(--mudo);margin-top:6px;line-height:1.45;"></div>
+    </div>
+
     <label class="modal-label">Qualidade dos downloads</label>
     <select class="modal-select" id="pref-qualidade" onchange="salvarPrefsDownload()">
       <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4 (padrão)</option>
@@ -2745,7 +2754,57 @@ https://www.youtube.com/@canal/videos"></textarea>
     mostrarToast(intervaloAtivo ? 'Música de intervalo ativada' : 'Música de intervalo desativada');
   }
 
+  // O yt-dlp velho e a causa mais comum de 403/404 no meio do show. O Voxly
+  // mantem a propria copia porque o pacote da distro fica meses atras e o
+  // "yt-dlp -U" se recusa a mexer numa instalacao vinda de gerenciador.
+  async function mostrarEstadoYtDlp() {
+    if (!window.electronAPI || !window.electronAPI.ytdlpEstado) return;
+    const e = await window.electronAPI.ytdlpEstado().catch(() => null);
+    const vs = document.getElementById('ytdlp-versao');
+    const dt = document.getElementById('ytdlp-detalhe');
+    if (!vs || !dt) return;
+
+    const linhas = [];
+
+    if (!e || !e.versao) {
+      vs.textContent = 'não encontrado';
+      linhas.push('Sem o yt-dlp o Voxly não baixa música. Clique em Atualizar agora para instalar a versão oficial.');
+    } else {
+      vs.textContent = `yt-dlp ${e.versao}`;
+      const idade = e.idadeDias === null ? '' : ` (${e.idadeDias} dia(s))`;
+      if (e.precisaAtualizar) {
+        linhas.push(`Há versão mais nova: ${e.publicada}. A sua${idade} pode dar 403/404 — o YouTube muda e versões antigas param de funcionar.`);
+      } else {
+        linhas.push(`Em dia${idade}.${e.proprio ? '' : ' Usando o yt-dlp do sistema.'}`);
+      }
+    }
+
+    // ffmpeg nao se atualiza sozinho, mas sem ele o merge de video e audio nao
+    // acontece — e o download falha sem dizer que a culpa e dessa falta.
+    linhas.push(e && e.ffmpeg
+      ? `ffmpeg ${e.ffmpeg.versao}`
+      : '⚠️ ffmpeg não encontrado — sem ele o Voxly não junta vídeo e áudio.');
+
+    dt.innerHTML = linhas.map(escHtml).join('<br>');
+  }
+
+  async function atualizarYtDlp() {
+    const btn = document.getElementById('ytdlp-btn');
+    const dt = document.getElementById('ytdlp-detalhe');
+    if (btn) { btn.disabled = true; btn.textContent = 'Baixando...'; }
+    if (dt) dt.textContent = 'Baixando a versão oficial do yt-dlp...';
+    const r = await window.electronAPI.ytdlpAtualizar().catch(e => ({ erro: e.message }));
+    if (btn) { btn.disabled = false; btn.textContent = 'Atualizar agora'; }
+    if (r && r.erro) {
+      if (dt) dt.textContent = `Não consegui atualizar: ${r.erro}`;
+      return;
+    }
+    mostrarToast(r && r.atualizou ? `✅ yt-dlp ${r.versao}` : 'yt-dlp já estava em dia', 5000);
+    mostrarEstadoYtDlp();
+  }
+
   async function carregarPrefsDownload() {
+    mostrarEstadoYtDlp();
     if (!window.electronAPI || !window.electronAPI.getPrefsDownload) return;
     const p = await window.electronAPI.getPrefsDownload();
     document.getElementById('pref-qualidade').value    = p.qualidade;
