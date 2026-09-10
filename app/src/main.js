@@ -9,6 +9,7 @@ const ytBusca = require("./yt-busca");
 const { versoesLocais } = require("./versoes");
 const { escolherPorNome } = require("./casamento");
 const { pastaDeDownload } = require("./pastas");
+const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identificacao");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
@@ -1194,34 +1195,17 @@ function identificarPorMetadados(meta) {
   return null;
 }
 
-async function identificarComIA(nomeArquivo) {
-  // Tenta usar Ollama local primeiro (gratuito)
-  try {
-    const prompt = `Extraia ARTISTA e MÚSICA do nome: "${nomeArquivo}".
-Regras: 1) Ignore: karaoke, playback, HD, 4K, oficial, instrumental, backing track, legendado, "CC" ou nomes de canal. 2) Se começar com "CC" + artista (CCAESPA, CCBTS), ignore "CC". 3) Use grafia oficial. 4) Título em Title Case. 5) Se só artista, música = "Desconhecida". 6) Ordem pode ser "Artista Música" ou "Música Artista".
-Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
+// Prazo da edicao manual. Passado ele o arquivo fica com o nome do YouTube —
+// feio, mas achavel; um download pendurado nao e nem uma coisa nem outra.
+// Prazo da edicao manual. Passado ele o arquivo fica com o nome do YouTube —
+// feio, mas achavel; um download pendurado nao e nem uma coisa nem outra.
+const MINUTOS_EDICAO_MANUAL = 3;
 
-    const res = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "llama3.2:3b", prompt, stream: false, options: { temperature: 0 } }),
-      signal: AbortSignal.timeout(30000)
-    });
-    if (!res.ok) throw new Error("Ollama indisponível");
-    const data = await res.json();
-    const txt = data.response || "";
-    const jsonMatch = txt.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.artista && parsed.musica) {
-        return { artista: normalizarCaseYt(parsed.artista.trim()), musica: normalizarCaseYt(parsed.musica.trim()) };
-      }
-    }
-  } catch (e) {
-    console.log("[YT] Ollama falhou:", e.message);
-  }
-  return null;
-}
+// Substituiu o Ollama. Rodar um modelo local so para extrair "artista" e
+// "musica" de um titulo consome CPU e RAM da mesma maquina que esta tocando o
+// show — e ainda dependia de o modelo certo estar baixado, que foi como isso
+// virou "erro de IA" no Linux. O iTunes ja e a fonte oficial dos nomes no app.
+const buscaItunes = criarBuscaItunes({});
 
 async function baixarUrl(opts) {
   const { urls, cookies, navegador, playlist } = opts;
@@ -1421,21 +1405,27 @@ async function baixarUrl(opts) {
         .replace(/\s+/g, " ")
         .trim();
 
-      // Metadados e titulo resolvem a maioria dos casos e nao dependem de o
-      // Ollama estar instalado — que e justamente por que a renomeacao vinha
-      // falhando, deixando o arquivo com o titulo cru do YouTube.
-      let identificado = identificarPorMetadados(meta);
-      if (identificado) {
-        enviarProgresso({ log: `🎯 Identificado pelos metadados: ${identificado.artista} — ${identificado.musica}`, logTipo: 'ok' });
-      } else {
-        identificado = await identificarComIA(nomeLimpo);
+      // O pedido manda: o cantor escolheu pelo iTunes e esses nomes ja vem com
+      // a grafia oficial. Perguntar a um LLM o que o proprio app ja sabe era
+      // trocar certeza por palpite — e, sem Ollama respondendo, travava o
+      // download inteiro numa edicao manual.
+      let identificado = escolherIdentidade({
+        pedido:    { artista: opts.artista, musica: opts.musica },
+        metadados: identificarPorMetadados(meta),
+      });
+
+      if (!identificado) {
+        enviarProgresso({ log: "🔎 Consultando o iTunes pelo título...", logTipo: 'info' });
+        identificado = escolherIdentidade({ itunes: await buscaItunes(semCanal(nomeLimpo, canal)) });
       }
 
-      if (!identificado || !identificado.artista || !identificado.musica) {
-        // IA falhou - solicita edição manual
+      if (identificado) {
+        const de = { pedido: "pelo pedido", metadados: "pelos metadados", itunes: "pelo iTunes" }[identificado.origem];
+        enviarProgresso({ log: `🎯 ${identificado.artista} — ${identificado.musica} (${de})`, logTipo: 'ok' });
+      } else {
         enviarProgresso({
-          status: "IA não identificou - edição manual necessária",
-          log: "⚠️ IA não conseguiu identificar - abrindo edição manual",
+          status: "Não consegui identificar — edição manual",
+          log: "⚠️ Nem o pedido, nem os metadados, nem o iTunes deram artista e música",
           logTipo: 'erro'
         });
 
@@ -1443,22 +1433,33 @@ async function baixarUrl(opts) {
           hostWindow.webContents.send("yt-edit-request", {
             arquivoOriginal: arquivoBaixado,
             nomeArquivo: path.basename(arquivoBaixado),
-            sugestaoArtista: identificado?.artista || "",
-            sugestaoMusica: identificado?.musica || "",
+            sugestaoArtista: opts.artista || "",
+            sugestaoMusica: opts.musica || "",
             canal,
             idVideo
           });
         }
 
-        // Aguarda confirmação manual
+        // Espera a edicao, mas com prazo. Sem isto o download ficava pendurado
+        // para sempre; eles se acumulavam e o modal que aparecia era o de um
+        // pedido antigo, com o nome de outra musica.
         await new Promise((resolve) => {
-          const handler = (_e, resposta) => {
-            if (resposta.idVideo === idVideo) {
-              ipcMain.removeListener("yt-confirm-edit", handler);
-              identificado = { artista: resposta.artista, musica: resposta.musica };
-              resolve();
-            }
-          };
+          const prazo = setTimeout(() => {
+            ipcMain.removeListener("yt-confirm-edit", handler);
+            enviarProgresso({
+              log: "⏱️ Sem resposta na edição — o arquivo fica com o nome do YouTube",
+              logTipo: 'erro',
+            });
+            resolve();
+          }, MINUTOS_EDICAO_MANUAL * 60000);
+
+          function handler(_e, resposta) {
+            if (!resposta || resposta.idVideo !== idVideo) return;
+            clearTimeout(prazo);
+            ipcMain.removeListener("yt-confirm-edit", handler);
+            identificado = { artista: resposta.artista, musica: resposta.musica };
+            resolve();
+          }
           ipcMain.on("yt-confirm-edit", handler);
         });
 

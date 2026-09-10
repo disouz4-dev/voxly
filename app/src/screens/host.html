@@ -1419,6 +1419,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     try {
       const r = await window.electronAPI.ytDownload({
         urls: [c.url], pasta: pastaMusicasAtual || undefined,
+        artista: item.artista, musica: item.musica,
         qualidade: document.getElementById('candidatosQualidade').value,
         renomear: true, organizar: false, cookies: false, navegador: null, playlist: false,
       });
@@ -1842,6 +1843,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       const r = await window.electronAPI.ytDownload({
         urls: [item.videoUrl],
         pasta: pastaMusicasAtual || undefined,
+        artista: item.artista, musica: item.musica,
         cookies: false, navegador: null, playlist: false,
       });
       const ok = r && r.sucesso;
