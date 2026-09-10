@@ -7,7 +7,9 @@
 function normalizar(txt) {
   return String(txt || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9\s]/g, " ")
+    .toLowerCase()
+    .replace(/['\u2019\u02bc]/g, "")   // "it's" e "its" sao a mesma palavra
+    .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ").trim();
 }
 
@@ -60,13 +62,28 @@ function pedacos(txt) {
   return [...new Set([inteiro, ...partes])].filter(x => x.length > 2);
 }
 
+// Palavras que definem a musica. Ligacoes saem porque nao distinguem nada
+// ("Bring Me The Horizon" e "Bring Me Horizon"), mas o resto fica INTEIRO,
+// inclusive palavra curta: o "I" e a unica coisa que separa "I Miss You" do
+// Blink 182 de "Miss You" dos Rolling Stones.
+function significativas(txt) {
+  return normalizar(txt).split(" ").filter(p => p && !LIGACOES.has(p));
+}
+
+// Conjuntos IGUAIS, nao um contido no outro. A regra antiga aceitava
+// subconjunto — bastava "miss you" caber em "miss you love" — e foi assim que
+// "Miss You Love" do Silverchair virou "I Miss You" do Blink 182 no palco.
 function casaPedaco(a, b) {
   if (a === b) return true;
-  const pa = a.split(" ").filter(x => x.length > 2);
-  const pb = new Set(b.split(" ").filter(x => x.length > 2));
-  if (!pa.length || !pb.size) return false;
-  const comuns = pa.filter(x => pb.has(x)).length;
-  return comuns === Math.min(pa.length, pb.size);
+  const pa = significativas(a), pb = significativas(b);
+  if (!pa.length || pa.length !== pb.length) return false;
+  const restante = [...pb];
+  for (const palavra of pa) {
+    const i = restante.indexOf(palavra);
+    if (i === -1) return false;
+    restante.splice(i, 1);
+  }
+  return true;
 }
 
 function mesmaMusica(a, b) {
@@ -93,4 +110,4 @@ function versoesLocais(arquivos, pedido) {
   return doArtista.length ? doArtista : porMusica;
 }
 
-module.exports = { versoesLocais, decompor, normalizar, mesmoArtista, mesmaMusica, pedacos };
+module.exports = { versoesLocais, decompor, normalizar, mesmoArtista, mesmaMusica, pedacos, significativas };

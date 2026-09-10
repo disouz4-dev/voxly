@@ -7,6 +7,7 @@ const http   = require("http");
 const ServidorLocal = require("./local-server");
 const ytBusca = require("./yt-busca");
 const { versoesLocais } = require("./versoes");
+const { escolherPorNome } = require("./casamento");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
@@ -434,21 +435,6 @@ function iniciarServidorCatalogo() {
 }
 
 // ── Similaridade ───────────────────────────────────────────
-function similaridade(a, b) {
-  a = a.toLowerCase().replace(/[^a-z0-9]/g, "");
-  b = b.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  if (a.includes(b) || b.includes(a)) return 0.9;
-  let comuns = 0;
-  const setB = b.split("");
-  for (const ch of a) {
-    const idx = setB.indexOf(ch);
-    if (idx !== -1) { comuns++; setB.splice(idx, 1); }
-  }
-  return (2 * comuns) / (a.length + b.length);
-}
-
 // ── Janelas ────────────────────────────────────────────────
 function escolherDisplayOcupado() {
   // Displays escolhidos automaticamente, para a tela do publico evitar
@@ -896,22 +882,8 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
     }
   }
 
-  let melhor = null, melhorScore = 0;
-  for (const fullPath of files) {
-    const base   = path.basename(fullPath, path.extname(fullPath)).replace(RE_ID_SUFIXO, "").trim();
-    const partes = base.split(" - ");
-    let scoreArtista = 0, scoreMusica = 0;
-    if (partes.length >= 2) {
-      scoreArtista = similaridade(artist,   partes[0].trim());
-      scoreMusica  = similaridade(songName, partes.slice(1).join(" - ").trim());
-    } else {
-      scoreArtista = similaridade(artist,   base);
-      scoreMusica  = similaridade(songName, base);
-    }
-    const score = (scoreArtista * 0.4) + (scoreMusica * 0.6);
-    if (score > melhorScore && score > 0.5) { melhorScore = score; melhor = fullPath; }
-  }
-  console.log(`[RESOLVE] "${artist} - ${songName}" score=${melhorScore.toFixed(2)} → ${melhor}`);
+  const melhor = escolherPorNome(files, { musica: songName, artista: artist });
+  console.log(`[RESOLVE] "${artist} - ${songName}" → ${melhor || "nao encontrado"}`);
   return melhor;
 });
 
