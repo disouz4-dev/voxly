@@ -42,15 +42,42 @@ function listarArquivosRecursivo(dir, exts) {
   return resultado;
 }
 
+// Ruido comum em titulo do YouTube. Sem tirar isso, a musica aparece na lista
+// com "[OFFICIAL VIDEO] [4K UPGRADE]" grudado no nome.
+const RE_RUIDO = /\s*[\[(](?:official\s*(?:music\s*)?video|video\s*oficial|official\s*audio|lyrics?|letra|legendado|hd|hq|4k|8k|fhd|1080p|720p|remaster(?:ed)?(?:\s*\d{4})?|\d{1,2}k\s*upgrade)[^\])]*[\])]/gi;
+
+// O separador nem sempre e " - ": o yt-dlp troca ":" por "：" ao sanitizar o
+// nome, e muitos titulos usam traco longo. Sem cobrir esses casos, o catalogo
+// mostrava "Desconhecido" para arquivos que tinham artista no nome.
+function separarArtistaMusica(base) {
+  const limpo = base.replace(RE_RUIDO, "").replace(/\s+/g, " ").trim();
+
+  // "Artista： Musica" — dois-pontos sanitizado pelo yt-dlp.
+  const doisPontos = limpo.split(/\s*[：:]\s+/);
+  if (doisPontos.length >= 2 && doisPontos[0].trim()) {
+    return { artista: doisPontos[0].trim(), musica: doisPontos.slice(1).join(": ").trim() };
+  }
+
+  // So o hifen: e o separador que o proprio app escreve ao renomear. Traco
+  // longo foi testado e descartado — titulos como "Musica – Artista" invertem
+  // os campos, e artista errado e pior que artista ausente.
+  const partes = limpo.split(/\s+-\s+/);
+  if (partes.length >= 2 && partes[0].trim()) {
+    return { artista: partes[0].trim(), musica: partes.slice(1).join(" - ").trim() };
+  }
+
+  return { artista: "Desconhecido", musica: limpo || base };
+}
+
 function construirCatalogo(folder) {
   if (!folder || !fs.existsSync(folder)) return [];
   const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
   return listarArquivosRecursivo(folder, exts).map(fullPath => {
     const base   = path.basename(fullPath, path.extname(fullPath)).replace(RE_ID_SUFIXO, "").trim();
-    const partes = base.split(" - ");
+    const { artista, musica } = separarArtistaMusica(base);
     return {
-      artista:   partes.length >= 2 ? partes[0].trim() : "Desconhecido",
-      musica:    partes.length >= 2 ? partes.slice(1).join(" - ").trim() : base,
+      artista,
+      musica,
       arquivo:   path.relative(folder, fullPath),
       disponivel: true
     };
