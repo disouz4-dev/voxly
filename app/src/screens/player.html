@@ -569,6 +569,12 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
+  // Declarado aqui de proposito: o bloco do modo publico logo abaixo usa
+  // falaAudio, e com a declaracao la embaixo dava zona morta temporal — o
+  // script inteiro morria e a tela do publico ficava sem video, sem QR e sem
+  // os dados do cantor.
+  const falaAudio = new Audio();
+
   const isAudience = new URLSearchParams(window.location.search).get("tela") === "publico";
   if (isAudience) document.body.classList.add("modo-publico");
 
@@ -1116,7 +1122,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return pt[0];
   }
 
-  const falaAudio = new Audio();
 
   function textoDaChamada(cantor, duo) {
     return duo
@@ -1137,6 +1142,12 @@ document.addEventListener("DOMContentLoaded", () => {
         falaAudio.volume = 1;
         falaAudio.muted = false;
         await falaAudio.play().catch(() => {});
+        // Espera o fim: sem isto a proxima repeticao entrava por cima.
+        await new Promise(resolve => {
+          const pronto = () => { falaAudio.removeEventListener('ended', pronto); resolve(); };
+          falaAudio.addEventListener('ended', pronto);
+          setTimeout(pronto, 15000); // rede de seguranca
+        });
         return;
       }
     } catch (e) { console.warn('[VOZ] Piper indisponivel:', e.message); }
@@ -1154,19 +1165,32 @@ document.addEventListener("DOMContentLoaded", () => {
   // Durante a janela de confirmacao a chamada se repete, para quem estava longe
   // do palco ouvir. Antes falava uma vez so, no comeco.
   let _loopChamada = null;
+  let _falando = false;
+
+  // chamarPorVoz e assincrona (o Piper leva 1-2s para sintetizar). Disparar a
+  // cada 9s sem esperar fazia duas ou tres locucoes se sobreporem — o que
+  // soava como varias vozes falando juntas. Agora so repete quando a anterior
+  // terminou de fato.
+  async function falarUmaVez(cantor, duo) {
+    if (_falando) return;
+    _falando = true;
+    try { await chamarPorVoz(cantor, duo); }
+    finally { _falando = false; }
+  }
 
   function iniciarLoopChamada(cantor, duo, segundos) {
     pararLoopChamada();
-    chamarPorVoz(cantor, duo);
+    falarUmaVez(cantor, duo);
     const fim = Date.now() + (segundos || 30) * 1000;
     _loopChamada = setInterval(() => {
-      if (Date.now() > fim - 4000) { pararLoopChamada(); return; }
-      chamarPorVoz(cantor, duo);
+      if (Date.now() > fim - 5000) { pararLoopChamada(); return; }
+      falarUmaVez(cantor, duo);
     }, 9000);
   }
 
   function pararLoopChamada() {
     if (_loopChamada) { clearInterval(_loopChamada); _loopChamada = null; }
+    _falando = false;
     if (window.speechSynthesis) speechSynthesis.cancel();
     try { falaAudio.pause(); falaAudio.currentTime = 0; } catch (_) {}
   }
