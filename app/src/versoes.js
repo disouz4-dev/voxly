@@ -110,4 +110,4 @@ function versoesLocais(arquivos, pedido) {
   return doArtista.length ? doArtista : porMusica;
 }
 
-module.exports = { versoesLocais, decompor, normalizar, mesmoArtista, mesmaMusica, pedacos, significativas };
+module.exports = { versoesLocais, decompor, normalizar, mesmoArtista, mesmaMusica, pedacos };

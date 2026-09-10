@@ -38,4 +38,4 @@ function escolherPorNome(arquivos, pedido) {
   return doArtista.length ? doArtista[0] : candidatos[0];
 }
 
-module.exports = { escolherPorNome, nomeBase };
+module.exports = { escolherPorNome };

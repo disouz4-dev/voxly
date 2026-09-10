@@ -45,4 +45,4 @@ function idDaUrl(url) {
   return m ? m[1] : null;
 }
 
-module.exports = { escolherArquivoBaixado, idDaUrl, FOLGA_MS };
+module.exports = { escolherArquivoBaixado, idDaUrl };

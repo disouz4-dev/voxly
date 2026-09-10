@@ -27,15 +27,7 @@
     return (agora == null ? Date.now() : agora) <= fim + TOLERANCIA_MS;
   }
 
-  // Minutos que faltam para o cantor parar de pedir (0 quando ja fechou).
-  function minutosParaFechar(termino, agora) {
-    const fim = emMs(termino);
-    if (fim == null) return null;
-    const falta = fim + TOLERANCIA_MS - (agora == null ? Date.now() : agora);
-    return falta > 0 ? Math.ceil(falta / 60000) : 0;
-  }
-
-  const api = { TOLERANCIA_MS, podePedirMusica, minutosParaFechar, emMs };
+  const api = { TOLERANCIA_MS, podePedirMusica };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else raiz.VoxlySessao = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

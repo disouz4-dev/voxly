@@ -11,7 +11,7 @@ const { escolherPorNome } = require("./casamento");
 const { pastaDeDownload } = require("./pastas");
 const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identificacao");
 const { escolherArquivoBaixado, idDaUrl } = require("./baixado");
-const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
+const { motivoFalha } = require("./yt-falha");
 const { autoUpdater } = require("electron-updater");
 
 // mp4 1080p por padrao: qualidade de projecao sem pegar 4K, que incha o arquivo
@@ -437,7 +437,6 @@ function iniciarServidorCatalogo() {
   });
 }
 
-// ── Similaridade ───────────────────────────────────────────
 // ── Janelas ────────────────────────────────────────────────
 function escolherDisplayOcupado() {
   // Displays escolhidos automaticamente, para a tela do publico evitar
@@ -1198,8 +1197,6 @@ function identificarPorMetadados(meta) {
 
 // Prazo da edicao manual. Passado ele o arquivo fica com o nome do YouTube —
 // feio, mas achavel; um download pendurado nao e nem uma coisa nem outra.
-// Prazo da edicao manual. Passado ele o arquivo fica com o nome do YouTube —
-// feio, mas achavel; um download pendurado nao e nem uma coisa nem outra.
 const MINUTOS_EDICAO_MANUAL = 3;
 
 // Substituiu o Ollama. Rodar um modelo local so para extrair "artista" e
@@ -1237,6 +1234,7 @@ async function baixarUrl(opts) {
   const archive = ytArchiveLoad();
   const db = ytDbLoad();
   let totalBaixados = 0;
+  let erroFinal = null;   // motivo real da ultima recusa, para chegar ao KJ
 
   // --no-playlist isola o video quando a URL e "watch?v=X&list=Y", mas nao tem
   // o que isolar numa URL que ja E uma playlist ou um canal: ali ele baixa tudo
@@ -1321,14 +1319,18 @@ async function baixarUrl(opts) {
       }
     });
 
+    let saidaErro = "";
     child.stderr.on("data", (data) => {
       const txt = data.toString();
+      // Guarda tudo: era aqui que vinha o motivo real da recusa do YouTube, e
+      // o codigo antigo procurava uma unica string e jogava o resto fora.
+      saidaErro += txt;
       if (txt.includes("already been downloaded") || txt.includes("already been recorded")) {
         enviarProgresso({ log: `⏭ Já baixado (archive): ${url}`, logTipo: 'info' });
       }
     });
 
-    await new Promise((resolve) => {
+    const codigoSaida = await new Promise((resolve) => {
       child.on("close", (code) => {
         ytProcessoAtivo = null;
         resolve(code);
@@ -1342,6 +1344,15 @@ async function baixarUrl(opts) {
     if (erroSpawn) throw new Error(`Falha ao executar o yt-dlp: ${erroSpawn.message}`);
 
     if (ytCancelado) break;
+
+    // O codigo de saida era resolvido e nunca lido. Uma recusa do YouTube
+    // passava em silencio e virava "nada foi baixado", sem motivo e sem saida.
+    const falha = motivoFalha(codigoSaida, saidaErro);
+    if (falha) {
+      enviarProgresso({ status: "Download recusado", log: `❌ ${falha}`, logTipo: 'erro' });
+      erroFinal = falha;
+      continue;
+    }
 
     // Encontra o arquivo baixado (o yt-dlp pode ter mudado o nome)
     if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
@@ -1538,7 +1549,9 @@ async function baixarUrl(opts) {
     sucesso: !ytCancelado && totalBaixados > 0,
     totalBaixados,
     cancelado: ytCancelado,
-    erro: (!ytCancelado && totalBaixados === 0) ? "Nada foi baixado." : undefined,
+    // "Nada foi baixado" nao ajuda ninguem no meio do show: quando o yt-dlp
+    // explicou o motivo, e o motivo que sobe.
+    erro: erroFinal || ((!ytCancelado && totalBaixados === 0) ? "Nada foi baixado." : undefined),
   };
 }
 
@@ -1560,10 +1573,6 @@ ipcMain.handle("yt-download", async (_, opts) => {
 });
 
 // ── IPC: procura candidatos de karaoke no YouTube ──────────
-// O app do cantor roda no navegador e nao alcanca o yt-dlp; quem busca e
-// ranqueia e sempre o host. O renderer so recebe a lista pronta.
-const YT_BUSCA_TIMEOUT_MS = 45000;
-
 ipcMain.handle("yt-cancel", () => {
   ytCancelado = true;
   if (ytProcessoAtivo) {
