@@ -2233,6 +2233,35 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (b) b.classList.toggle('ativa', !!ativa);
   }
 
+  function reenviarEstadoAoPublico() {
+    if (!window.electronAPI || !SESSAO_ID) return;
+    // Pequeno atraso: a janela precisa ter carregado para receber o comando.
+    setTimeout(() => {
+      window.electronAPI.playerCommand(JSON.stringify({
+        cmd:      'sessao-iniciada',
+        codigo:   sessaoCodigo,
+        sessaoId: SESSAO_ID,
+        nomeCasa: dadosSessaoAtual && dadosSessaoAtual.nomeCasa,
+        inicio:   dadosSessaoAtual && dadosSessaoAtual.inicio,
+        termino:  dadosSessaoAtual && dadosSessaoAtual.termino,
+        appUrl:   appUrlLocal || APP_URL,
+      }));
+      // Reenvia tambem quem esta cantando agora, senao o painel abre vazio
+      // mesmo com musica tocando.
+      const atual = filaData.find(i => i.status === 'tocando' || i.status === 'confirmando');
+      if (atual) {
+        window.electronAPI.playerCommand(JSON.stringify({
+          cmd:      'preview',
+          cantor:   atual.nomeArtistico,
+          duo:      atual.duoNome || null,
+          musica:   atual.musica,
+          artista:  atual.artista,
+          semitons: atual.semitons ?? 0,
+        }));
+      }
+    }, 1200);
+  }
+
   function toggleAudiencia() {
     if (!window.electronAPI) return;
     window.electronAPI.toggleAudience().then(ativa => {
@@ -2246,7 +2275,14 @@ https://www.youtube.com/@canal/videos"></textarea>
     window.electronAPI.getAudienceState().then(ativa => atualizarBotaoAudiencia(ativa));
   }
   if (window.electronAPI && window.electronAPI.onAudienceState) {
-    window.electronAPI.onAudienceState(ativa => atualizarBotaoAudiencia(ativa));
+    window.electronAPI.onAudienceState(ativa => {
+      atualizarBotaoAudiencia(ativa);
+      // "sessao-iniciada" e disparado uma unica vez, quando a sessao abre. Uma
+      // tela do publico ligada depois disso nunca recebia o evento e ficava sem
+      // QR e sem os dados da casa, presa no aviso de espera. Ao ligar, o estado
+      // atual e reenviado.
+      if (ativa) reenviarEstadoAoPublico();
+    });
   }
 
   // ── Horário do show / contagem regressiva ───────────────

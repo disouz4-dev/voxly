@@ -773,23 +773,44 @@ function escutarFila() {
       return palavras.every(p => haystack.includes(p));
     }
 
+    // O catalogo vem do servidor do host, na porta 7432. O endereco e derivado
+    // da origem da propria pagina: servida pela LAN do host (http://IP:8030),
+    // o catalogo esta no mesmo IP. O 127.0.0.1 fixo que havia aqui apontava
+    // para o aparelho de quem abre a pagina — no celular, o proprio celular.
+    function urlCatalogoLocal() {
+      const proto = location.protocol;
+      if (proto === 'https:') return null;   // HTTPS nao alcanca http local
+      const host = location.hostname || '127.0.0.1';
+      return `http://${host}:7432/catalogo`;
+    }
+
+    let _catalogoLocalCache = null;
+    async function garantirCatalogo() {
+      if (_catalogoLocalCache) return _catalogoLocalCache;
+      const url = urlCatalogoLocal();
+      if (!url) { _catalogoIndisponivel = 'https'; return null; }
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        _catalogoLocalCache = await resp.json();
+        _catalogoIndisponivel = null;
+        return _catalogoLocalCache;
+      } catch (e) {
+        console.warn('[CATALOGO] servidor local inacessivel:', e);
+        _catalogoIndisponivel = 'offline';
+        return null;
+      }
+    }
+    let _catalogoIndisponivel = null;
+
     async function buscarCatalogo(termo) {
       const palavras = termo.toLowerCase().trim().split(/\s+/).filter(Boolean);
-      let resultados = [];
 
-      // Tenta buscar no servidor local do Electron
-      try {
-        const resp = await fetch('http://127.0.0.1:7432/catalogo');
-        if (resp.ok) {
-          const catalogo = await resp.json();
-          resultados = catalogo
-            .filter(d => matchBusca(d, palavras))
-            .map(d => ({ ...d, musica: limparNome(d.musica), artista: limparNome(d.artista) }))
-            .slice(0, 10);
-        }
-      } catch(e) {
-        console.warn('Catálogo indisponível na busca:', e);
-      }
+      const catalogo = await garantirCatalogo();
+      const resultados = !catalogo ? [] : catalogo
+        .filter(d => matchBusca(d, palavras))
+        .map(d => ({ ...d, musica: limparNome(d.musica), artista: limparNome(d.artista) }))
+        .slice(0, 10);
 
       const el = document.getElementById('resultadosBusca');
       const naoEncontrada = document.getElementById('naoEncontradaBox');
