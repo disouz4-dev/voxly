@@ -253,8 +253,10 @@ body.modo-publico #entrada-publica { display:flex; }
 .pub-avatar-amp { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1rem,2vw,1.6rem); }
 .pub-singer-name {
   font-family:'Unbounded'; font-weight:800;
-  font-size:clamp(1.8rem, 5vw, 3.5rem); line-height:1.05; letter-spacing:.01em;
+  font-size:clamp(1.3rem, 3.4vw, 3.2rem); line-height:1.08; letter-spacing:.01em;
   color:var(--texto); text-shadow:0 8px 32px rgba(0,0,0,.5); margin-bottom:8px;
+  /* "Aguardando o proximo cantor..." saia cortado ao meio em tela pequena. */
+  overflow-wrap:anywhere; text-wrap:balance;
 }
 .pub-duo-name { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1rem,2.5vw,1.8rem); margin-bottom:clamp(16px,3vh,28px); }
 .pub-song-title { font-family:'Unbounded'; font-weight:600; font-size:clamp(1.1rem,2.8vw,2.2rem); color:var(--ambar); line-height:1.2; margin-bottom:6px; }
@@ -523,7 +525,7 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
     </div>
   </div>
 
-  <video id="video-player" controls></video>
+  <video id="video-player" controls disablepictureinpicture controlslist="nodownload noplaybackrate"></video>
   <audio id="preview-audio"   style="display:none;"></audio>
   <audio id="intervalo-audio" style="display:none;"></audio>
   <audio id="abertura-audio"  style="display:none;" src="../assets/intervalo/Abertura do Cantor.mp3"></audio>
@@ -694,6 +696,12 @@ document.addEventListener("DOMContentLoaded", () => {
       detalhe: "Perto do fim, os pedidos são encerrados." },
   ];
   if (isAudience) document.body.classList.add("modo-publico");
+  // No telao os controles do player aparecem para a casa inteira. Quem comanda
+  // e a Gerencia; aqui eles so poluem — e um clique da plateia pausaria o show.
+  if (isAudience) {
+    const v = document.getElementById("video-player");
+    if (v) { v.removeAttribute("controls"); v.style.pointerEvents = "none"; }
+  }
 
   // O painel do publico e a MESMA pagina do Palco (player.html?tela=publico), entao
   // roda o mesmo JS e reproduzia o proprio audio em paralelo: duas musicas de
@@ -722,7 +730,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const tocando = !!vid.src && !vid.paused && !vid.ended;
     const aviso = document.getElementById("pub-center-idle");
     if (aviso) aviso.style.display = tocando ? "none" : "flex";
-    // O guia so faz sentido com a area central livre.
+    // Sem src o elemento vira um retangulo preto por cima do painel inteiro.
+    // Esconder aqui e seguro porque este espelhar e quem manda no video do
+    // painel: era a logica ANTIGA, que escondia e nunca reexibia, que causava
+    // a tela do publico sem video.
+    vid.style.display = tocando ? "block" : "none";
     if (tocando) pararGuiaPublico(); else iniciarGuiaPublico();
   };
       ["loadstart", "playing", "pause", "ended", "emptied"].forEach(ev =>
@@ -745,12 +757,24 @@ document.addEventListener("DOMContentLoaded", () => {
     return h + ":" + m + ":" + ss;
   }
 
+  // "É HORA DO SHOW!" e comemoracao, nao estado permanente. No painel do
+  // publico o cartaz fica por cima de tudo — cantor, guia e fila — e antes ele
+  // ficava ali a noite inteira, porque nada o tirava enquanto o KJ nao
+  // marcasse o show como iniciado.
+  const SEGUNDOS_COMEMORACAO = 45;
+
   function atualizarContagemShow() {
     if (!cdEl) return;
     if (!showHorarioInicio) { cdEl.classList.remove("visible"); return; }
     const dif = showHorarioInicio - Date.now();
     cdEl.classList.remove("zerou");
+
     if (dif <= 0) {
+      if (-dif > SEGUNDOS_COMEMORACAO * 1000) {
+        clearInterval(showContagemTimer);
+        cdEl.classList.remove("visible");
+        return;
+      }
       cdEl.classList.add("zerou");
       cdTimeEl.textContent = "É HORA DO SHOW!";
     } else {
