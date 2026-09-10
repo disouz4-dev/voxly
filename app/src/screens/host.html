@@ -1303,6 +1303,8 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // Levanta as versoes do YouTube sob demanda, quando o KJ pede.
+  function logDownload(msg) { console.log('[BUSCA]', msg); }
+
   async function procurarVersoes(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item) return;
@@ -1311,10 +1313,15 @@ https://www.youtube.com/@canal/videos"></textarea>
     try {
       const termo = [item.artista, item.musica].filter(t => t && t !== 'Desconhecido').join(' ');
       const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(termo)}`);
-      const { candidatos } = await resp.json();
+      const { candidatos, brutos, consulta } = await resp.json();
       if (!candidatos || !candidatos.length) {
         await ref.update({ statusDownload: 'erro' }).catch(() => {});
-        mostrarToast('Nenhuma versão de karaokê encontrada');
+        // Distingue os dois motivos: o YouTube nao devolveu nada, ou devolveu e
+        // nenhum resultado era karaoke.
+        mostrarToast(brutos
+          ? `Nenhum karaokê entre ${brutos} resultados de "${consulta}"`
+          : `O YouTube não achou nada para "${consulta}"`, 6000);
+        logDownload(`Busca sem karaokê — consulta: ${consulta} (${brutos} brutos)`);
         return;
       }
       await ref.update({ statusDownload: 'escolher', candidatos: candidatos.slice(0, 6) }).catch(() => {});
@@ -1335,8 +1342,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('candidatosLista').innerHTML = item.candidatos.map((c, i) => {
       const mm = Math.floor(c.duracao / 60) + ':' + String(c.duracao % 60).padStart(2, '0');
       return `<div class="modal-result-item" onclick="baixarEscolhido('${itemId}', ${i})">
-        <div style="font-weight:600;margin-bottom:2px;">${escaparHtml(c.titulo)}</div>
-        <div style="font-size:.7rem;color:var(--mudo);">${escaparHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views</div>
+        <div style="font-weight:600;margin-bottom:2px;">${escHtml(c.titulo)}</div>
+        <div style="font-size:.7rem;color:var(--mudo);">${escHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views</div>
       </div>`;
     }).join('');
     document.getElementById('modalCandidatos').classList.add('open');

@@ -190,9 +190,14 @@ async function buscarKaraokeYt(termo) {
   const pasta = store.get("musicFolder");
   const jaTemos = idsBaixados(pasta);
 
-  return ytBusca
+  const candidatos = ytBusca
     .ordenarCandidatos(videos, { musica: termo, artista: "" }, { limite: 8 })
     .map(c => ({ ...c, jaBaixado: jaTemos.has(c.id) }));
+
+  // Devolve tambem o que o YouTube trouxe antes do filtro. Sem isso, "nada
+  // encontrado" nao distingue busca vazia de busca cheia de resultados que nao
+  // eram karaoke — e o KJ fica sem saber se o problema e o termo.
+  return { candidatos, brutos: videos.length, consulta };
 }
 
 function iniciarServidorCatalogo() {
@@ -222,9 +227,9 @@ function iniciarServidorCatalogo() {
         return;
       }
       buscarKaraokeYt(q)
-        .then(candidatos => {
+        .then(r => {
           res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ candidatos }));
+          res.end(JSON.stringify(r));
         })
         .catch(e => {
           res.statusCode = 500;
