@@ -25,6 +25,15 @@ let servidorLocal   = null;
 // ── Catálogo local ─────────────────────────────────────────
 
 // Retorna lista de fullPaths de arquivos com extensão em `exts`, recursivamente
+// Em disco exFAT (comum em HD externo) o macOS nao consegue gravar atributos
+// estendidos no proprio arquivo e cria um sidecar AppleDouble "._Nome.mp4" ao
+// lado. Ele tem a mesma extensao e uns poucos KB. Sem descartar isso, o codigo
+// que procura "o arquivo mais recente" pegava o sidecar, renomeava ELE, e o
+// video real ficava com o nome original — a origem dos arquivos extras.
+function ehSidecarMac(nome) {
+  return nome.startsWith("._") || nome === ".DS_Store";
+}
+
 function listarArquivosRecursivo(dir, exts) {
   const resultado = [];
   try {
@@ -32,7 +41,8 @@ function listarArquivosRecursivo(dir, exts) {
       const fullPath = path.join(dir, entrada.name);
       if (entrada.isDirectory()) {
         resultado.push(...listarArquivosRecursivo(fullPath, exts));
-      } else if (entrada.isFile() && exts.includes(path.extname(entrada.name).toLowerCase())) {
+      } else if (entrada.isFile() && !ehSidecarMac(entrada.name)
+                 && exts.includes(path.extname(entrada.name).toLowerCase())) {
         resultado.push(fullPath);
       }
     }
@@ -594,6 +604,8 @@ ipcMain.handle("select-music-folder", async () => {
 });
 
 ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
+ipcMain.handle("get-yt-qualidade", () => store.get("ytQualidade", QUALIDADE_PADRAO));
+ipcMain.handle("set-yt-qualidade", (_, v) => { store.set("ytQualidade", v); return true; });
 
 // Caminho local de um video ja baixado, pelo id do YouTube. E assim que o host
 // decide entre apontar para o arquivo e disparar o download.
@@ -1011,8 +1023,13 @@ Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
   return null;
 }
 
+// mp4 720p por padrao: resolucao suficiente para projecao, arquivo bem menor e
+// H.264/AAC, que toca em qualquer lugar. O KJ pode trocar.
+const QUALIDADE_PADRAO = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]";
+
 async function baixarUrl(opts) {
-  const { urls, pasta, qualidade, renomear, organizar, cookies, navegador, playlist } = opts;
+  const { urls, pasta, renomear, organizar, cookies, navegador, playlist } = opts;
+  const qualidade = opts.qualidade || store.get("ytQualidade") || QUALIDADE_PADRAO;
 
   const ytDlp = resolverBinario("yt-dlp");
   if (!ytDlp) {
@@ -1051,7 +1068,11 @@ async function baixarUrl(opts) {
     const args = [
       "-f", qualidade,
       "-o", path.join(pasta, "%(title)s.%(ext)s"),
-      "--download-archive", YT_ARCHIVE_FILE,
+      // Sem --download-archive: ele guardava ids ja baixados e fazia o yt-dlp
+      // PULAR o download reportando sucesso. Trocando a pasta de destino (ou
+      // apagando um arquivo), o id continuava no registro e a musica nunca mais
+      // baixava — "baixou" e pasta vazia. Agora quem responde "ja tenho isto?"
+      // e caminhoLocalDoVideo(), que olha a pasta real.
       "--no-overwrites",
       "--ignore-errors",
       "--sleep-interval", "2",
@@ -1130,6 +1151,7 @@ async function baixarUrl(opts) {
     if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
       // Tenta achar arquivo novo na pasta
       const files = fs.readdirSync(pasta).filter(f => {
+        if (ehSidecarMac(f)) return false;
         const full = path.join(pasta, f);
         return fs.statSync(full).isFile() && [".mp4", ".mkv", ".webm", ".mp3", ".m4a"].includes(path.extname(f).toLowerCase());
       });
@@ -1269,7 +1291,14 @@ async function baixarUrl(opts) {
     ytArchiveSave(archive);
   }
 
-  return { sucesso: !ytCancelado, totalBaixados, cancelado: ytCancelado };
+  // "sucesso" com zero arquivos e mentira util para ninguem: quem chama precisa
+  // saber que a pasta continua sem a musica.
+  return {
+    sucesso: !ytCancelado && totalBaixados > 0,
+    totalBaixados,
+    cancelado: ytCancelado,
+    erro: (!ytCancelado && totalBaixados === 0) ? "Nada foi baixado." : undefined,
+  };
 }
 
 ipcMain.handle("yt-download", async (_, opts) => {

@@ -779,6 +779,14 @@ https://www.youtube.com/@canal/videos"></textarea>
     <p style="font-size:.75rem;color:var(--mudo);margin-bottom:12px;">
       Versões de karaokê encontradas no YouTube, filtradas e ordenadas. Clique para baixar.
     </p>
+    <label class="modal-label">Qualidade do download</label>
+    <select class="modal-select" id="candidatosQualidade" onchange="salvarQualidade()">
+      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4 (padrão)</option>
+      <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4</option>
+      <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
+      <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
+    </select>
+    <div style="height:10px;"></div>
     <div id="candidatosLista" style="max-height:320px;overflow-y:auto;"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalCandidatos()">Cancelar</button>
@@ -1290,12 +1298,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     try {
       const r = await window.electronAPI.ytDownload({
         urls: [c.url], pasta: pastaMusicasAtual || undefined,
-        qualidade: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+        qualidade: document.getElementById('candidatosQualidade').value,
         renomear: true, organizar: false, cookies: false, navegador: null, playlist: false,
       });
       const ok = r && r.sucesso;
       await ref.update({ disponivel: !!ok, statusDownload: ok ? 'pronto' : 'erro' }).catch(() => {});
-      mostrarToast(ok ? `✅ "${item.musica}" pronta` : `❌ Falha ao baixar`);
+      mostrarToast(ok ? `✅ "${item.musica}" pronta` : `❌ ${(r && r.erro) || 'Falha ao baixar'}`);
     } catch (e) {
       await ref.update({ statusDownload: 'erro' }).catch(() => {});
       mostrarToast(`❌ ${e.message}`);
@@ -1332,6 +1340,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // upload_date vem como "YYYYMMDD". Versao recente costuma ter audio melhor e
+  // letra corrigida, entao o KJ decide olhando a idade.
+  function idadeVideo(aaaammdd) {
+    if (!aaaammdd || !/^\d{8}$/.test(String(aaaammdd))) return '';
+    const t = String(aaaammdd);
+    const d = new Date(+t.slice(0,4), +t.slice(4,6) - 1, +t.slice(6,8));
+    const dias = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (dias < 0)   return '';
+    if (dias < 31)  return `há ${dias} dia${dias === 1 ? '' : 's'}`;
+    const meses = Math.floor(dias / 30);
+    if (meses < 12) return `há ${meses} ${meses === 1 ? 'mês' : 'meses'}`;
+    const anos = Math.floor(dias / 365);
+    return `há ${anos} ano${anos === 1 ? '' : 's'}`;
+  }
+
   function abrirModalCandidatos(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item || !item.candidatos || !item.candidatos.length) {
@@ -1343,10 +1366,18 @@ https://www.youtube.com/@canal/videos"></textarea>
       const mm = Math.floor(c.duracao / 60) + ':' + String(c.duracao % 60).padStart(2, '0');
       return `<div class="modal-result-item" onclick="baixarEscolhido('${itemId}', ${i})">
         <div style="font-weight:600;margin-bottom:2px;">${escHtml(c.titulo)}</div>
-        <div style="font-size:.7rem;color:var(--mudo);">${escHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views</div>
+        <div style="font-size:.7rem;color:var(--mudo);">${escHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views${idadeVideo(c.postadoEm) ? ' · <span style="color:var(--azul);">' + idadeVideo(c.postadoEm) + '</span>' : ''}</div>
       </div>`;
     }).join('');
     document.getElementById('modalCandidatos').classList.add('open');
+  }
+
+  async function salvarQualidade() {
+    const v = document.getElementById('candidatosQualidade').value;
+    if (window.electronAPI && window.electronAPI.setYtQualidade) {
+      await window.electronAPI.setYtQualidade(v);
+      mostrarToast('Qualidade salva como padrão');
+    }
   }
 
   function fecharModalCandidatos() {
