@@ -11,6 +11,7 @@ const canaisPermitidos = new Set([
 contextBridge.exposeInMainWorld("electronAPI", {
   selectMusicFolder:  () => ipcRenderer.invoke("select-music-folder"),
   getMusicFolder:     () => ipcRenderer.invoke("get-music-folder"),
+  localizarVideo:     (idVideo) => ipcRenderer.invoke("localizar-video", idVideo),
   scanMusicFolder:    () => ipcRenderer.invoke("scan-music-folder"),
   listMusicFiles:     () => ipcRenderer.invoke("list-music-files"),
   resolveMusicFile:   (song, artist) => ipcRenderer.invoke("resolve-music-file", song, artist),

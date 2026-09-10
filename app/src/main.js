@@ -569,6 +569,13 @@ ipcMain.handle("select-music-folder", async () => {
 
 ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
 
+// Caminho local de um video ja baixado, pelo id do YouTube. E assim que o host
+// decide entre apontar para o arquivo e disparar o download.
+ipcMain.handle("localizar-video", (_, idVideo) => {
+  const pasta = store.get("musicFolder", null);
+  return caminhoLocalDoVideo(pasta, idVideo);
+});
+
 ipcMain.handle("scan-music-folder", () => {
   const folder = store.get("musicFolder", null);
   if (folder) {

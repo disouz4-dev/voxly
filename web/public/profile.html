@@ -1026,6 +1026,10 @@ function escutarFila() {
         artista:       musicaSelecionada.artista,
         catalogoId:    musicaSelecionada.catalogoId || null,
         disponivel:    musicaSelecionada.disponivel,
+        // Identidade do video: e por aqui que o host sabe o que baixar e
+        // reconhece que ja tem o arquivo.
+        videoId:       musicaSelecionada.videoId  || null,
+        videoUrl:      musicaSelecionada.videoUrl || null,
         duoUid:        duoUid || null,
         duoNome:       duoNome || null,
         duoPendente:   temDuo,

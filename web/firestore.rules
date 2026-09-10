@@ -27,6 +27,11 @@ service cloud.firestore {
       match /historico/{id} {
         allow read, write: if logado();
       }
+      // Ponte de busca: o cantor grava o termo, o host devolve os candidatos.
+      // Sem esta regra a escrita e negada com 403 e a busca nunca sai do lugar.
+      match /buscas/{id} {
+        allow read, write: if logado();
+      }
       match /meta/{doc} {
         allow read, write: if logado();
       }

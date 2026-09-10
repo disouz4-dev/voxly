@@ -1005,6 +1005,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     // Restaura pasta salva
     if (window.electronAPI) {
       const folder = await window.electronAPI.getMusicFolder();
+      pastaMusicasAtual = folder;
       if (folder) document.getElementById('folder-path-display').textContent = folder;
     }
 
@@ -1293,10 +1294,54 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // Item pedido com videoId: se o arquivo ja existe, so aponta; se nao, baixa
+  // automaticamente. E o que fecha o fluxo — o cantor pede e a musica aparece
+  // pronta, sem o KJ abrir modal nem colar URL.
+  const _baixando = new Set();
+  let pastaMusicasAtual = null;
+
+  async function garantirArquivoDaFila(item) {
+    if (!item.videoId || !item.videoUrl) return;
+    if (_baixando.has(item.videoId)) return;
+    if (item.disponivel) return;
+
+    const local = await window.electronAPI.localizarVideo(item.videoId);
+    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id);
+
+    if (local) {
+      await ref.update({ disponivel: true }).catch(() => {});
+      return;
+    }
+
+    _baixando.add(item.videoId);
+    mostrarToast(`⬇ Baixando "${item.musica}"...`);
+    await ref.update({ statusDownload: 'baixando' }).catch(() => {});
+
+    try {
+      const r = await window.electronAPI.ytDownload({
+        urls: [item.videoUrl],
+        pasta: pastaMusicasAtual || undefined,
+        qualidade: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+        renomear: true, organizar: false, cookies: false, navegador: null, playlist: false,
+      });
+      const ok = r && r.sucesso;
+      await ref.update({ disponivel: !!ok, statusDownload: ok ? 'pronto' : 'erro' }).catch(() => {});
+      mostrarToast(ok ? `✅ "${item.musica}" pronta` : `❌ Falha ao baixar "${item.musica}"`);
+    } catch (e) {
+      await ref.update({ statusDownload: 'erro' }).catch(() => {});
+      mostrarToast(`❌ ${e.message}`);
+    } finally {
+      _baixando.delete(item.videoId);
+    }
+  }
+
   function escutarFila() {
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
       .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])
       .onSnapshot(snap => {
+        // Pedido novo com videoId: garante o arquivo antes da vez chegar.
+        snap.docs.forEach(d => garantirArquivoDaFila({ id: d.id, ...d.data() }));
+
         filaData = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(d => d.slot !== 'espera')
