@@ -228,6 +228,19 @@
     });
 
     // Retorno do signInWithRedirect.
+    // Pela LAN o Firebase Auth recusa o dominio; entrar direto no app evita
+    // oferecer um login que nunca vai completar.
+    (function () {
+      const h = location.hostname;
+      const lan = location.protocol === 'http:' &&
+        (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h === 'localhost' || h.endsWith('.local'));
+      if (!lan) return;
+      const metodos = document.getElementById('login-methods');
+      if (metodos) metodos.style.display = 'none';
+      avisoLogin('Conectado pela rede da casa — entrando sem login...', 'info');
+      setTimeout(() => { window.location.href = comSessao('/profile.html'); }, 900);
+    })();
+
     auth.getRedirectResult()
       .then(r => { if (r && r.user) return redirectByProfile(r.user); })
       .catch(e => avisoLogin('Nao foi possivel entrar com o Google (' + (e.code || e.message) + ').'));

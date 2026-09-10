@@ -406,7 +406,18 @@
     let db;
     let modoOffline = false;
 
+    // Servido pelo host (LAN), o login Google e impossivel: o Firebase Auth so
+    // aceita dominios autorizados, e um IP de rede local nunca esta na lista —
+    // da auth/unauthorized-domain. Nesse endereco o cantor entra com identidade
+    // local, que e o mesmo caminho ja usado quando falta internet.
+    function servidoPelaLan() {
+      const h = location.hostname;
+      if (location.protocol !== 'http:') return false;
+      return /^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h === 'localhost' || h.endsWith('.local');
+    }
+
     async function detectarOnline() {
+      if (servidoPelaLan()) { modoOffline = true; return; }
       // Se veio do servidor local (LAN), prova um doc do Firestore com timeout curto
       try {
         const controle = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2500));
