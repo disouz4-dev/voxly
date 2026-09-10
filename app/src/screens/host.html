@@ -776,9 +776,10 @@ https://www.youtube.com/@canal/videos"></textarea>
   <div class="modal-box" style="width:min(560px,94vw);">
     <h2>🎬 Escolher versão</h2>
     <p id="candidatosTitulo" style="font-size:.85rem;color:var(--ambar);margin:8px 0 4px;"></p>
-    <p style="font-size:.75rem;color:var(--mudo);margin-bottom:12px;">
+    <p id="candidatosSubtitulo" style="font-size:.75rem;color:var(--mudo);margin-bottom:12px;">
       Versões de karaokê encontradas no YouTube, filtradas e ordenadas. Clique para baixar.
     </p>
+    <div id="candidatosQualidadeBox">
     <label class="modal-label">Qualidade do download</label>
     <select class="modal-select" id="candidatosQualidade" onchange="salvarQualidade()">
       <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4 (padrão)</option>
@@ -786,6 +787,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
       <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
     </select>
+    </div>
     <div style="height:10px;"></div>
     <div id="candidatosLista" style="max-height:320px;overflow-y:auto;"></div>
     <div class="modal-footer">
@@ -1383,6 +1385,40 @@ https://www.youtube.com/@canal/videos"></textarea>
     return `há ${anos} ano${anos === 1 ? '' : 's'}`;
   }
 
+  // Versoes da musica ja baixadas. Quem decide o que vai tocar e o KJ.
+  async function abrirVersoesLocais(itemId) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item) return;
+    const versoes = await window.electronAPI.versoesLocais({ musica: item.musica, artista: item.artista });
+
+    if (!versoes.length) {
+      mostrarToast('Nenhum arquivo encontrado — vou procurar versões');
+      procurarVersoes(itemId);
+      return;
+    }
+
+    document.getElementById('candidatosTitulo').textContent = `${item.artista} — ${item.musica}`;
+    document.getElementById('candidatosSubtitulo').textContent =
+      `${versoes.length} versão(ões) na pasta. Escolha qual tocar.`;
+    document.getElementById('candidatosQualidadeBox').style.display = 'none';
+    document.getElementById('candidatosLista').innerHTML = versoes.map((v, i) => `
+      <div class="modal-result-item" onclick="usarVersaoLocal('${itemId}', ${i})">
+        <div style="font-weight:600;margin-bottom:2px;">${escHtml(v.canal || v.arquivo)}</div>
+        <div style="font-size:.7rem;color:var(--mudo);">${escHtml(v.arquivo)}</div>
+      </div>`).join('');
+    document.getElementById('modalCandidatos')._versoes = versoes;
+    document.getElementById('modalCandidatos').classList.add('open');
+  }
+
+  async function usarVersaoLocal(itemId, indice) {
+    const v = (document.getElementById('modalCandidatos')._versoes || [])[indice];
+    if (!v) return;
+    fecharModalCandidatos();
+    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
+      .update({ videoId: v.videoId || null, arquivoEscolhido: v.arquivo }).catch(() => {});
+    mostrarToast(`🎚 Versão de "${v.canal || v.arquivo}" selecionada`);
+  }
+
   function abrirModalCandidatos(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item || !item.candidatos || !item.candidatos.length) {
@@ -1390,6 +1426,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       return;
     }
     document.getElementById('candidatosTitulo').textContent = `${item.artista} — ${item.musica}`;
+    document.getElementById('candidatosSubtitulo').textContent =
+      'Versões de karaokê encontradas no YouTube. Clique para baixar.';
+    document.getElementById('candidatosQualidadeBox').style.display = '';
     document.getElementById('candidatosLista').innerHTML = item.candidatos.map((c, i) => {
       const mm = Math.floor(c.duracao / 60) + ':' + String(c.duracao % 60).padStart(2, '0');
       return `<div class="modal-result-item" onclick="baixarEscolhido('${itemId}', ${i})">
@@ -1710,7 +1749,10 @@ https://www.youtube.com/@canal/videos"></textarea>
       // dispara o download. Sem este botao o modal de candidatos era
       // inalcancavel — o item aparecia na fila sem nenhuma acao possivel.
       let baixarBtn = '';
-      if (!item.disponivel) {
+      if (item.disponivel) {
+        // Ja esta na pasta: o KJ pode trocar por outra versao do acervo.
+        baixarBtn = `<button class="btn btn-ghost btn-sm" onclick="abrirVersoesLocais('${item.id}')" title="Escolher qual gravação tocar">🎚 Versão</button>`;
+      } else {
         if (item.statusDownload === 'baixando') {
           baixarBtn = `<span class="btn btn-ghost btn-sm" style="opacity:.7;cursor:default;">⏳ Baixando...</span>`;
         } else if (item.statusDownload === 'escolher' && (item.candidatos || []).length) {

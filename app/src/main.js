@@ -6,6 +6,7 @@ const fs     = require("fs");
 const http   = require("http");
 const ServidorLocal = require("./local-server");
 const ytBusca = require("./yt-busca");
+const { versoesLocais } = require("./versoes");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
@@ -632,6 +633,20 @@ ipcMain.handle("set-prefs-download", (_, p) => {
 
 // Caminho local de um video ja baixado, pelo id do YouTube. E assim que o host
 // decide entre apontar para o arquivo e disparar o download.
+// Todas as versoes da musica ja presentes na pasta. O KJ escolhe qual tocar:
+// a mesma faixa costuma existir em canais diferentes, com tom e arranjo
+// diferentes, e pegar "a primeira que achar" tirava essa decisao dele.
+ipcMain.handle("versoes-locais", (_, pedido) => {
+  const pasta = store.get("musicFolder", null);
+  if (!pasta || !fs.existsSync(pasta)) return [];
+  const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
+  const nomes = listarArquivosRecursivo(pasta, exts).map(fp => path.basename(fp));
+  return versoesLocais(nomes, pedido).map(v => ({
+    ...v,
+    caminho: path.join(pasta, v.arquivo),
+  }));
+});
+
 ipcMain.handle("localizar-video", (_, idVideo) => {
   const pasta = store.get("musicFolder", null);
   return caminhoLocalDoVideo(pasta, idVideo);
