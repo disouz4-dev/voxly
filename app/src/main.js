@@ -10,6 +10,7 @@ const { versoesLocais } = require("./versoes");
 const { escolherPorNome } = require("./casamento");
 const { pastaDeDownload } = require("./pastas");
 const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identificacao");
+const { escolherArquivoBaixado, idDaUrl } = require("./baixado");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
@@ -1260,7 +1261,7 @@ async function baixarUrl(opts) {
 
     const args = [
       "-f", qualidade,
-      "-o", path.join(pasta, "%(title)s.%(ext)s"),
+      "-o", path.join(pasta, "%(title)s [%(id)s].%(ext)s"),
       // Sem --download-archive: ele guardava ids ja baixados e fazia o yt-dlp
       // PULAR o download reportando sucesso. Trocando a pasta de destino (ou
       // apagando um arquivo), o id continuava no registro e a musica nunca mais
@@ -1300,6 +1301,8 @@ async function baixarUrl(opts) {
 
     let arquivoBaixado = null;
     let infoVideo = {};
+    const idDestaUrl = idDaUrl(url);
+    const inicioDownload = Date.now();
 
     child.stdout.on("data", (data) => {
       const txt = data.toString();
@@ -1340,23 +1343,35 @@ async function baixarUrl(opts) {
 
     if (ytCancelado) break;
 
-    // Encontra o arquivo baixado (pode ter sido renomeado pelo yt-dlp)
+    // Encontra o arquivo baixado (o yt-dlp pode ter mudado o nome)
     if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
-      // Tenta achar arquivo novo na pasta
-      const files = (fs.existsSync(pasta) ? fs.readdirSync(pasta) : []).filter(f => {
-        if (!ehArquivoUtil(f)) return false;
-        const full = path.join(pasta, f);
-        return fs.statSync(full).isFile() && [".mp4", ".mkv", ".webm", ".mp3", ".m4a"].includes(path.extname(f).toLowerCase());
+      const candidatos = (fs.existsSync(pasta) ? fs.readdirSync(pasta) : [])
+        .filter(f => ehArquivoUtil(f)
+          && [".mp4", ".mkv", ".webm", ".mp3", ".m4a"].includes(path.extname(f).toLowerCase()))
+        .map(f => {
+          try {
+            const st = fs.statSync(path.join(pasta, f));
+            return st.isFile() ? { nome: f, mtimeMs: st.mtimeMs } : null;
+          } catch { return null; }
+        })
+        .filter(Boolean);
+
+      const escolhido = escolherArquivoBaixado(candidatos, {
+        inicioMs: inicioDownload,
+        idVideo: idDestaUrl,
       });
-      // Pega o mais recente
-      if (files.length) {
-        files.sort((a, b) => fs.statSync(path.join(pasta, b)).mtimeMs - fs.statSync(path.join(pasta, a)).mtimeMs);
-        arquivoBaixado = path.join(pasta, files[0]);
-      }
+      if (escolhido) arquivoBaixado = path.join(pasta, escolhido);
     }
 
     if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
-      enviarProgresso({ log: `⚠️ Arquivo não encontrado após download`, logTipo: 'erro' });
+      // Antes, aqui, o codigo pegava "o arquivo mais recente da pasta" — que
+      // podia ser o download de OUTRO pedido. Ele era renomeado para o artista
+      // deste, entrava no banco no lugar errado e o original sumia. Falhar e o
+      // comportamento certo: o KJ tenta outra versao.
+      enviarProgresso({
+        log: `⚠️ O download não produziu arquivo nenhum para esta música`,
+        logTipo: 'erro',
+      });
       continue;
     }
 
