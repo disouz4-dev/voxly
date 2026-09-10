@@ -505,11 +505,9 @@ footer strong { color:var(--ambar); font-weight:700; }
       </div>
 
       <div class="player-controls">
-        <button class="btn btn-ok"      onclick="playerCmd('play')">▶ Play</button>
+        <button class="btn btn-ok"      onclick="playAgora()" title="Começa agora, mesmo sem o cantor confirmar">▶ Play</button>
         <button class="btn btn-warn"    onclick="playerCmd('pause')">⏸ Pausa</button>
         <button class="btn btn-skip"    onclick="skipSong()">⏭ Pular</button>
-        <button class="btn btn-primary" onclick="marcarCantadaAtual()">✓ Cantada</button>
-        <button class="btn btn-ghost"   onclick="playerCmd('fullscreen')">⛶ Tela Cheia</button>
       </div>
 
       <!-- QR CODES -->
@@ -1552,7 +1550,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     fecharModalCandidatos();
     await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
       .update({ videoId: v.videoId || null, arquivoEscolhido: v.arquivo }).catch(() => {});
-    mostrarToast(`🎚 Versão de "${v.canal || v.arquivo}" selecionada`);
+    if (currentSong && currentSong.id === itemId) {
+      currentSong = { ...currentSong, videoId: v.videoId || null, arquivoEscolhido: v.arquivo, filePath: null };
+    }
+    mostrarToast(`🎚 Versão de "${v.canal || v.arquivo}" selecionada — use ⏮ Reiniciar para trocar agora`);
   }
 
   async function abrirModalCandidatos(itemId) {
@@ -2069,10 +2070,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!window.electronAPI || !currentSong) return;
     // Garante que o player está aberto
     window.electronAPI.invoke('open-player');
-    // Resolve filePath se não estiver cacheado
-    const filePath = currentSong.filePath
-      || await arquivoDoItem(currentSong);
+
+    // Sempre reler o pedido antes de resolver o arquivo. O filePath fica em
+    // cache desde o inicio da musica, entao trocar de versao no meio nao
+    // mudava nada: o Reiniciar tocava a gravacao anterior de novo.
+    let item = currentSong;
+    if (modoOffline) {
+      item = filaData.find(i => i.id === currentSong.id) || currentSong;
+    } else {
+      const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .doc(currentSong.id).get().catch(() => null);
+      if (snap && snap.exists) item = { id: currentSong.id, ...snap.data() };
+    }
+    const filePath = await arquivoDoItem(item);
     if (!filePath) { alert('Arquivo não encontrado para reiniciar.'); return; }
+    currentSong = { ...currentSong, ...item, filePath, iniciadoEm: Date.now() };
     // Exibe animação de intro e toca do início
     setTimeout(() => {
       window.electronAPI.playerCommand(JSON.stringify({
@@ -2236,10 +2248,6 @@ https://www.youtube.com/@canal/videos"></textarea>
     } else {
       salvarBackupLocal();
     }
-  }
-
-  function marcarCantadaAtual() {
-    if (currentSong) marcarCantada(currentSong.id);
   }
 
   async function marcarCantada(itemId) {
@@ -3039,6 +3047,21 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // ── Player controls ───────────────────────────────────────
   function playerCmd(cmd) { if (window.electronAPI) window.electronAPI.playerCommand(cmd); }
+
+  // "play" cru so retoma um video ja carregado, entao o botao nao servia para
+  // nada enquanto ninguem tivesse confirmado. Aqui ele e a decisao do KJ:
+  // corta a contagem e poe o proximo da fila para tocar na hora.
+  async function playAgora() {
+    if (filaData.some(i => i.status === 'tocando')) { playerCmd('play'); return; }
+
+    const alvo = filaData.find(i => i.status === 'confirmando' || i.status === 'pronto')
+              || filaData.find(i => i.status === 'aguardando' && i.slot !== 'espera');
+    if (!alvo) { mostrarToast('Não há ninguém na fila para tocar'); return; }
+
+    clearTimeout(timerConfirmacao);
+    proximaConfirmando = null;
+    await tocarMusica(alvo.id);
+  }
 
   function ajustarTom(delta) {
     tomAtual = Math.max(-6, Math.min(6, tomAtual + delta));

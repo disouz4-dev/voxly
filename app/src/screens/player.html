@@ -644,7 +644,7 @@ document.addEventListener("DOMContentLoaded", () => {
       vid.style.display = "block";
 
       const espelhar = () => {
-        const tocando = !!vid.src && !vid.ended;
+        const tocando = !!vid.src && !vid.paused && !vid.ended;
         const aviso = document.getElementById("pub-center-idle");
         if (aviso) aviso.style.display = tocando ? "none" : "flex";
       };
@@ -712,6 +712,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Áudio: compressor + pitch shift ──────────────────────
   let audioCtx   = null;
+  let syncTimer  = null;   // Palco -> painel: acerto periodico de relogio
+  let syncCaoTimer = null; // painel: vigia se o Palco parou de dar noticia
   let srcNode    = null;
   let pitchNode  = null;
   let compNode   = null;
@@ -1144,14 +1146,45 @@ document.addEventListener("DOMContentLoaded", () => {
     idleAtivo = false;
     idle.style.display  = "none";
     video.style.display = "block";
-    video.src = toFileUrl(filePath);
-    video.load();
+    // Ja pre-carregado no "play-confirmed": trocar o src de novo jogaria fora
+    // o buffer e o atraso voltaria.
+    const url = toFileUrl(filePath);
+    if (video.src !== url) { video.src = url; video.load(); }
     // Tela do publico ligada no meio da musica entra no mesmo ponto do Palco.
     if (tempo > 0) {
       video.addEventListener("loadedmetadata", () => { try { video.currentTime = tempo; } catch (_) {} }, { once: true });
     }
     video.play().catch(e => console.error("[PLAYER] Erro ao tocar:", e));
   });
+
+  // Meio quadro a 30fps e imperceptivel; abaixo disso o pulo do currentTime
+  // incomoda mais que o desencontro.
+  const TOLERANCIA_SYNC = 0.15;
+  const SILENCIO_DO_PALCO = 4000;
+
+  // O painel toca a partir da sua propria copia do arquivo: se o Palco parar,
+  // travar ou recarregar, ele seguiria sozinho — foi assim que apareceu uma
+  // diferenca de 75 segundos entre as telas. Sem noticia do Palco, ele para.
+  function armarCaoDeGuarda() {
+    clearTimeout(syncCaoTimer);
+    syncCaoTimer = setTimeout(() => {
+      if (!video.paused) video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }, SILENCIO_DO_PALCO);
+  }
+
+  if (window.electronAPI.onAjustarTempo) {
+    window.electronAPI.onAjustarTempo(tempo => {
+      if (!isAudience || !video.src || video.ended) return;
+      armarCaoDeGuarda();
+      if (video.readyState < 2) return;
+      if (Math.abs(tempo - video.currentTime) > TOLERANCIA_SYNC) {
+        try { video.currentTime = tempo; } catch (_) {}
+      }
+      if (video.paused) video.play().catch(() => {});
+    });
+  }
 
   const previewOverlay = document.getElementById("preview-overlay");
   const previewAudio   = document.getElementById("preview-audio");
@@ -1373,8 +1406,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // O painel do publico espelha a imagem do Palco. Ele nao pode tocar sozinho
     // ao receber "play-confirmed": ali o Palco ainda esta na intro, e as duas
     // telas sairiam dessincronizadas. Quem avisa e o Palco, no play de verdade.
-    if (!isAudience) window.electronAPI.sincronizarPublico(filePath, 0);
+    if (!isAudience) {
+      window.electronAPI.sincronizarPublico(filePath, 0);
+      iniciarSyncPublico();
+    }
   }
+
+  // Mesmo comecando juntos os dois vao separando: sao dois <video> lendo o
+  // mesmo arquivo, cada um com sua decodificacao. O Palco manda o segundo em
+  // que esta e o painel se corrige quando passa do tolerado.
+  function iniciarSyncPublico() {
+    clearInterval(syncTimer);
+    syncTimer = setInterval(() => {
+      if (!video.src || video.paused || video.ended) return;
+      if (window.electronAPI.ajustarTempoPublico) {
+        window.electronAPI.ajustarTempoPublico(video.currentTime);
+      }
+    }, 500);
+  }
+
+  function pararSyncPublico() { clearInterval(syncTimer); syncTimer = null; }
 
   // Comandos do host
   window.electronAPI.onPlayerCmd(async cmd => {
@@ -1417,15 +1468,22 @@ intervaloDeck = [];
 
         if (dados.cmd === "preview") {
           clearTimeout(idleFallbackTimer);
-          if (isAudience) {
-            atualizarPainelPublico(dados);
-            return;
-          }
-          mostrarIdleScreen({ cantor: dados.cantor||'—', duo: dados.duo||null,
-                              musica: dados.musica||'—', artista: dados.artista||'' });
-          pararIntervalo();
           const cantor = dados.cantor || "—";
           const duo    = dados.duo    || null;
+
+          if (isAudience) {
+            atualizarPainelPublico(dados);
+            // Le o arquivo ja na chamada: e a maior folga que existe antes do
+            // play, e o painel entra sem o atraso do disco.
+            if (dados.filePath) {
+              const url = toFileUrl(dados.filePath);
+              if (video.src !== url) { video.src = url; video.load(); }
+            }
+          } else {
+            mostrarIdleScreen({ cantor, duo,
+                                musica: dados.musica||'—', artista: dados.artista||'' });
+            pararIntervalo();
+          }
 
           document.getElementById("prev-song").textContent   = dados.musica  || "—";
           document.getElementById("prev-artist").textContent = dados.artista || "—";
@@ -1439,12 +1497,15 @@ intervaloDeck = [];
           previewOverlay.classList.add("active");
 
           // Música de fundo a partir do segundo 30 — volume moderado
-          if (dados.filePath) {
+          if (!isAudience && dados.filePath) {
             previewAudio.src    = toFileUrl(dados.filePath) + "#t=30";
             previewAudio.volume = 1.0;
             previewAudio.play().catch(() => {});
 
             // barra de progresso da música (15s visíveis)
+          }
+
+          {
             const bar = document.getElementById("prev-music-bar");
             bar.style.transition = "none"; bar.style.width = "0%";
             requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1454,11 +1515,11 @@ intervaloDeck = [];
           }
 
           // Chamada por voz — aguarda 0.8s para o TTS não sobrepor o fade-in
-          definirVozPreferida(dados.voz);
+          if (!isAudience) definirVozPreferida(dados.voz);
           // Exige autorizacao EXPLICITA. Antes o teste era "!== false", entao
           // qualquer preview sem o campo — como o reenvio de estado ao ligar a
           // tela do publico — fazia a locucao disparar mesmo desmarcada.
-          if (dados.chamadaVoz === true) {
+          if (!isAudience && dados.chamadaVoz === true) {
             setTimeout(() => iniciarLoopChamada(cantor, duo, dados.segundos || 30), 800);
           }
 
@@ -1479,7 +1540,20 @@ intervaloDeck = [];
         }
 
         if (dados.cmd === "play-confirmed") {
-          if (isAudience) { atualizarPainelPublico(dados); return; }
+          if (isAudience) {
+            atualizarPainelPublico(dados);
+            // Le o arquivo enquanto o Palco mostra a intro. Sem isto o painel
+            // so comeca a carregar quando a musica ja esta rolando e entra
+            // com o atraso do disco e da decodificacao.
+            if (dados.filePath) {
+              const url = toFileUrl(dados.filePath);
+              if (video.src !== url) { video.src = url; video.load(); }
+            }
+            return;
+          }
+          // O KJ pode dar Play no meio da contagem: a chamada nao pode seguir
+          // em loop por cima da musica.
+          pararLoopChamada();
           clearTimeout(idleFallbackTimer);
           idleNextInfo = null;
           idle.style.display = "none";
@@ -1560,6 +1634,7 @@ intervaloDeck = [];
       pararPreview();
       clearTimeout(introTimeout);
       clearInterval(particleTimer);
+      pararSyncPublico();
       pararAbertura();
       introOverlay.classList.remove("active");
       esconderPronto();
@@ -1613,6 +1688,7 @@ intervaloDeck = [];
     video.pause();
     video.style.display = "none";
     mostrarIdleScreen(null); // mostra idle imediatamente, sem info ainda
+    pararSyncPublico();
     agendarIdleFallback();   // segurança: reseta info se preview não chegar em 8s
     window.electronAPI.songEnded();
   }

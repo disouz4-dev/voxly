@@ -67,5 +67,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onPlayVideo:          (cb) => ipcRenderer.on("play-video", (_e, fp, t) => cb(fp, t)),
   onPlayerCmd:          (cb) => ipcRenderer.on("player-cmd", (_e, cmd) => cb(cmd)),
   pedirEstado:          () => ipcRenderer.send("pedir-estado"),
+  ajustarTempoPublico:  (t) => ipcRenderer.send("ajustar-tempo-publico", t),
+  onAjustarTempo:       (cb) => ipcRenderer.on("ajustar-tempo", (_e, t) => cb(t)),
   onPedirEstado:        (cb) => ipcRenderer.on("pedir-estado", () => cb()),
 });

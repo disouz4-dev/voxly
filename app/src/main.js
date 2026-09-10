@@ -952,6 +952,13 @@ ipcMain.on("pedir-estado", () => {
   if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("pedir-estado");
 });
 
+// Acerto de relogio do painel: so o numero, sem tocar no src. Reenviar
+// "play-video" para corrigir deriva recarregaria o arquivo e daria engasgo.
+ipcMain.on("ajustar-tempo-publico", (_e, tempo) => {
+  if (!audienceWindow || audienceWindow.isDestroyed()) return;
+  audienceWindow.webContents.send("ajustar-tempo", tempo);
+});
+
 ipcMain.handle("play-song", (_, filePath) => {
   // O video precisa ir para o Palco E para o painel do publico: a plateia
   // acompanha a letra na tela, sem audio (o painel nasce mudo, o som e so do
