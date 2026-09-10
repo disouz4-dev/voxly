@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setPrefsDownload:   (p) => ipcRenderer.invoke("set-prefs-download", p),
   localizarVideo:     (idVideo) => ipcRenderer.invoke("localizar-video", idVideo),
   versoesLocais:      (pedido) => ipcRenderer.invoke("versoes-locais", pedido),
+  apagarArquivo:      (nome) => ipcRenderer.invoke("apagar-arquivo", nome),
   resolverArquivoItem:(item) => ipcRenderer.invoke("resolver-arquivo-item", item),
   piperVozes:         () => ipcRenderer.invoke("piper-vozes"),
   piperInstalado:     () => ipcRenderer.invoke("piper-instalado"),

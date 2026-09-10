@@ -1485,7 +1485,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     const versoes = await window.electronAPI.versoesLocais({ musica: item.musica, artista: item.artista });
 
     if (!versoes.length) {
-      mostrarToast('Nenhum arquivo encontrado — vou procurar versões');
+      mostrarToast('Nenhum arquivo na pasta — procurando no YouTube');
       procurarVersoes(itemId);
       return;
     }
@@ -1495,12 +1495,44 @@ https://www.youtube.com/@canal/videos"></textarea>
       `${versoes.length} versão(ões) na pasta. Escolha qual tocar.`;
     document.getElementById('candidatosQualidadeBox').style.display = 'none';
     document.getElementById('candidatosLista').innerHTML = versoes.map((v, i) => `
-      <div class="modal-result-item" onclick="usarVersaoLocal('${itemId}', ${i})">
-        <div style="font-weight:600;margin-bottom:2px;">${escHtml(v.canal || v.arquivo)}</div>
-        <div style="font-size:.7rem;color:var(--mudo);">${escHtml(v.arquivo)}</div>
-      </div>`).join('');
+      <div class="modal-result-item" style="display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;cursor:pointer;" onclick="usarVersaoLocal('${itemId}', ${i})">
+          <div style="font-weight:600;margin-bottom:2px;">${escHtml(v.canal || v.arquivo)}</div>
+          <div style="font-size:.7rem;color:var(--mudo);">${escHtml(v.arquivo)}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" title="Apagar este arquivo do disco"
+                onclick="event.stopPropagation(); apagarVersaoLocal('${itemId}', ${i})">🗑</button>
+      </div>`).join('') +
+      `<div class="modal-result-item" style="text-align:center;border-style:dashed;cursor:pointer;"
+            onclick="procurarVersoes('${itemId}')">
+        <div style="font-weight:600;color:var(--ambar);">🔎 Procurar outras versões no YouTube</div>
+        <div style="font-size:.7rem;color:var(--mudo);margin-top:2px;">para baixar uma gravação diferente</div>
+      </div>`;
     document.getElementById('modalCandidatos')._versoes = versoes;
     document.getElementById('modalCandidatos').classList.add('open');
+  }
+
+  // Apaga do disco a versao que o KJ nao quer manter. Pede confirmacao: e
+  // irreversivel e o arquivo pode ter levado minutos para baixar.
+  async function apagarVersaoLocal(itemId, indice) {
+    const v = (document.getElementById('modalCandidatos')._versoes || [])[indice];
+    if (!v) return;
+    if (!confirm(`Apagar do disco?\n\n${v.arquivo}\n\nEsta ação não pode ser desfeita.`)) return;
+
+    const r = await window.electronAPI.apagarArquivo(v.arquivo);
+    if (!r || !r.ok) { mostrarToast(`❌ ${(r && r.erro) || 'falha ao apagar'}`); return; }
+
+    mostrarToast(`🗑 "${v.canal || v.arquivo}" apagada`);
+
+    // Se o item apontava para o arquivo apagado, limpa para o fluxo procurar
+    // de novo em vez de tentar tocar algo que nao existe mais.
+    const item = filaData.find(i => i.id === itemId);
+    if (item && (item.arquivoEscolhido === v.arquivo || item.videoId === v.videoId)) {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
+        .update({ arquivoEscolhido: null, videoId: null, disponivel: false, statusDownload: null })
+        .catch(() => {});
+    }
+    abrirVersoesLocais(itemId); // recarrega a lista
   }
 
   async function usarVersaoLocal(itemId, indice) {

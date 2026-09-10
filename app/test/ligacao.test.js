@@ -57,7 +57,9 @@ function definidas(js) {
 function chamadasNoHtml(html) {
   const nomes = new Set();
   for (const m of html.matchAll(/\bon\w+\s*=\s*"([^"]*)"/g)) {
-    for (const c of m[1].matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) nomes.add(c[1]);
+    // (?<![.\w]) descarta chamada de metodo: "event.stopPropagation()" e
+    // propriedade de um objeto, nao funcao que a tela precise declarar.
+    for (const c of m[1].matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) nomes.add(c[1]);
   }
   return nomes;
 }

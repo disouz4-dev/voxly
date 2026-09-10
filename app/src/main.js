@@ -764,6 +764,33 @@ ipcMain.handle("resolver-arquivo-item", (_, item) => {
   return null; // quem chama cai no resolveMusicFile por nome
 });
 
+// Apaga um arquivo do acervo. Restrito a pasta de musicas de proposito: o
+// renderer manda um nome, e nome vindo de fora nunca deve poder alcancar o
+// disco inteiro.
+ipcMain.handle("apagar-arquivo", (_, nomeArquivo) => {
+  const pasta = store.get("musicFolder", null);
+  if (!pasta || !nomeArquivo) return { ok: false, erro: "pasta nao configurada" };
+
+  const alvo = path.resolve(pasta, nomeArquivo);
+  if (!alvo.startsWith(path.resolve(pasta) + path.sep)) {
+    return { ok: false, erro: "caminho fora da pasta de musicas" };
+  }
+  if (!fs.existsSync(alvo)) return { ok: false, erro: "arquivo nao encontrado" };
+
+  try {
+    fs.unlinkSync(alvo);
+    // Sidecar do macOS em exFAT, se houver.
+    const sidecar = path.join(path.dirname(alvo), "._" + path.basename(alvo));
+    if (fs.existsSync(sidecar)) { try { fs.unlinkSync(sidecar); } catch (_) {} }
+
+    const folder = store.get("musicFolder");
+    if (folder) catalogoLocal = construirCatalogo(folder);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, erro: e.message };
+  }
+});
+
 ipcMain.handle("versoes-locais", (_, pedido) => {
   const pasta = store.get("musicFolder", null);
   if (!pasta || !fs.existsSync(pasta)) return [];
