@@ -45,4 +45,26 @@ function idDaUrl(url) {
   return m ? m[1] : null;
 }
 
-module.exports = { escolherArquivoBaixado, idDaUrl };
+// Qual arquivo o yt-dlp de fato escreveu, lendo a saida dele.
+//
+// Com bestvideo+bestaudio ele anuncia "[download] Destination:" para CADA
+// fragmento (.f137.mp4, .f140.m4a) e depois apaga os dois; o arquivo de verdade
+// aparece so em "[Merger] Merging formats into". Lendo apenas a primeira linha,
+// o app terminava apontando para um arquivo que ja nao existia e caia no
+// caminho de adivinhacao — que foi onde nasceu o download trocado.
+const RE_MERGER = /\[Merger\] Merging formats into "([^"]+)"/g;
+const RE_DESTINO = /\[download\] Destination: (.+)/g;
+
+function ultimoDe(texto, re) {
+  let m, achado = null;
+  re.lastIndex = 0;
+  while ((m = re.exec(texto))) achado = m[1].trim();
+  return achado;
+}
+
+function arquivoDaSaida(saida) {
+  const texto = String(saida || "");
+  return ultimoDe(texto, RE_MERGER) || ultimoDe(texto, RE_DESTINO) || null;
+}
+
+module.exports = { escolherArquivoBaixado, idDaUrl, arquivoDaSaida };

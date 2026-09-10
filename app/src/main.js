@@ -10,7 +10,7 @@ const { versoesLocais } = require("./versoes");
 const { escolherPorNome } = require("./casamento");
 const { pastaDeDownload } = require("./pastas");
 const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identificacao");
-const { escolherArquivoBaixado, idDaUrl } = require("./baixado");
+const { escolherArquivoBaixado, idDaUrl, arquivoDaSaida } = require("./baixado");
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const { autoUpdater } = require("electron-updater");
@@ -1354,11 +1354,10 @@ async function baixarUrl(opts) {
     const idDestaUrl = idDaUrl(url);
     const inicioDownload = Date.now();
 
+    let saidaPadrao = "";
     child.stdout.on("data", (data) => {
       const txt = data.toString();
-      // Detecta arquivo baixado
-      const m = txt.match(/\[download\] Destination: (.+)/);
-      if (m) arquivoBaixado = m[1].trim();
+      saidaPadrao += txt;
       // Progresso
       const p = txt.match(/\[download\]\s+(\d+\.?\d*)%/);
       if (p) {
@@ -1396,6 +1395,8 @@ async function baixarUrl(opts) {
     if (erroSpawn) throw new Error(`Falha ao executar o yt-dlp: ${erroSpawn.message}`);
 
     if (ytCancelado) break;
+
+    arquivoBaixado = arquivoDaSaida(saidaPadrao);
 
     // O codigo de saida era resolvido e nunca lido. Uma recusa do YouTube
     // passava em silencio e virava "nada foi baixado", sem motivo e sem saida.

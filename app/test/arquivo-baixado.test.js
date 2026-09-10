@@ -90,3 +90,36 @@ test("URL sem id nao inventa", () => {
   assert.strictEqual(idDaUrl(""), null);
   assert.strictEqual(idDaUrl(null), null);
 });
+
+// ── A linha que anuncia o arquivo final ──────────────────────────────────
+// Com bestvideo+bestaudio o yt-dlp escreve "[download] Destination:" para CADA
+// fragmento (.f137.mp4, .f140.m4a) e depois apaga os dois. O arquivo de
+// verdade e anunciado por "[Merger] Merging formats into". Lendo so a primeira
+// linha, o app terminava apontando para um arquivo que ja nao existe.
+const { arquivoDaSaida } = require("../src/baixado");
+
+test("o Merger tem a ultima palavra sobre o nome final", () => {
+  const saida = [
+    '[download] Destination: /m/Periphery - Satellites [vUeykEWXZXY].f137.mp4',
+    '[download] Destination: /m/Periphery - Satellites [vUeykEWXZXY].f140.m4a',
+    '[Merger] Merging formats into "/m/Periphery - Satellites [vUeykEWXZXY].mp4"',
+  ].join("\n");
+  assert.strictEqual(arquivoDaSaida(saida), "/m/Periphery - Satellites [vUeykEWXZXY].mp4");
+});
+
+test("sem merge, vale o Destination", () => {
+  assert.strictEqual(
+    arquivoDaSaida('[download] Destination: /m/So Audio [abc].m4a'),
+    "/m/So Audio [abc].m4a");
+});
+
+test("nome com aspas e espacos sobrevive", () => {
+  assert.strictEqual(
+    arquivoDaSaida('[Merger] Merging formats into "/m/Don\'t Stop - Sing King [x].mp4"'),
+    "/m/Don't Stop - Sing King [x].mp4");
+});
+
+test("saida sem nenhuma das duas linhas devolve null", () => {
+  assert.strictEqual(arquivoDaSaida("[download] 100% of 5MiB"), null);
+  assert.strictEqual(arquivoDaSaida(""), null);
+});
