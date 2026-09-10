@@ -22,12 +22,15 @@ VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | g
 wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
 sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f -y
+sudo apt-get install -y yt-dlp ffmpeg
 
 dpkg -s voxly | grep ^Version
 ```
 
 **Option B — AppImage (portable):**
 ```bash
+sudo apt-get install -y yt-dlp ffmpeg
+
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
 wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
 chmod +x Voxly-${VER}.AppImage
