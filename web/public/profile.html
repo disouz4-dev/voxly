@@ -824,14 +824,50 @@ function escutarFila() {
     // dominio publicado, ele falha com "Failed to fetch". Por isso o iTunes e o
     // principal aqui, e o Deezer fica como reserva atraves do host, que nao
     // sofre restricao de CORS.
+    // O iTunes devolve tudo que lembra o termo: versoes ao vivo, remixes,
+    // covers e outros artistas. Buscar "scarlet periphery" trazia um monte de
+    // coisa sem relacao. Aqui a lista e filtrada e reduzida a uma entrada por
+    // musica.
+    const RE_VERSAO_INDESEJADA =
+      /\b(ao vivo|live|ac[ou]?ustic\w*|unplugged|remix\w*|remaster\w*|karaoke|instrumental|cover|tribute|made famous|originally performed|sped up|slowed|8d|nightcore|demo|edit)\b|\(.*(?:ao vivo|live|remix|acoustic|version|feat|part).*\)/i;
+
+    function normSug(t) {
+      return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
     async function sugerirNoItunes(termo) {
       try {
         const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}` +
-                    `&entity=song&limit=8&country=BR`;
+                    `&entity=song&limit=25&country=BR`;
         const d = await fetch(url).then(r => r.json());
-        return (d.results || []).map(t => ({
-          artista: t.artistName, musica: t.trackName, fonte: 'itunes',
-        }));
+
+        // Palavras do que a pessoa digitou: o resultado tem que conter todas,
+        // entre artista e musica. Sem isso, "scarlet periphery" casava com
+        // qualquer musica que tivesse "scarlet".
+        const termos = normSug(termo).split(' ').filter(p => p.length > 2);
+
+        const vistos = new Set();
+        const itens = [];
+
+        for (const t of d.results || []) {
+          const musica  = t.trackName  || '';
+          const artista = t.artistName || '';
+          if (RE_VERSAO_INDESEJADA.test(musica)) continue;
+
+          const alvo = normSug(artista + ' ' + musica);
+          if (termos.length && !termos.every(p => alvo.includes(p))) continue;
+
+          // Uma entrada por musica: o iTunes repete a mesma faixa em varios
+          // albuns e coletaneas.
+          const chave = normSug(artista) + '|' + normSug(musica);
+          if (vistos.has(chave)) continue;
+          vistos.add(chave);
+
+          itens.push({ artista, musica, fonte: 'itunes' });
+          if (itens.length >= 5) break;
+        }
+        return itens;
       } catch (e) {
         console.warn('[SUGESTAO] iTunes falhou:', e.message);
         return [];
@@ -1633,14 +1669,24 @@ function escutarFila() {
       }
 
       _sugAtiva = -1;
-      if (!_sugestoes.length) { fecharSugestoes(); return; }
 
-      box.innerHTML = _sugestoes.map((s, i) =>
-        '<div class="cat-sug" data-i="' + i + '">' +
-          '<span class="cat-sug-musica">' + realcar(s.musica, bruto) + '</span>' +
-          '<span class="cat-sug-artista">' + escHtml(s.artista) +
-            (s.externa ? ' · ⬇' : '') + '</span>' +
-        '</div>').join('');
+      // Nada no acervo nem no iTunes: em vez de sumir com a caixa e deixar o
+      // cantor sem saida, oferece mandar o pedido do jeito que ele digitou —
+      // o KJ resolve do outro lado.
+      if (!_sugestoes.length) {
+        _sugestoes = [{ artista: '', musica: bruto, solicitar: true }];
+      }
+
+      box.innerHTML = _sugestoes.map((s, i) => s.solicitar
+        ? '<div class="cat-sug" data-i="' + i + '" style="border-top:1px solid var(--linha);">' +
+            '<span class="cat-sug-musica">📨 Solicitar ao KJ: "' + escHtml(s.musica) + '"</span>' +
+            '<span class="cat-sug-artista">o KJ procura para você</span>' +
+          '</div>'
+        : '<div class="cat-sug" data-i="' + i + '">' +
+            '<span class="cat-sug-musica">' + realcar(s.musica, bruto) + '</span>' +
+            '<span class="cat-sug-artista">' + escHtml(s.artista) +
+              (s.externa ? ' · ⬇' : '') + '</span>' +
+          '</div>').join('');
       box.style.display = 'block';
 
       box.querySelectorAll('.cat-sug').forEach(el => {
@@ -1678,8 +1724,10 @@ function escutarFila() {
       fecharSugestoes();
       campo.blur();
       if (_sugCtx.campo === 'inputBusca') {
-        // No modal de pedido, escolher ja seleciona a musica.
-        selecionarMusica(null, s.musica, s.artista, s.disponivel !== false);
+        // No modal de pedido, escolher ja seleciona a musica. Pedido sem
+        // artista conhecido vai como "Desconhecido" para o KJ resolver.
+        selecionarMusica(null, s.musica, s.artista || 'Desconhecido',
+                         s.solicitar ? false : (s.disponivel !== false));
       } else {
         filtrarCatalogo();
       }
