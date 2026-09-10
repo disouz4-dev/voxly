@@ -125,7 +125,11 @@ After building or downloading the Linux installers (via [GitHub Releases](https:
 # Make sure you're in the directory containing the .deb file
 # (if you downloaded from Releases, this is where you saved the file;
 #  if you built locally, this is the 'dist/' directory)
-sudo dpkg -i voxly_*.deb
+# NEVER use "voxly_*.deb": the glob matches any .deb left in the folder,
+# including old downloads, so you silently reinstall an old version.
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
+sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f  # fix dependencies, if needed
 
 # Removal
@@ -138,13 +142,15 @@ sudo apt-get remove voxly
 cd dist
 
 # Make executable
-chmod +x Voxly-*.AppImage
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
+chmod +x Voxly-${VER}.AppImage
 
 # Run
-./Voxly-*.AppImage
+./Voxly-${VER}.AppImage
 
 # Optional: integrate with the system (creates application menu shortcut)
-./Voxly-*.AppImage --appimage-install
+./Voxly-${VER}.AppImage --appimage-install
 ```
 
 > 💡 **Tip**: AppImages are portable - just download, make executable, and run. No installation or root privileges required.

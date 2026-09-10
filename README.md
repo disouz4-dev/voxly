@@ -119,11 +119,18 @@ Após gerar ou baixar os instaladores Linux (via [GitHub Releases](https://githu
 
 #### **Pacote Debian (.deb)**
 ```bash
-# Certifique-se de estar no diretório contendo o arquivo .deb
-# (se baixou das Releases, é onde salvou o arquivo; 
-#  se buildou localmente, é o diretório 'dist/')
-sudo dpkg -i voxly_*.deb
+# ATENÇÃO: nunca use "voxly_*.deb". O curinga casa com qualquer .deb que
+# estiver na pasta — inclusive downloads antigos — e você acaba reinstalando
+# uma versão velha sem perceber. Sempre nomeie a versão.
+
+# Baixe a versão mais recente e instale
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
+sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f  # corrige dependências, se necessário
+
+# Confirme a versão instalada
+dpkg -s voxly | grep ^Version
 
 # Remoção
 sudo apt-get remove voxly
@@ -131,17 +138,17 @@ sudo apt-get remove voxly
 
 #### **AppImage**
 ```bash
-# Acesse o diretório onde os instaladores foram gerados
-cd dist
+# Baixe a versão mais recente (o curinga Voxly-*.AppImage pegaria downloads
+# antigos que ainda estejam na pasta)
+VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
 
-# Torne executável
-chmod +x Voxly-*.AppImage
-
-# Execute
-./Voxly-*.AppImage
+# Torne executável e rode
+chmod +x Voxly-${VER}.AppImage
+./Voxly-${VER}.AppImage
 
 # Opcional: integre ao sistema (cria atalho no menu de aplicações)
-./Voxly-*.AppImage --appimage-install
+./Voxly-${VER}.AppImage --appimage-install
 ```
 
 > 💡 **Dica**: os AppImages são portáteis - basta baixar, tornar executável e rodar. Não requerem instalação nem permissões de root.
