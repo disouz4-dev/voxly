@@ -19,6 +19,7 @@ Latest versions are always at: **[github.com/disouz4-dev/voxly/releases/latest](
 sudo apt-get remove -y voxly 2>/dev/null || true
 
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
 wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
 sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f -y
@@ -32,6 +33,7 @@ dpkg -s voxly | grep ^Version
 sudo apt-get install -y yt-dlp ffmpeg
 
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
 wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
 chmod +x Voxly-${VER}.AppImage
 ./Voxly-${VER}.AppImage
@@ -42,6 +44,7 @@ chmod +x Voxly-${VER}.AppImage
 # Download the .dmg 
 # Resolves the latest version automatically
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
 curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.dmg
 
 # Mount and copy to /Applications
@@ -131,6 +134,7 @@ After building or downloading the Linux installers (via [GitHub Releases](https:
 # NEVER use "voxly_*.deb": the glob matches any .deb left in the folder,
 # including old downloads, so you silently reinstall an old version.
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
 wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
 sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f  # fix dependencies, if needed
@@ -152,6 +156,7 @@ cd dist
 
 # Make executable
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
 wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
 chmod +x Voxly-${VER}.AppImage
 

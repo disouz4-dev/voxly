@@ -19,6 +19,7 @@ As versões mais recentes estão sempre em: **[github.com/disouz4-dev/voxly/rele
 sudo apt-get remove -y voxly 2>/dev/null || true
 
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Falha ao consultar a versao mais recente"; exit 1; }
 wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
 sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f -y
@@ -32,6 +33,7 @@ dpkg -s voxly | grep ^Version
 sudo apt-get install -y yt-dlp ffmpeg
 
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Falha ao consultar a versao mais recente"; exit 1; }
 wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
 chmod +x Voxly-${VER}.AppImage
 ./Voxly-${VER}.AppImage
@@ -41,6 +43,7 @@ chmod +x Voxly-${VER}.AppImage
 ```bash
 # Descobre a versao mais recente automaticamente
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Falha ao consultar a versao mais recente"; exit 1; }
 curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.dmg
 
 # Monte e copie para /Applications
@@ -130,6 +133,7 @@ Após gerar ou baixar os instaladores Linux (via [GitHub Releases](https://githu
 
 # Baixe a versão mais recente e instale
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Falha ao consultar a versao mais recente"; exit 1; }
 wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
 sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f  # corrige dependências, se necessário
@@ -149,6 +153,7 @@ sudo apt-get remove voxly
 # Baixe a versão mais recente (o curinga Voxly-*.AppImage pegaria downloads
 # antigos que ainda estejam na pasta)
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
+[ -n "$VER" ] || { echo "Falha ao consultar a versao mais recente"; exit 1; }
 wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
 
 # Torne executável e rode
