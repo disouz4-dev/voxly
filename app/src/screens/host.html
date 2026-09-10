@@ -850,9 +850,33 @@ https://www.youtube.com/@canal/videos"></textarea>
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   }
 
-  function gerarQR(elId, url) {
+  function gerarQR(elId, url, tamanho) {
+    const px = tamanho || 360; // pedido maior que o exibido, para nao borrar
     document.getElementById(elId).src =
-      `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(url)}`;
+      `https://api.qrserver.com/v1/create-qr-code/?size=${px}x${px}&data=${encodeURIComponent(url)}`;
+  }
+
+  // O QR do console apontava sempre para APP_URL fixo: levava ao app generico,
+  // sem a sessao, e ignorava o endereco LAN do modo offline. Agora ele leva
+  // direto para a sessao aberta, como ja fazia a tela do publico.
+  function atualizarQrHost() {
+    const base = appUrlLocal || APP_URL;
+    const img  = document.getElementById('qr-app');
+    if (!img) return;
+
+    const titulo = document.querySelector('.qr-box-title');
+    const rotulo = document.querySelector('.qr-box-url');
+
+    if (SESSAO_ID) {
+      const url = `${base}/index.html?sessao=${encodeURIComponent(SESSAO_ID)}`;
+      gerarQR('qr-app', url);
+      if (titulo) titulo.textContent = '🎤 Entrar na Sessão';
+      if (rotulo) rotulo.textContent = sessaoCodigo ? `Sessão ${sessaoCodigo}` : base;
+    } else {
+      gerarQR('qr-app', base);
+      if (titulo) titulo.textContent = '📱 Acesso ao App';
+      if (rotulo) rotulo.textContent = base;
+    }
   }
 
   // ── Regras: persistência local ────────────────────────────
@@ -895,8 +919,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // ── Inicialização ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
     // QR do app: sempre usa URL do Firebase Hosting (conforme solicitado)
-    gerarQR('qr-app', APP_URL);
-    document.querySelector('.qr-box-url').textContent = APP_URL;
+    atualizarQrHost();
 
     // Estado do intervalo
     carregarTemas();
@@ -1069,7 +1092,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   function ativarInterfaceSessao() {
     const appBase = appUrlLocal || APP_URL;
     document.getElementById('sessionBadge').textContent  = `● Sessão ${sessaoCodigo}`;
-    // Removed session QR code generation as per user request
+    atualizarQrHost();
 
     // Notifica player — aguarda 2s para garantir que o player já carregou
     setTimeout(() => {
@@ -1132,6 +1155,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     SESSAO_ID    = null;
     sessaoCodigo = null;
     dadosSessaoAtual = null;
+    atualizarQrHost();
     modoOffline  = false;
 
     clearInterval(timerCountdownHost);
