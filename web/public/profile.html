@@ -815,6 +815,25 @@ function escutarFila() {
 
     let _catalogoLocalCache = null;
 
+    // Sugestao de musicas que ainda nao estao no acervo. O iTunes responde
+    // direto do navegador (envia CORS); o Deezer nao — medido do proprio
+    // dominio publicado, ele falha com "Failed to fetch". Por isso o iTunes e o
+    // principal aqui, e o Deezer fica como reserva atraves do host, que nao
+    // sofre restricao de CORS.
+    async function sugerirNoItunes(termo) {
+      try {
+        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}` +
+                    `&entity=song&limit=8&country=BR`;
+        const d = await fetch(url).then(r => r.json());
+        return (d.results || []).map(t => ({
+          artista: t.artistName, musica: t.trackName, fonte: 'itunes',
+        }));
+      } catch (e) {
+        console.warn('[SUGESTAO] iTunes falhou:', e.message);
+        return [];
+      }
+    }
+
     // Catalogo publicado pelo host no Firestore: e o que permite buscar e
     // autocompletar pelo link https, sem depender de alcancar a rede local.
     async function catalogoPublicado() {

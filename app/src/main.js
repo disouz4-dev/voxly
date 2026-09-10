@@ -147,6 +147,19 @@ function agendarDownloadFotos(folder) {
 
 // ── Servidor HTTP ──────────────────────────────────────────
 
+// Reserva do iTunes: o Deezer nao pode ser chamado do navegador (nao envia
+// CORS), mas daqui do host nao ha essa restricao. Usado quando o iTunes nao
+// encontra a musica pedida.
+async function sugerirNoDeezer(termo) {
+  const url = `https://api.deezer.com/search?q=${encodeURIComponent(termo)}&limit=8`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  const d = await resp.json();
+  return (d.data || []).map(t => ({
+    artista: t.artist && t.artist.name, musica: t.title, fonte: "deezer",
+  })).filter(x => x.artista && x.musica);
+}
+
 // Consulta o YouTube e devolve so o que serve para uma fila de karaoke.
 async function buscarKaraokeYt(termo) {
   const ytDlp = resolverBinario("yt-dlp");
@@ -218,6 +231,14 @@ function iniciarServidorCatalogo() {
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ erro: e.message }));
         });
+      return;
+    }
+
+    if (req.url.startsWith("/sugerir")) {
+      const q = new URL(req.url, "http://local").searchParams.get("q") || "";
+      sugerirNoDeezer(q)
+        .then(itens => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ itens })); })
+        .catch(e => { res.statusCode = 500; res.end(JSON.stringify({ erro: e.message })); });
       return;
     }
 

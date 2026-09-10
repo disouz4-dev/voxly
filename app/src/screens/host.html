@@ -1177,6 +1177,13 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('sessionBadge').textContent  = `● Sessão ${sessaoCodigo}`;
     atualizarQrHost();
 
+    // O botao de adicionar cantor a mao nascia com display:none no HTML e era
+    // escondido de novo ao encerrar a sessao, mas nunca era exibido: a funcao
+    // existia (modal e adicionarCantorManual) e ficou inalcancavel. Com sessao
+    // aberta o KJ volta a poder cadastrar quem chega sem celular.
+    const btnAddCantor = document.getElementById('btnAdicionarCantor');
+    if (btnAddCantor) btnAddCantor.style.display = '';
+
     // Notifica player — aguarda 2s para garantir que o player já carregou
     setTimeout(() => {
       if (window.electronAPI) {
