@@ -3465,20 +3465,40 @@ https://www.youtube.com/@canal/videos"></textarea>
       // do show nunca mostrava a contagem regressiva.
       relayShowHorario();
 
-      // Reenvia tambem quem esta cantando agora, senao o painel abre vazio
-      // mesmo com musica tocando.
-      const atual = filaData.find(i => i.status === 'tocando' || i.status === 'confirmando');
+      // Reenvia quem esta cantando agora, senao o painel abre vazio mesmo com
+      // musica tocando. Mas "preview" e a CHAMADA do cantor, com animacao e
+      // timer: usa-lo aqui fazia a chamada aparecer por cima do video toda vez
+      // que a tela do publico era aberta. Musica tocando so precisa do painel.
+      const tocando = filaData.find(i => i.status === 'tocando');
+      const chamando = filaData.find(i => i.status === 'confirmando');
+      const atual = tocando || chamando;
+
       if (atual) {
-        window.electronAPI.playerCommand(JSON.stringify({
-          cmd:      'preview',
+        const dados = {
           cantor:   atual.nomeArtistico,
           duo:      atual.duoNome || null,
           musica:   atual.musica,
           artista:  atual.artista,
+          photoURL: atual.photoURL || null,
+          duoPhotoURL: atual.duoPhotoURL || null,
           semitons: atual.semitons ?? 0,
-          // Reenvio de estado nao e uma chamada nova: nao pode falar de novo.
-          chamadaVoz: false,
-        }));
+        };
+
+        if (tocando) {
+          window.electronAPI.playerCommand(JSON.stringify({ ...dados, cmd: 'painel-atual' }));
+        } else {
+          // Chamada em curso: reexibe com o que RESTA, nao com 30s cheios.
+          const restam = Math.round(((chamando.confirmandoAte || 0) - Date.now()) / 1000);
+          if (restam > 1) {
+            window.electronAPI.playerCommand(JSON.stringify({
+              ...dados, cmd: 'preview', segundos: restam,
+              // Reenvio de estado nao e uma chamada nova: nao pode falar de novo.
+              chamadaVoz: false,
+            }));
+          } else {
+            window.electronAPI.playerCommand(JSON.stringify({ ...dados, cmd: 'painel-atual' }));
+          }
+        }
       }
     }, 1200);
   }

@@ -1603,6 +1603,16 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const dados = JSON.parse(cmd);
 
+        // So o painel: nome, avatar, musica. Sem overlay, sem timer, sem voz.
+        // Existe porque o reenvio de estado usava "preview" para preencher o
+        // painel — e "preview" e a CHAMADA do cantor. Abrir a tela do publico
+        // no meio de uma musica fazia a chamada aparecer por cima do video,
+        // toda vez.
+        if (dados.cmd === "painel-atual") {
+          if (isAudience) atualizarPainelPublico(dados);
+          return;
+        }
+
         if (dados.cmd === "fila-publico") {
           if (isAudience) atualizarProximosPublico(dados.itens || []);
           return;
