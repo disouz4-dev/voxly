@@ -1568,9 +1568,15 @@ https://www.youtube.com/@canal/videos"></textarea>
         : await window.electronAPI.resolveMusicFile(item.musica, item.artista);
       if (aindaExiste) return;
 
-      await ref.update({ disponivel: false, statusDownload: null, candidatos: [] }).catch(() => {});
-      mostrarToast(`⚠️ "${item.musica}" sumiu da pasta — procurando de novo`);
-      item = { ...item, disponivel: false, statusDownload: null };
+      // Limpa tambem o video escolhido antes: sem isso o fluxo cairia no ramo de
+      // "ja sei qual baixar" e rebaixaria a mesma versao sozinho. O pedido volta
+      // ao inicio — nova busca, cards novos, e o KJ escolhe outra vez.
+      await ref.update({
+        disponivel: false, statusDownload: null, candidatos: [],
+        videoId: null, videoUrl: null,
+      }).catch(() => {});
+      mostrarToast(`⚠️ "${item.musica}" sumiu da pasta — procurando versões de novo`);
+      item = { ...item, disponivel: false, statusDownload: null, videoId: null, videoUrl: null };
     }
 
     // Pedido veio do catalogo (sem videoId): confere se o arquivo existe na
