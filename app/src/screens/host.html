@@ -917,6 +917,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <div class="toast" id="toast"></div>
 
 <script src="../fila.js"></script>
+<script src="../limite.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -2042,6 +2043,9 @@ https://www.youtube.com/@canal/videos"></textarea>
   async function arquivoDoItem(item) {
     if (!window.electronAPI || !item) return null;
     const exato = await window.electronAPI.resolverArquivoItem({
+      // O id vai junto: e por ele que o resolver acha o vinculo manual do KJ.
+      // Sem isso o botao 📎 Vincular gravava um caminho que ninguem lia.
+      id: item.id || null,
       arquivoEscolhido: item.arquivoEscolhido || null,
       videoId: item.videoId || null,
     });
@@ -3651,11 +3655,24 @@ https://www.youtube.com/@canal/videos"></textarea>
       .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
-  async function sugerirItunesHost(termo) {
-    try {
+  // Passa pelo mesmo cache e teto da renomeacao. Este e o caminho que gasta
+  // cota de verdade: dispara a cada 300ms de digitacao, e um 403 do iTunes
+  // derruba tambem o autocomplete do app do cantor.
+  const _itunesHost = VoxlyLimite.criarConsultaLimitada({
+    consultar: async (termo) => {
       const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}` +
                   `&entity=song&limit=25&country=BR`;
-      const d = await fetch(url).then(r => r.json());
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`iTunes respondeu ${r.status}`);
+      return (await r.json()).results || [];
+    },
+  });
+
+  async function sugerirItunesHost(termo) {
+    try {
+      const resultados = await _itunesHost(termo);
+      if (!resultados) return [];
+      const d = { results: resultados };
       const termos = normSug(termo).split(' ').filter(p => p.length > 2);
       const vistos = new Set();
       const itens  = [];

@@ -13,12 +13,17 @@
 function escolherParaTocar(fila, estado) {
   const itens = Array.isArray(fila) ? fila : [];
 
-  // Alguem sendo chamado agora: o Play do KJ e justamente a decisao de nao
-  // esperar a confirmacao. Tem precedencia sobre retomar.
+  // Musica no ar vence tudo. O Play nao e o botao de cortar — Pular e. Com uma
+  // musica carregada (pausada, por exemplo) e alguem "pronto" na fila, dar
+  // precedencia ao chamado cortava a musica do cantor que estava cantando.
+  if (estado && estado.temMusicaNoAr) return { acao: "retomar" };
+
+  // Nada no ar e alguem sendo chamado: o Play e a decisao de nao esperar a
+  // confirmacao. Note que o status 'tocando' da musica ANTERIOR pode ainda
+  // estar na copia local (o write de 'cantada' demora), por isso quem responde
+  // "tem musica no ar" e o host, nao a fila.
   const chamado = itens.find(i => i.status === "confirmando" || i.status === "pronto");
   if (chamado) return { acao: "tocar", id: chamado.id };
-
-  if (estado && estado.temMusicaNoAr) return { acao: "retomar" };
 
   const proximo = itens.find(i => i.status === "aguardando" && i.slot !== "espera");
   return proximo ? { acao: "tocar", id: proximo.id } : { acao: "nada" };

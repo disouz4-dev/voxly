@@ -609,6 +609,7 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
     Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong>
   </footer>
 
+<script src="../painel-sync.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   // Declarado aqui de proposito: o bloco do modo publico logo abaixo usa
@@ -1163,7 +1164,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Meio quadro a 30fps e imperceptivel; abaixo disso o pulo do currentTime
   // incomoda mais que o desencontro.
-  const TOLERANCIA_SYNC = 0.15;
   const SILENCIO_DO_PALCO = 2500;
 
   // O painel toca a partir da sua propria copia do arquivo: se o Palco parar,
@@ -1179,22 +1179,33 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (window.electronAPI.onAjustarTempo) {
-    window.electronAPI.onAjustarTempo(tempo => {
+    window.electronAPI.onAjustarTempo(aviso => {
       if (!isAudience) return;
-      if (tempo < 0) {   // o Palco avisou que acabou
+
+      const decisao = VoxlyPainelSync.decidirPainel(aviso, {
+        temVideo:   !!video.src,
+        pausado:    video.paused,
+        tempoAtual: video.currentTime,
+        pronto:     video.readyState >= 2,
+      });
+
+      if (decisao.acao === "limpar") {
         clearTimeout(syncCaoTimer);
         video.pause();
         video.removeAttribute("src");
         video.load();
         return;
       }
-      if (!video.src || video.ended) return;
+
+      // Qualquer aviso, inclusive "estou pausado", conta como sinal de vida.
       armarCaoDeGuarda();
-      if (video.readyState < 2) return;
-      if (Math.abs(tempo - video.currentTime) > TOLERANCIA_SYNC) {
-        try { video.currentTime = tempo; } catch (_) {}
+
+      if (decisao.acao === "pausar") { video.pause(); return; }
+      if (decisao.acao === "tocar")  { video.play().catch(() => {}); return; }
+      if (decisao.acao === "ajustar") {
+        try { video.currentTime = decisao.tempo; } catch (_) {}
+        if (decisao.tocarDepois && video.paused) video.play().catch(() => {});
       }
-      if (video.paused) video.play().catch(() => {});
     });
   }
 
@@ -1427,12 +1438,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // Mesmo comecando juntos os dois vao separando: sao dois <video> lendo o
   // mesmo arquivo, cada um com sua decodificacao. O Palco manda o segundo em
   // que esta e o painel se corrige quando passa do tolerado.
+  // O aviso sai enquanto houver video no Palco, TOCANDO OU PAUSADO. Mandar so
+  // durante a reproducao fazia a Pausa parecer morte: o cao de guarda limpava
+  // o painel e ele nao voltava mais.
   function iniciarSyncPublico() {
     clearInterval(syncTimer);
     syncTimer = setInterval(() => {
-      if (!video.src || video.paused || video.ended) return;
+      if (!video.src || video.ended) return;
       if (window.electronAPI.ajustarTempoPublico) {
-        window.electronAPI.ajustarTempoPublico(video.currentTime);
+        window.electronAPI.ajustarTempoPublico({
+          tempo: video.currentTime,
+          pausado: video.paused,
+        });
       }
     }, 500);
   }
@@ -1440,10 +1457,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function pararSyncPublico() {
     clearInterval(syncTimer);
     syncTimer = null;
-    // Tempo negativo e o aviso de "acabou": sem ele o painel seguia tocando
-    // sozinho ate o cao de guarda perceber o silencio.
     if (!isAudience && window.electronAPI.ajustarTempoPublico) {
-      window.electronAPI.ajustarTempoPublico(-1);
+      window.electronAPI.ajustarTempoPublico({ parado: true });
     }
   }
 
@@ -1561,6 +1576,10 @@ intervaloDeck = [];
 
         if (dados.cmd === "play-confirmed") {
           if (isAudience) {
+            // A chamada de 30s fica por cima do video se ninguem a tirar: o
+            // ramo do painel retornava antes do pararPreview, e dando Play no
+            // meio da contagem o overlay ficava no telao a musica inteira.
+            pararPreview();
             atualizarPainelPublico(dados);
             // Le o arquivo enquanto o Palco mostra a intro. Sem isto o painel
             // so comeca a carregar quando a musica ja esta rolando e entra

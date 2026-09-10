@@ -48,9 +48,24 @@ test("fila vazia: nao faz nada", () => {
     { temMusicaNoAr: false }), { acao: "nada" });
 });
 
-test("chamado tem precedencia mesmo com musica no ar", () => {
-  // O KJ chamou o proximo antes de a atual acabar e decidiu cortar.
+// Esta regra estava invertida. A ideia era "o KJ chamou o proximo e decidiu
+// cortar", mas Play nao e o botao de cortar — Pular e. Com uma musica no ar
+// (pausada, por exemplo) e alguem "pronto" na fila, o Play cortava a musica do
+// cantor que estava cantando. Musica no ar sempre vence: o KJ pausou e quer
+// voltar. Para trocar de cantor existe o Pular.
+test("musica no ar vence: o Play retoma, nao corta o cantor", () => {
   const fila = [{ id: "atual", status: "tocando" }, { id: "chamado", status: "confirmando" }];
-  assert.deepStrictEqual(escolherParaTocar(fila, { temMusicaNoAr: true }),
+  assert.deepStrictEqual(escolherParaTocar(fila, { temMusicaNoAr: true }), { acao: "retomar" });
+
+  const comPronto = [{ id: "atual", status: "tocando" }, { id: "p", status: "pronto" }];
+  assert.deepStrictEqual(escolherParaTocar(comPronto, { temMusicaNoAr: true }), { acao: "retomar" });
+});
+
+test("sem musica no ar, o chamado continua tendo a vez", () => {
+  const fila = [
+    { id: "velha", status: "tocando" },   // write de 'cantada' ainda a caminho
+    { id: "chamado", status: "confirmando" },
+  ];
+  assert.deepStrictEqual(escolherParaTocar(fila, { temMusicaNoAr: false }),
     { acao: "tocar", id: "chamado" });
 });
