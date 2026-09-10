@@ -122,11 +122,12 @@
 
     /* Autocomplete: sugestao ancorada no campo, com navegacao por teclado. */
     .cat-search-wrap { position:relative; }
-    #catSugestoes {
+    #catSugestoes, #buscaSugestoes {
       display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
       background:var(--surface); border:1px solid #ffffff20; border-radius:10px;
       max-height:264px; overflow-y:auto; box-shadow:0 18px 44px rgba(0,0,0,.55);
     }
+    #buscaSugestoes { display:none; }
     .cat-sug {
       padding:10px 14px; cursor:pointer; display:flex; align-items:baseline; gap:8px;
       border-bottom:1px solid #ffffff0d;
@@ -331,7 +332,10 @@
       <div class="slot-label" id="modalSlotLabel">FILA PRINCIPAL</div>
 
       <label class="modal-label">Buscar música</label>
-      <input class="modal-input" id="inputBusca" placeholder="Digite o nome da música ou artista..." autocomplete="off">
+      <div class="cat-search-wrap">
+        <input class="modal-input" id="inputBusca" placeholder="Digite o nome da música ou artista..." autocomplete="off">
+        <div id="buscaSugestoes"></div>
+      </div>
 
       <!-- Resultados da busca -->
       <div id="resultadosBusca" style="display:none;max-height:200px;overflow-y:auto;margin-bottom:10px;border:1px solid #ffffff15;border-radius:8px;"></div>
@@ -749,16 +753,30 @@ function escutarFila() {
     document.addEventListener('DOMContentLoaded', () => {
       const inputBusca = document.getElementById('inputBusca');
       if (inputBusca) {
+        const CTX_PEDIDO = { campo: 'inputBusca', box: 'buscaSugestoes' };
+
         inputBusca.addEventListener('input', () => {
           clearTimeout(buscaTimeout);
           const termo = inputBusca.value.trim();
           if (termo.length < 2) {
             document.getElementById('resultadosBusca').style.display = 'none';
             document.getElementById('naoEncontradaBox').style.display = 'none';
+            fecharSugestoes();
             return;
           }
+          sugerirCatalogo(CTX_PEDIDO);
           buscaTimeout = setTimeout(() => buscarCatalogo(termo), 300);
         });
+
+        inputBusca.addEventListener('keydown', e => {
+          if (!_sugestoes.length) return;
+          if (e.key === 'ArrowDown')    { e.preventDefault(); _sugAtiva = Math.min(_sugAtiva + 1, _sugestoes.length - 1); marcarSugestao(_sugAtiva); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); _sugAtiva = Math.max(_sugAtiva - 1, -1); marcarSugestao(_sugAtiva); }
+          else if (e.key === 'Enter')   { if (_sugAtiva >= 0) { e.preventDefault(); escolherSugestao(_sugAtiva); } else fecharSugestoes(); }
+          else if (e.key === 'Escape')  { fecharSugestoes(); }
+        });
+        inputBusca.addEventListener('blur',  () => setTimeout(fecharSugestoes, 120));
+        inputBusca.addEventListener('focus', () => sugerirCatalogo(CTX_PEDIDO));
       }
     });
 
@@ -1461,7 +1479,7 @@ function escutarFila() {
     function filtrarCatalogo() {
       _catBuscaTermo = (document.getElementById('catBusca')?.value || '').toLowerCase().trim();
       renderCatalogo();
-      sugerirCatalogo();
+      sugerirCatalogo({ campo: 'catBusca', box: 'catSugestoes' });
     }
 
     // ── Autocomplete do catalogo ─────────────────────────────
@@ -1475,17 +1493,28 @@ function escutarFila() {
     }
 
     function fecharSugestoes() {
-      const box = document.getElementById('catSugestoes');
+      const box = document.getElementById(_sugCtx.box);
       if (box) box.style.display = 'none';
       _sugestoes = [];
       _sugAtiva  = -1;
     }
 
-    function sugerirCatalogo() {
-      const box = document.getElementById('catSugestoes');
+    // Contexto ativo do autocomplete. Existem dois campos: o da aba Catalogo e
+    // o "Buscar musica" do modal de pedido — este ultimo e o que o cantor usa
+    // para pedir, e estava sem autocomplete nenhum.
+    let _sugCtx = { campo: 'catBusca', box: 'catSugestoes' };
+
+    async function sugerirCatalogo(ctx) {
+      if (ctx) _sugCtx = ctx;
+      const box = document.getElementById(_sugCtx.box);
       if (!box) return;
-      const bruto = (document.getElementById('catBusca')?.value || '').trim();
-      if (bruto.length < 2 || !_catalogoSongs.length) { fecharSugestoes(); return; }
+      const bruto = (document.getElementById(_sugCtx.campo)?.value || '').trim();
+      if (bruto.length < 2) { fecharSugestoes(); return; }
+
+      // A lista so era preenchida ao abrir a aba Catalogo; indo direto pedir
+      // musica, ficava vazia e nenhuma sugestao aparecia.
+      if (!_catalogoSongs.length) _catalogoSongs = (await garantirCatalogo()) || [];
+      if (!_catalogoSongs.length) { fecharSugestoes(); return; }
 
       const termo = normCat(bruto);
       const porPrefixo = [], porTrecho = [];
@@ -1532,7 +1561,7 @@ function escutarFila() {
     }
 
     function marcarSugestao(i) {
-      const itens = document.querySelectorAll('#catSugestoes .cat-sug');
+      const itens = document.querySelectorAll('#' + _sugCtx.box + ' .cat-sug');
       itens.forEach(el => el.classList.remove('ativa'));
       if (i >= 0 && itens[i]) {
         itens[i].classList.add('ativa');
@@ -1543,11 +1572,16 @@ function escutarFila() {
     function escolherSugestao(i) {
       const s = _sugestoes[i];
       if (!s) return;
-      const campo = document.getElementById('catBusca');
+      const campo = document.getElementById(_sugCtx.campo);
       campo.value = s.musica;
       fecharSugestoes();
-      filtrarCatalogo();
       campo.blur();
+      if (_sugCtx.campo === 'inputBusca') {
+        // No modal de pedido, escolher ja seleciona a musica.
+        selecionarMusica(null, s.musica, s.artista, s.disponivel !== false);
+      } else {
+        filtrarCatalogo();
+      }
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -1563,7 +1597,7 @@ function escutarFila() {
       });
 
       campo.addEventListener('blur', () => setTimeout(fecharSugestoes, 120));
-      campo.addEventListener('focus', sugerirCatalogo);
+      campo.addEventListener('focus', () => sugerirCatalogo({ campo: 'catBusca', box: 'catSugestoes' }));
     });
 
     function renderCatalogo() {
