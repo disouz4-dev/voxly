@@ -914,6 +914,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const aberturaAudio = document.getElementById("abertura-audio");
 
   function tocarAbertura() {
+    if (isAudience) return;
     aberturaAudio.currentTime = 0;
     aberturaAudio.volume = 0.85;
     aberturaAudio.play().catch(() => {});
@@ -1144,6 +1145,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // logo por cima no Palco e escondia o video no painel do publico.
     clearTimeout(idleFallbackTimer);
     idleAtivo = false;
+    clearTimeout(introTimeout);
+    introOverlay.classList.remove("active");
+    clearInterval(particleTimer);
     idle.style.display  = "none";
     video.style.display = "block";
     // Ja pre-carregado no "play-confirmed": trocar o src de novo jogaria fora
@@ -1160,7 +1164,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Meio quadro a 30fps e imperceptivel; abaixo disso o pulo do currentTime
   // incomoda mais que o desencontro.
   const TOLERANCIA_SYNC = 0.15;
-  const SILENCIO_DO_PALCO = 4000;
+  const SILENCIO_DO_PALCO = 2500;
 
   // O painel toca a partir da sua propria copia do arquivo: se o Palco parar,
   // travar ou recarregar, ele seguiria sozinho — foi assim que apareceu uma
@@ -1176,7 +1180,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.electronAPI.onAjustarTempo) {
     window.electronAPI.onAjustarTempo(tempo => {
-      if (!isAudience || !video.src || video.ended) return;
+      if (!isAudience) return;
+      if (tempo < 0) {   // o Palco avisou que acabou
+        clearTimeout(syncCaoTimer);
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        return;
+      }
+      if (!video.src || video.ended) return;
       armarCaoDeGuarda();
       if (video.readyState < 2) return;
       if (Math.abs(tempo - video.currentTime) > TOLERANCIA_SYNC) {
@@ -1425,7 +1437,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 500);
   }
 
-  function pararSyncPublico() { clearInterval(syncTimer); syncTimer = null; }
+  function pararSyncPublico() {
+    clearInterval(syncTimer);
+    syncTimer = null;
+    // Tempo negativo e o aviso de "acabou": sem ele o painel seguia tocando
+    // sozinho ate o cao de guarda perceber o silencio.
+    if (!isAudience && window.electronAPI.ajustarTempoPublico) {
+      window.electronAPI.ajustarTempoPublico(-1);
+    }
+  }
 
   // Comandos do host
   window.electronAPI.onPlayerCmd(async cmd => {
@@ -1549,6 +1569,16 @@ intervaloDeck = [];
               const url = toFileUrl(dados.filePath);
               if (video.src !== url) { video.src = url; video.load(); }
             }
+            const [pubFoto, pubFotoDuo] =
+              await resolveAvatarPair(dados.photoURL || null, dados.duoPhotoURL || null);
+            mostrarIntro(
+              dados.cantor  || "Cantor",
+              dados.duo     || null,
+              dados.musica  || "",
+              dados.artista || "",
+              pubFoto, pubFotoDuo,
+              () => {}   // o video entra pelo aviso do Palco, nao pelo fim da intro
+            );
             return;
           }
           // O KJ pode dar Play no meio da contagem: a chamada nao pode seguir
@@ -1685,6 +1715,7 @@ intervaloDeck = [];
   }
 
   function aoTerminarMusica() {
+    if (isAudience) { video.pause(); return; }
     video.pause();
     video.style.display = "none";
     mostrarIdleScreen(null); // mostra idle imediatamente, sem info ainda
