@@ -962,12 +962,26 @@ https://www.youtube.com/@canal/videos"></textarea>
     // justamente onde a busca nao tem como funcionar. Apontando o QR para o
     // servidor do proprio host, busca e autocomplete passam a funcionar.
     if (window.electronAPI && window.electronAPI.getLocalWebAppUrl) {
-      window.electronAPI.getLocalWebAppUrl().then(url => {
-        if (!url) return;
-        appUrlLocal = url;
-        atualizarQrHost();
-        console.log('[HOST] App do cantor na LAN:', url);
-      }).catch(() => {});
+      // Reconsulta periodicamente: trocar de rede (outra casa, outro Wi-Fi)
+      // muda o IP da maquina, e um QR gravado com o IP antigo leva a um
+      // endereco que nao existe mais. Consultar so na abertura obrigaria a
+      // reiniciar o app a cada mudanca de local.
+      const sincronizarUrlLan = () => {
+        window.electronAPI.getLocalWebAppUrl().then(url => {
+          if (!url || url === appUrlLocal) return;
+          const anterior = appUrlLocal;
+          appUrlLocal = url;
+          atualizarQrHost();
+          if (anterior) {
+            console.log(`[HOST] Rede mudou: ${anterior} -> ${url}`);
+            mostrarToast('📶 Rede mudou — QR atualizado');
+          } else {
+            console.log('[HOST] App do cantor na LAN:', url);
+          }
+        }).catch(() => {});
+      };
+      sincronizarUrlLan();
+      setInterval(sincronizarUrlLan, 20000);
     }
 
     // Estado do intervalo
