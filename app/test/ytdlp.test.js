@@ -10,7 +10,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { idadeEmDias, precisaAtualizar, urlDoBinario, nomeDoBinario } = require("../src/ytdlp");
+const { idadeEmDias, precisaAtualizar, urlDoBinario, nomeDoBinario, maisNova } = require("../src/ytdlp");
 
 const HOJE = Date.parse("2026-09-10T12:00:00Z");
 
@@ -67,4 +67,47 @@ test("o nome no disco muda no Windows", () => {
   assert.strictEqual(nomeDoBinario("linux"), "yt-dlp");
   assert.strictEqual(nomeDoBinario("darwin"), "yt-dlp");
   assert.strictEqual(nomeDoBinario("win32"), "yt-dlp.exe");
+});
+
+// ── Qual arquivo baixar ──────────────────────────────────────────────────
+// O build "independente" (yt-dlp_macos / yt-dlp_linux) e um bundle PyInstaller
+// que se extrai A CADA invocacao. Medido nesta maquina: 24 a 46 SEGUNDOS por
+// chamada, contra 516ms do script do sistema e 950ms do zipapp oficial. Como o
+// Voxly invoca o yt-dlp em toda busca e todo download, isso deixou o app
+// inteiro 40x mais lento. O zipapp so precisa de Python, que macOS e Linux tem.
+
+test("com Python instalado, baixa o zipapp", () => {
+  for (const p of ["linux", "darwin", "win32"]) {
+    assert.match(urlDoBinario(p, { temPython: true }), /\/yt-dlp$/,
+      `${p}: o zipapp e o mesmo arquivo em todo sistema`);
+  }
+});
+
+test("sem Python, cai no bundle do sistema", () => {
+  assert.match(urlDoBinario("linux",  { temPython: false }), /yt-dlp_linux$/);
+  assert.match(urlDoBinario("darwin", { temPython: false }), /yt-dlp_macos$/);
+  assert.match(urlDoBinario("win32",  { temPython: false }), /yt-dlp\.exe$/);
+});
+
+test("continua vindo so do repositorio oficial", () => {
+  for (const py of [true, false]) {
+    for (const p of ["linux", "darwin", "win32"]) {
+      assert.match(urlDoBinario(p, { temPython: py }), /^https:\/\/github\.com\/yt-dlp\/yt-dlp\//);
+    }
+  }
+});
+
+test("sistema desconhecido sem Python nao inventa arquivo", () => {
+  assert.strictEqual(urlDoBinario("sunos", { temPython: false }), null);
+  // Com Python o zipapp serve em qualquer lugar.
+  assert.match(urlDoBinario("sunos", { temPython: true }), /\/yt-dlp$/);
+});
+
+// ── Entre a copia propria e a do sistema, vale a mais nova ───────────────
+test("usa a mais nova das duas", () => {
+  assert.strictEqual(maisNova("2026.06.09", "2026.08.19"), "2026.08.19");
+  assert.strictEqual(maisNova("2026.08.19", "2026.06.09"), "2026.08.19");
+  assert.strictEqual(maisNova(null, "2026.06.09"), "2026.06.09");
+  assert.strictEqual(maisNova("2026.06.09", null), "2026.06.09");
+  assert.strictEqual(maisNova(null, null), null);
 });

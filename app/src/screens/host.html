@@ -1695,6 +1695,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       return;
     }
     await aplicarQualidadePadrao();
+    document.getElementById('modalCandidatos')._itemId = itemId;
     document.getElementById('candidatosTitulo').textContent = `${item.artista} — ${item.musica}`;
     document.getElementById('candidatosSubtitulo').textContent =
       'Versões de karaokê encontradas no YouTube. Clique para baixar.';
@@ -1707,6 +1708,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       </div>`;
     }).join('');
     document.getElementById('modalCandidatos').classList.add('open');
+    completarDatasDosCards(itemId, item.candidatos);
   }
 
   // Deixa o select na qualidade que o KJ definiu em Ajustes. Sem isto ele abria
@@ -1716,6 +1718,35 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!sel || !window.electronAPI || !window.electronAPI.getPrefsDownload) return;
     const p = await window.electronAPI.getPrefsDownload();
     if (p && p.qualidade) sel.value = p.qualidade;
+  }
+
+  // Busca as datas em segundo plano e preenche os cards ja abertos. Prender a
+  // busca ~12s so para poder escrever "há 3 anos" era o que fazia ela parecer
+  // travada. Se o KJ escolher antes de elas chegarem, nada se perde.
+  async function completarDatasDosCards(itemId, candidatos) {
+    const semData = (candidatos || []).filter(c => c && c.id && !c.postadoEm);
+    if (!semData.length) return;
+    try {
+      const r = await fetch(`http://127.0.0.1:7432/datas?ids=${semData.map(c => c.id).join(',')}`);
+      if (!r.ok) return;
+      const datas = await r.json();
+      if (!Object.keys(datas).length) return;
+
+      const item = filaData.find(i => i.id === itemId);
+      if (!item) return;
+      const atualizados = (item.candidatos || []).map(c =>
+        datas[c.id] ? { ...c, postadoEm: datas[c.id] } : c);
+
+      // Grava para nao consultar de novo se o modal for reaberto.
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
+        .update({ candidatos: atualizados }).catch(() => {});
+
+      const modal = document.getElementById('modalCandidatos');
+      if (modal.classList.contains('open') && modal._itemId === itemId) {
+        item.candidatos = atualizados;
+        abrirModalCandidatos(itemId);
+      }
+    } catch (_) { /* sem data o card continua util */ }
   }
 
   async function salvarQualidade() {

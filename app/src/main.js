@@ -314,9 +314,13 @@ async function buscarKaraokeYt(termo, artista) {
   const consulta = ytBusca.montarConsulta({ musica: termo, artista: artista || "" });
 
   const saida = await new Promise((resolve, reject) => {
+    // --flat-playlist: 2s contra 18s. A diferenca e que o yt-dlp deixa de
+    // abrir a ficha completa de CADA resultado — e o que ele traz (titulo,
+    // canal, duracao, views) ja basta para ranquear. Falta so a data de
+    // publicacao, que chega depois por /datas, com os cards ja na tela.
     const proc = spawn(ytDlp, [
       `ytsearch12:${consulta}`,
-      "--dump-json", "--skip-download", "--no-warnings",
+      "--dump-json", "--flat-playlist", "--no-warnings",
       "--socket-timeout", "15",
       "--extractor-args", "youtubetab:skip=authcheck",
     ], { windowsHide: true });
@@ -382,6 +386,38 @@ function iniciarServidorCatalogo() {
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ erro: e.message }));
         });
+      return;
+    }
+
+    // Datas de publicacao dos candidatos ja mostrados. Fica separado da busca
+    // de proposito: abrir a ficha de 8 videos custa ~12s, e prender os cards
+    // por isso era a razao de a busca parecer travada.
+    if (req.url.startsWith("/datas")) {
+      const ids = (new URL(req.url, "http://local").searchParams.get("ids") || "")
+        .split(",").map(x => x.trim()).filter(x => /^[A-Za-z0-9_-]{11}$/.test(x)).slice(0, 12);
+      if (!ids.length) { res.setHeader("Content-Type", "application/json"); res.end("{}"); return; }
+
+      const ytDlp = resolverBinario("yt-dlp");
+      if (!ytDlp) { res.statusCode = 500; res.end(JSON.stringify({ erro: "yt-dlp nao encontrado" })); return; }
+
+      const proc = spawn(ytDlp, [
+        "--skip-download", "--no-warnings", "--ignore-errors",
+        "--print", "%(id)s %(upload_date)s",
+        ...ids.map(i => `https://www.youtube.com/watch?v=${i}`),
+      ], { windowsHide: true });
+
+      let saida = "";
+      proc.stdout.on("data", d => saida += d.toString());
+      proc.on("error", () => { res.statusCode = 500; res.end(JSON.stringify({ erro: "falha ao consultar" })); });
+      proc.on("close", () => {
+        const datas = {};
+        for (const linha of saida.split("\n")) {
+          const [id, data] = linha.trim().split(/\s+/);
+          if (id && /^\d{8}$/.test(data || "")) datas[id] = data;
+        }
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(datas));
+      });
       return;
     }
 
@@ -1143,12 +1179,23 @@ function resolverBinario(nome) {
   const salvo = store.get(`bin.${nome}`);
   if (salvo && fs.existsSync(salvo)) return salvo;
 
-  // Copia mantida pelo proprio Voxly. Vem antes da do sistema porque e a unica
-  // que ele consegue manter atualizada: o yt-dlp do apt fica meses atras e
-  // "yt-dlp -U" se recusa a mexer numa instalacao vinda de gerenciador.
+  // Copia mantida pelo proprio Voxly: e a unica que ele consegue manter
+  // atualizada (o yt-dlp do apt fica meses atras e "yt-dlp -U" se recusa a
+  // mexer numa instalacao vinda de gerenciador). Mas so vale se nao for MAIS
+  // VELHA que a do sistema, senao o app ignora uma instalacao melhor ao lado.
   if (nome === "yt-dlp") {
     const proprio = caminhoYtDlpProprio();
-    try { fs.accessSync(proprio, fs.constants.X_OK); return proprio; } catch { /* segue */ }
+    try {
+      fs.accessSync(proprio, fs.constants.X_OK);
+      const doSistema = PASTAS_BIN.map(d => path.join(d, "yt-dlp")).find(a => {
+        try { fs.accessSync(a, fs.constants.X_OK); return true; } catch { return false; }
+      });
+      if (!doSistema) return proprio;
+      const vp = _versaoYtDlp.get(proprio), vs = _versaoYtDlp.get(doSistema);
+      // Sem as versoes em cache ainda, a propria vale: ela e a que o app atualiza.
+      if (!vp || !vs) return proprio;
+      return ytdlp.maisNova(vp, vs) === vs && vs !== vp ? doSistema : proprio;
+    } catch { /* segue para a do sistema */ }
   }
   for (const dir of PASTAS_BIN) {
     const alvo = path.join(dir, nome);
@@ -1218,8 +1265,17 @@ async function ultimaVersaoPublicada() {
 // Baixa o binario independente do repositorio oficial do yt-dlp. Independente
 // porque nao exige Python na maquina do KJ, e oficial porque executavel nao se
 // pega de qualquer lugar.
+// O zipapp precisa de Python. Onde nao houver, cai no bundle — lento, mas
+// funcional.
+function temPython() {
+  try {
+    require("child_process").execFileSync("python3", ["--version"], { timeout: 5000 });
+    return true;
+  } catch { return false; }
+}
+
 async function baixarYtDlp() {
-  const url = ytdlp.urlDoBinario(process.platform);
+  const url = ytdlp.urlDoBinario(process.platform, { temPython: temPython() });
   if (!url) throw new Error(`Sem binario do yt-dlp para ${process.platform}`);
 
   const destino = caminhoYtDlpProprio();
@@ -1507,8 +1563,9 @@ async function baixarUrl(opts) {
       // e caminhoLocalDoVideo(), que olha a pasta real.
       "--no-overwrites",
       "--ignore-errors",
-      "--sleep-interval", "2",
-      "--max-sleep-interval", "5",
+      // Quatro fragmentos em paralelo: o gargalo nao e a rede do bar, e a
+      // fatia que o YouTube da por conexao.
+      "-N", "4",
       "--extractor-args", "youtubetab:skip=authcheck",
       // Karaoke precisa tocar no QuickTime e no Finder, nao so no Chromium do
       // player. Sem fixar o contêiner, o merge de bestvideo+bestaudio pode sair
@@ -1521,6 +1578,15 @@ async function baixarUrl(opts) {
     // passar de mil videos. Baixa so o video pedido, a menos que o KJ marque
     // explicitamente que quer a playlist.
     args.push(playlist ? "--yes-playlist" : "--no-playlist");
+
+    // A pausa entre downloads existe para nao irritar o YouTube — mas ela roda
+    // antes de CADA fluxo, e video+audio de uma unica musica sao dois: eram 9s
+    // parado sem proteger de nada, ja que as duas requisicoes sao do mesmo
+    // video. Medido: 13,2s com a pausa, 3,0s sem. Ela so entra quando ha
+    // varias musicas na mesma leva, que e o caso em que ela de fato protege.
+    if (urls.length > 1) {
+      args.push("--sleep-interval", "2", "--max-sleep-interval", "5");
+    }
 
     if (cookies && navegador) {
       args.push("--cookies-from-browser", navegador);

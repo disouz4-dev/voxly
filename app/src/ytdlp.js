@@ -11,8 +11,13 @@
 const BASE_OFICIAL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/";
 const API_ULTIMA = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 
-// Builds independentes: nao exigem Python instalado na maquina do KJ.
-const ARQUIVO_POR_SISTEMA = {
+// O build "independente" e um bundle PyInstaller que se extrai A CADA
+// invocacao — medido: 24 a 46 SEGUNDOS por chamada, contra 950ms do zipapp e
+// 516ms do script do sistema. Como o Voxly chama o yt-dlp em toda busca e todo
+// download, escolher errado aqui deixa o app inteiro dezenas de vezes mais
+// lento. O zipapp so pede Python, que macOS e Linux ja trazem.
+const ZIPAPP = "yt-dlp";
+const BUNDLE_POR_SISTEMA = {
   linux:  "yt-dlp_linux",
   darwin: "yt-dlp_macos",
   win32:  "yt-dlp.exe",
@@ -43,13 +48,23 @@ function precisaAtualizar(versaoLocal, versaoPublicada) {
   return publicada.localeCompare(local, "en", { numeric: true }) > 0;
 }
 
-function urlDoBinario(plataforma) {
-  const arquivo = ARQUIVO_POR_SISTEMA[plataforma];
+function urlDoBinario(plataforma, { temPython } = {}) {
+  if (temPython) return BASE_OFICIAL + ZIPAPP;
+  const arquivo = BUNDLE_POR_SISTEMA[plataforma];
   return arquivo ? BASE_OFICIAL + arquivo : null;
+}
+
+// Entre a copia do Voxly e a do sistema, vale a mais nova: sem isto o app
+// ficava preso na propria copia velha mesmo com uma melhor instalada ao lado.
+function maisNova(a, b) {
+  const x = String(a || "").trim(), y = String(b || "").trim();
+  if (!x) return y || null;
+  if (!y) return x;
+  return y.localeCompare(x, "en", { numeric: true }) > 0 ? y : x;
 }
 
 function nomeDoBinario(plataforma) {
   return plataforma === "win32" ? "yt-dlp.exe" : "yt-dlp";
 }
 
-module.exports = { idadeEmDias, precisaAtualizar, urlDoBinario, nomeDoBinario, API_ULTIMA };
+module.exports = { idadeEmDias, precisaAtualizar, urlDoBinario, nomeDoBinario, maisNova, API_ULTIMA };
