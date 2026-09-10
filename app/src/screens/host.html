@@ -3487,6 +3487,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       // do show nunca mostrava a contagem regressiva.
       relayShowHorario();
 
+      // A lista de proximos so era enviada dentro do renderQueue, ou seja, na
+      // proxima MUDANCA da fila. Abrindo a tela do publico com a fila parada,
+      // ela nunca chegava — a coluna ficava vazia ate alguem pedir musica.
+      enviarFilaAoPublico();
+
       // Reenvia quem esta cantando agora, senao o painel abre vazio mesmo com
       // musica tocando. Mas "preview" e a CHAMADA do cantor, com animacao e
       // timer: usa-lo aqui fazia a chamada aparecer por cima do video toda vez
