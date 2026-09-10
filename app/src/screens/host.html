@@ -896,7 +896,9 @@ https://www.youtube.com/@canal/videos"></textarea>
   // sem a sessao, e ignorava o endereco LAN do modo offline. Agora ele leva
   // direto para a sessao aberta, como ja fazia a tela do publico.
   function atualizarQrHost() {
-    const base = appUrlLocal || APP_URL;
+    // O QR aponta para o web app publicado, nao para a LAN: o endereco do
+    // Firebase e estavel, funciona fora da rede da casa e nao muda de IP.
+    const base = APP_URL;
     const img  = document.getElementById('qr-app');
     if (!img) return;
 
