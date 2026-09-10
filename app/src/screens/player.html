@@ -301,6 +301,51 @@ body.modo-publico #entrada-publica { display:flex; }
 .pub-center-idle img { height:clamp(180px,25vw,300px); width:auto; opacity:.9; filter:drop-shadow(0 14px 40px rgba(0,0,0,.55)); margin-bottom:24px; }
 .pub-center-idle-text { font-family:'Space Mono', monospace; font-size:clamp(.85rem,2vw,1.1rem); letter-spacing:.35em; text-transform:uppercase; color:var(--mudo); }
 
+/* Guia do publico: enquanto nao ha video, a area central ensina como pedir
+   musica. Quem chega no meio da noite nao tem a quem perguntar. */
+.pub-guia {
+  margin-top:clamp(20px,4vh,40px);
+  width:min(760px, 88%);
+  min-height:clamp(150px,22vh,230px);
+  display:flex; align-items:center; justify-content:center;
+}
+.pub-guia-card {
+  display:flex; align-items:center; gap:clamp(16px,3vw,30px);
+  text-align:left; width:100%;
+  animation:guiaEntra .7s cubic-bezier(.17,.67,.35,1.02) both;
+}
+.pub-guia-marca {
+  flex:none; width:clamp(60px,8vw,96px); height:clamp(60px,8vw,96px);
+  border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-family:'Unbounded'; font-weight:800; font-size:clamp(1.6rem,3.4vw,2.6rem);
+  color:var(--palco); background:var(--ambar);
+  box-shadow:0 0 0 8px rgba(255,180,84,.14);
+}
+.pub-guia-card[data-tipo="regra"] .pub-guia-marca {
+  background:transparent; color:var(--azul);
+  border:3px solid var(--azul); box-shadow:0 0 0 8px rgba(88,196,221,.12);
+  font-size:clamp(1.7rem,3.6vw,2.6rem);
+}
+.pub-guia-texto { min-width:0; }
+.pub-guia-titulo {
+  font-family:'Unbounded'; font-weight:700;
+  font-size:clamp(1.15rem,3vw,2.1rem); line-height:1.15; color:var(--texto);
+  margin-bottom:8px; text-wrap:balance;
+}
+.pub-guia-detalhe {
+  font-family:'Space Mono', monospace;
+  font-size:clamp(.78rem,1.5vw,1.05rem); line-height:1.5; color:var(--mudo);
+}
+.pub-guia-passos {
+  display:flex; gap:7px; justify-content:center; margin-top:clamp(14px,2.5vh,22px);
+}
+.pub-guia-passo { width:7px; height:7px; border-radius:50%; background:var(--linha); transition:background .3s, transform .3s; }
+.pub-guia-passo.atual { background:var(--ambar); transform:scale(1.5); }
+@keyframes guiaEntra {
+  from { opacity:0; transform:translateY(18px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
 /* Coluna direita: Fila de próximos */
 .pub-right {
   display:flex; flex-direction:column;
@@ -456,6 +501,8 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
   #idle-screen::before, #intro-rays, #intro-scanline, #intro-progress, #prev-waveform .wave-bar { animation:none !important; }
   .pub-dot { animation:none; }
   .show-countdown.zerou .show-countdown-time { animation:none; }
+  .pub-guia-card { animation:none; }
+  .pub-guia-passo { transition:none; }
 }
   </style>
 </head>
@@ -553,7 +600,9 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
       <div class="pub-center" id="pub-center">
         <div class="pub-center-idle" id="pub-center-idle">
           <img src="../assets/logo/logo_voxly.png" alt="Voxly">
-          <div class="pub-center-idle-text">Aguardando próxima música...</div>
+          <div class="pub-center-idle-text" id="pub-center-idle-text">Aguardando próxima música...</div>
+          <div class="pub-guia" id="pub-guia"></div>
+          <div class="pub-guia-passos" id="pub-guia-passos"></div>
         </div>
       </div>
     </div>
@@ -619,6 +668,31 @@ document.addEventListener("DOMContentLoaded", () => {
   const falaAudio = new Audio();
 
   const isAudience = new URLSearchParams(window.location.search).get("tela") === "publico";
+
+  // Antes do bloco do publico, que roda espelhar() na propria carga e chama
+  // iniciarGuiaPublico. Declaradas depois, caiam em zona morta temporal e a
+  // excecao matava o resto do script — o painel inteiro ficava sem funcao.
+  let guiaTimer = null;
+  let guiaPos = 0;
+  const SEGUNDOS_POR_CARTAO = 9;
+
+  // ── Guia do publico ────────────────────────────────────
+  // Quem chega no meio da noite nao tem a quem perguntar como funciona. Roda
+  // so enquanto a area central esta sem video: com musica no ar, o video manda.
+  const GUIA = [
+    { tipo: "passo", marca: "1", titulo: "Aponte a câmera para o QR ao lado",
+      detalhe: "Não precisa instalar nada. O celular abre a página da casa." },
+    { tipo: "passo", marca: "2", titulo: "Peça sua música pelo nome",
+      detalhe: "Artista e título, só isso. A gente encontra a versão de karaokê." },
+    { tipo: "passo", marca: "3", titulo: "Confirme quando for chamado",
+      detalhe: "Seu nome aparece nesta tela e o celular avisa. São 30 segundos." },
+    { tipo: "regra", marca: "♪", titulo: "Uma música por vez na fila",
+      detalhe: "Cantou a sua, pode pedir a próxima." },
+    { tipo: "regra", marca: "☕", titulo: "Quem ainda não cantou passa na frente",
+      detalhe: "Só quando a fila fica longa — para ninguém esperar a noite toda." },
+    { tipo: "regra", marca: "⏰", titulo: "A sessão fecha no horário da casa",
+      detalhe: "Perto do fim, os pedidos são encerrados." },
+  ];
   if (isAudience) document.body.classList.add("modo-publico");
 
   // O painel do publico e a MESMA pagina do Palco (player.html?tela=publico), entao
@@ -644,11 +718,13 @@ document.addEventListener("DOMContentLoaded", () => {
       // e bastava um deles chegar atrasado para a tela ficar preta.
       vid.style.display = "block";
 
-      const espelhar = () => {
-        const tocando = !!vid.src && !vid.paused && !vid.ended;
-        const aviso = document.getElementById("pub-center-idle");
-        if (aviso) aviso.style.display = tocando ? "none" : "flex";
-      };
+        const espelhar = () => {
+    const tocando = !!vid.src && !vid.paused && !vid.ended;
+    const aviso = document.getElementById("pub-center-idle");
+    if (aviso) aviso.style.display = tocando ? "none" : "flex";
+    // O guia so faz sentido com a area central livre.
+    if (tocando) pararGuiaPublico(); else iniciarGuiaPublico();
+  };
       ["loadstart", "playing", "pause", "ended", "emptied"].forEach(ev =>
         vid.addEventListener(ev, espelhar));
       espelhar();
@@ -714,6 +790,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Áudio: compressor + pitch shift ──────────────────────
   let audioCtx   = null;
   let syncTimer  = null;   // Palco -> painel: acerto periodico de relogio
+
   let syncCaoTimer = null; // painel: vigia se o Palco parou de dar noticia
   let srcNode    = null;
   let pitchNode  = null;
@@ -748,6 +825,40 @@ document.addEventListener("DOMContentLoaded", () => {
   function escapaPub(t) {
     return String(t == null ? "" : t).replace(/[&<>"']/g, c =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+
+  function desenharGuia() {
+    const caixa = document.getElementById("pub-guia");
+    const passos = document.getElementById("pub-guia-passos");
+    if (!caixa || !passos) return;
+    const c = GUIA[guiaPos % GUIA.length];
+    caixa.innerHTML = `
+      <div class="pub-guia-card" data-tipo="${c.tipo}">
+        <div class="pub-guia-marca">${escapaPub(c.marca)}</div>
+        <div class="pub-guia-texto">
+          <div class="pub-guia-titulo">${escapaPub(c.titulo)}</div>
+          <div class="pub-guia-detalhe">${escapaPub(c.detalhe)}</div>
+        </div>
+      </div>`;
+    passos.innerHTML = GUIA
+      .map((_, i) => `<span class="pub-guia-passo${i === guiaPos % GUIA.length ? " atual" : ""}"></span>`)
+      .join("");
+  }
+
+  function iniciarGuiaPublico() {
+    if (!isAudience || guiaTimer) return;
+    desenharGuia();
+    guiaTimer = setInterval(() => { guiaPos++; desenharGuia(); }, SEGUNDOS_POR_CARTAO * 1000);
+  }
+
+  function pararGuiaPublico() {
+    clearInterval(guiaTimer);
+    guiaTimer = null;
+    const caixa = document.getElementById("pub-guia");
+    const passos = document.getElementById("pub-guia-passos");
+    if (caixa) caixa.innerHTML = "";
+    if (passos) passos.innerHTML = "";
   }
 
   function pubAvatarHtml(nome, url) {

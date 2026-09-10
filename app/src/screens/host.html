@@ -3417,6 +3417,10 @@ https://www.youtube.com/@canal/videos"></textarea>
         window.electronAPI.sincronizarPublico(currentSong.filePath, tempoAtualDoPalco());
       }
 
+      // Sem isto, a tela aberta (ou recarregada) depois de o KJ marcar a hora
+      // do show nunca mostrava a contagem regressiva.
+      relayShowHorario();
+
       // Reenvia tambem quem esta cantando agora, senao o painel abre vazio
       // mesmo com musica tocando.
       const atual = filaData.find(i => i.status === 'tocando' || i.status === 'confirmando');
