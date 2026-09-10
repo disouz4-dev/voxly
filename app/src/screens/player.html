@@ -592,7 +592,24 @@ document.addEventListener("DOMContentLoaded", () => {
     // da coluna central, que e onde .pub-center video o dimensiona.
     const centro = document.getElementById("pub-center");
     const vid    = document.getElementById("video-player");
-    if (centro && vid) centro.appendChild(vid);
+    if (centro && vid) {
+      centro.appendChild(vid);
+
+      // O video desta tela e um espelho do Palco: fica sempre visivel e quem
+      // entra ou sai de cena e o aviso de espera. Antes o display do video era
+      // controlado por tres caminhos diferentes (idle, fallback, stop-preview)
+      // e bastava um deles chegar atrasado para a tela ficar preta.
+      vid.style.display = "block";
+
+      const espelhar = () => {
+        const tocando = !!vid.src && !vid.ended;
+        const aviso = document.getElementById("pub-center-idle");
+        if (aviso) aviso.style.display = tocando ? "none" : "flex";
+      };
+      ["loadstart", "playing", "pause", "ended", "emptied"].forEach(ev =>
+        vid.addEventListener(ev, espelhar));
+      espelhar();
+    }
   }
 
   // ── Contagem regressiva para o início do show ────────────
@@ -1040,9 +1057,6 @@ document.addEventListener("DOMContentLoaded", () => {
     clearTimeout(idleFallbackTimer);
     idleAtivo = false;
     idle.style.display  = "none";
-    // No painel do publico quem sai de cena e o aviso de espera, nao o idle.
-    const centroIdle = document.getElementById("pub-center-idle");
-    if (centroIdle) centroIdle.style.display = "none";
     video.style.display = "block";
     video.src = toFileUrl(filePath);
     video.load();
@@ -1478,9 +1492,12 @@ intervaloDeck = [];
     idle.style.display = "flex";
     // No painel do publico o idle fica escondido por CSS; quem volta a cena e
     // o aviso da coluna central, e o video sai.
-    const centroIdle = document.getElementById("pub-center-idle");
-    if (centroIdle) centroIdle.style.display = "";
-    if (isAudience) video.style.display = "none";
+    // No publico o video nunca e escondido: ele espelha o Palco, e o aviso de
+    // espera se ajusta sozinho pelos eventos do proprio elemento.
+    if (!isAudience) {
+      const centroIdle = document.getElementById("pub-center-idle");
+      if (centroIdle) centroIdle.style.display = "";
+    }
     idleAtivo = true;
     tocarIntervalo();
   }
