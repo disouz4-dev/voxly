@@ -1029,6 +1029,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Play video (canal legado)
   window.electronAPI.onPlayVideo((filePath, tempo) => {
     pararLoopChamada(); // a musica comecou: a chamada nao pode continuar por cima
+    // Sem isto o fallback de 8s disparava com o video ja rodando: mostrava a
+    // logo por cima no Palco e escondia o video no painel do publico.
+    clearTimeout(idleFallbackTimer);
+    idleAtivo = false;
     idle.style.display  = "none";
     // No painel do publico quem sai de cena e o aviso de espera, nao o idle.
     const centroIdle = document.getElementById("pub-center-idle");
@@ -1459,6 +1463,9 @@ intervaloDeck = [];
   }
 
   function mostrarIdleScreen(info) {
+    // Musica tocando tem precedencia sobre a tela de espera. Qualquer timer
+    // atrasado que chegue aqui no meio da musica seria puro estrago.
+    if (video && video.src && !video.paused && !video.ended) return;
     if (info !== undefined) idleNextInfo = info || null;
     document.getElementById('idle-sub').textContent =
       idleNextInfo ? 'Próximo no palco:' : 'Aguardando próxima música...';

@@ -1122,6 +1122,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           ativarInterfaceSessao();
           escutarFila();
     escutarBuscas();
+    destravarConfirmacoesOrfas();
           escutarPresencas();
           escutarConfirmacoes();
           escutarHistorico();
@@ -1279,6 +1280,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     ativarInterfaceSessao();
     escutarFila();
     escutarBuscas();
+    destravarConfirmacoesOrfas();
     escutarPresencas();
     escutarConfirmacoes();
     escutarHistorico();
@@ -2324,6 +2326,39 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Janela de confirmacao, em um lugar so: mudar aqui muda o texto, a contagem
   // do palco e o timeout juntos. Eram 15s espalhados por tres pontos.
   const SEGUNDOS_CONFIRMACAO = 30;
+
+  // Quem tira um pedido de "confirmando" e um setTimeout na memoria do host.
+  // Fechar o app (ou uma queda) mata o timer e o item fica preso nesse estado
+  // para sempre — a fila trava e nenhuma musica avanca. Na abertura, resolve o
+  // que ficou pendurado usando o prazo que estava gravado no proprio pedido.
+  async function destravarConfirmacoesOrfas() {
+    if (!SESSAO_ID) return;
+    try {
+      const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .where('status', '==', 'confirmando').get();
+      if (snap.empty) return;
+
+      const agora = Date.now();
+      let resolvidos = 0;
+
+      for (const doc of snap.docs) {
+        const ate = doc.data().confirmandoAte || 0;
+        if (ate && ate > agora) continue; // ainda dentro do prazo
+
+        // Prazo vencido sem ninguem para decidir: sobe do mesmo jeito, que e o
+        // que o timer faria.
+        await doc.ref.update({ status: 'confirmado' }).catch(() => {});
+        resolvidos++;
+      }
+
+      if (resolvidos) {
+        console.log(`[FILA] ${resolvidos} confirmacao(oes) presa(s) destravada(s)`);
+        mostrarToast(`⏱ ${resolvidos} pedido(s) preso(s) em confirmação foram liberados`);
+      }
+    } catch (e) {
+      console.warn('[FILA] falha ao destravar confirmacoes:', e.message);
+    }
+  }
 
   function escutarConfirmacoes() {
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
