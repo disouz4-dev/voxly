@@ -207,9 +207,20 @@ chmod +x Voxly-${VER}.AppImage
 Os instaladores publicados no **GitHub Releases** são detectados pelo
 `electron-updater` e instalados na próxima reinicialização.
 
-> No **macOS a atualização automática não funciona hoje**: exige app assinado e
-> notarizado pela Apple, e o build não é assinado (por isso o aviso do
-> Gatekeeper na primeira abertura). Em macOS, baixe o `.dmg` novo à mão.
+O `electron-updater` descobre a versão disponível lendo `latest-linux.yml` /
+`latest.yml` no release. Esses arquivos são gerados pelo `electron-builder`, mas
+até a v1.1.8 **não eram coletados pelo CI** — sem eles a checagem falhava e o
+app nunca sabia que havia versão nova. Corrigido a partir da v1.1.9.
+
+> No **macOS a atualização automática não funciona**: exige app assinado e
+> notarizado pela Apple, e o build não é assinado (daí o aviso do Gatekeeper na
+> primeira abertura). Por isso o `latest-mac.yml` é deixado fora do release de
+> propósito — o CI compila macOS só em arm64, e publicá-lo faria um Mac Intel
+> tentar baixar o pacote da arquitetura errada. Em macOS, baixe o `.dmg` à mão.
+
+> No **Linux**, a checagem passa a funcionar nas duas formas de instalação. A
+> instalação automática é direta no **AppImage**; com o `.deb` pode ser
+> necessário reinstalar o pacote à mão.
 
 ### 🎛️ Temas de intervalo
 No botão **🎛 Temas** do host você cria temas (ex.: *Rock*) com **playlist própria e editável**, montada a partir do catálogo local. O tema ativo define o que toca entre as músicas; sem tema, voltam as faixas animadas padrão.

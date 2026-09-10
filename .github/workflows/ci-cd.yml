@@ -86,6 +86,8 @@ jobs:
           name: voxly-windows
           path: |
             app/dist/*.exe
+            app/dist/latest.yml
+            app/dist/*.blockmap
           retention-days: 7
 
   # ---- Build Electron (Linux) ----
@@ -112,6 +114,8 @@ jobs:
           path: |
             app/dist/*.AppImage
             app/dist/*.deb
+            app/dist/latest-linux.yml
+            app/dist/*.blockmap
           retention-days: 7
 
   # ---- Build Electron (macOS) ----
@@ -175,7 +179,11 @@ jobs:
           files: |
             ./dist/linux/*.AppImage
             ./dist/linux/*.deb
+            ./dist/linux/latest-linux.yml
+            ./dist/linux/*.blockmap
             ./dist/windows/*.exe
+            ./dist/windows/latest.yml
+            ./dist/windows/*.blockmap
             ./dist/macos/*.dmg
             ./dist/macos/*.zip
 

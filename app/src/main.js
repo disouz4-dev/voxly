@@ -8,6 +8,7 @@ const ServidorLocal = require("./local-server");
 const ytBusca = require("./yt-busca");
 const { versoesLocais } = require("./versoes");
 const { escolherPorNome } = require("./casamento");
+const { pastaDeDownload } = require("./pastas");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
@@ -753,7 +754,14 @@ ipcMain.handle("select-music-folder", async () => {
   return null;
 });
 
-ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
+function pastaMusicasPadrao() {
+  return path.join(app.getPath("music"), "Voxly");
+}
+
+// Devolve sempre um caminho: sem isto, instalacao nova ficava sem pasta e o
+// primeiro download estourava num readdirSync ("ENOENT scandir"), erro que nao
+// dizia nada sobre a causa.
+ipcMain.handle("get-music-folder", () => store.get("musicFolder", null) || pastaMusicasPadrao());
 // Preferencias de download, definidas uma vez pelo KJ e usadas em todo pedido.
 const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false, voz: "", chamadaVoz: true };
 ipcMain.handle("get-prefs-download", () => ({ ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) }));
@@ -1216,7 +1224,17 @@ Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
 }
 
 async function baixarUrl(opts) {
-  const { urls, pasta, cookies, navegador, playlist } = opts;
+  const { urls, cookies, navegador, playlist } = opts;
+  const pasta = pastaDeDownload({
+    pedida: opts.pasta,
+    configurada: store.get("musicFolder", null),
+    padrao: pastaMusicasPadrao(),
+    existe: p => fs.existsSync(p),
+  });
+  // O yt-dlp cria a pasta do -o, mas o resto do fluxo (procurar o arquivo
+  // baixado, listar versoes) le o diretorio direto e quebra se ele nao existe.
+  try { fs.mkdirSync(pasta, { recursive: true }); }
+  catch (e) { throw new Error(`Não consegui usar a pasta "${pasta}": ${e.message}`); }
   const prefs = { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) };
   const qualidade = opts.qualidade || prefs.qualidade;
   const renomear  = opts.renomear  !== undefined ? opts.renomear  : prefs.renomear;
@@ -1341,7 +1359,7 @@ async function baixarUrl(opts) {
     // Encontra o arquivo baixado (pode ter sido renomeado pelo yt-dlp)
     if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
       // Tenta achar arquivo novo na pasta
-      const files = fs.readdirSync(pasta).filter(f => {
+      const files = (fs.existsSync(pasta) ? fs.readdirSync(pasta) : []).filter(f => {
         if (!ehArquivoUtil(f)) return false;
         const full = path.join(pasta, f);
         return fs.statSync(full).isFile() && [".mp4", ".mkv", ".webm", ".mp3", ".m4a"].includes(path.extname(f).toLowerCase());
