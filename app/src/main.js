@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, screen, powerSaveBlocker } = require("electron");
 const path   = require("path");
 const Store  = require("electron-store");
 const chokidar = require("chokidar");
@@ -221,9 +221,16 @@ function iniciarServidorCatalogo() {
       res.end("{}");
     }
   });
+  let tentativasCat = 0;
   servidorCatalogo.on("error", (e) => {
+    if (e.code === "EADDRINUSE" && tentativasCat < 6) {
+      tentativasCat++;
+      console.warn(`[CATALOGO] Porta 7432 ocupada — tentativa ${tentativasCat}/6 em 1s`);
+      setTimeout(() => servidorCatalogo.listen(7432, "0.0.0.0"), 1000);
+      return;
+    }
     if (e.code === "EADDRINUSE") {
-      console.error("[CATALOGO] Porta 7432 ja esta em uso — outra instancia do Voxly aberta?");
+      console.error("[CATALOGO] Porta 7432 segue ocupada — busca e catalogo indisponiveis.");
     } else {
       console.error("[CATALOGO] Erro no servidor:", e.message);
     }
@@ -301,6 +308,7 @@ function createHostWindow() {
     backgroundColor: "#101014",
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -327,6 +335,7 @@ function createPlayerWindow() {
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
       webSecurity: false,
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -355,6 +364,7 @@ function createAudienceWindow() {
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
       webSecurity: false,
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -385,7 +395,21 @@ if (!instanciaUnica) {
   });
 }
 
+// O macOS suspende apps em segundo plano (App Nap): o processo fica com 0% de
+// CPU, o socket continua aceitando conexao pelo kernel, mas nada e atendido.
+// Na pratica, o Voxly minimizado durante o show pararia de servir o app dos
+// cantores e o catalogo. Como este app e um servidor enquanto a sessao roda,
+// ele nao pode ser suspenso.
+let bloqueioSuspensao = null;
+
 app.whenReady().then(() => {
+  try {
+    bloqueioSuspensao = powerSaveBlocker.start("prevent-app-suspension");
+    console.log("[MAIN] Suspensao em segundo plano desativada:", bloqueioSuspensao);
+  } catch (e) {
+    console.warn("[MAIN] Nao foi possivel impedir a suspensao:", e.message);
+  }
+
   createHostWindow();
   createPlayerWindow();
   const folder = store.get("musicFolder");

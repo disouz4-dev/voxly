@@ -122,22 +122,35 @@ class ServidorLocal {
       this._tratarEstatico(req, res, caminho);
     });
 
-    // Sem este tratamento, porta ocupada (tipicamente outra instancia do Voxly
-    // ainda aberta) virava excecao nao capturada e derrubava o app inteiro.
+    // Porta ocupada virava excecao nao capturada e derrubava o app. Mas
+    // desistir na primeira falha tambem e ruim: reiniciar o app deixa a porta
+    // presa por alguns segundos pelo processo anterior, e o novo ficava sem
+    // servidor nenhum, em silencio. Tenta algumas vezes antes de desistir.
+    let tentativas = 0;
+    const TENTATIVAS_MAX = 6;
+
     this.servidor.on("error", (e) => {
+      if (e.code === "EADDRINUSE" && tentativas < TENTATIVAS_MAX) {
+        tentativas++;
+        console.warn(`[LOCAL] Porta ${this.porta} ocupada — tentativa ${tentativas}/${TENTATIVAS_MAX} em 1s`);
+        setTimeout(() => this.servidor.listen(this.porta, "0.0.0.0"), 1000);
+        return;
+      }
       if (e.code === "EADDRINUSE") {
-        console.error(`[LOCAL] Porta ${this.porta} ja esta em uso. ` +
-          `O modo offline por LAN fica indisponivel nesta instancia.`);
+        console.error(`[LOCAL] Porta ${this.porta} segue ocupada apos ${TENTATIVAS_MAX} tentativas. ` +
+          `O app do cantor pela LAN fica indisponivel nesta instancia.`);
       } else {
         console.error("[LOCAL] Erro no servidor:", e.message);
       }
       this.servidor = null;
     });
 
-    this.servidor.listen(this.porta, "0.0.0.0", () => {
+    this.servidor.on("listening", () => {
       const ip = this._ipLocal();
       console.log(`[LOCAL] Servidor LAN: http://${ip}:${this.porta}`);
     });
+
+    this.servidor.listen(this.porta, "0.0.0.0");
   }
 
   _ipLocal() {
