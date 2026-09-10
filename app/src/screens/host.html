@@ -1552,12 +1552,26 @@ https://www.youtube.com/@canal/videos"></textarea>
   let pastaMusicasAtual = null;
 
   async function garantirArquivoDaFila(item) {
-    if (item.disponivel) return;
     // Guarda unica por ITEM. Sem ela, gravar o videoId escolhido pelo KJ
     // disparava de novo o listener da fila e um segundo download comecava em
     // paralelo com o primeiro — dois arquivos, de videos diferentes.
     if (item.statusDownload === 'baixando' || _baixando.has(item.id)) return;
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id);
+
+    // "disponivel" e uma afirmacao sobre o disco, e o disco muda: arquivo
+    // apagado, pasta trocada, HD externo desconectado. Confere de verdade antes
+    // de confiar — sem isso o pedido ficava marcado como pronto para sempre e
+    // nunca voltava a procurar.
+    if (item.disponivel) {
+      const aindaExiste = item.videoId
+        ? await window.electronAPI.localizarVideo(item.videoId)
+        : await window.electronAPI.resolveMusicFile(item.musica, item.artista);
+      if (aindaExiste) return;
+
+      await ref.update({ disponivel: false, statusDownload: null, candidatos: [] }).catch(() => {});
+      mostrarToast(`⚠️ "${item.musica}" sumiu da pasta — procurando de novo`);
+      item = { ...item, disponivel: false, statusDownload: null };
+    }
 
     // Pedido veio do catalogo (sem videoId): confere se o arquivo existe na
     // pasta e, se nao existir, levanta os candidatos para o KJ escolher. Quem
@@ -1586,33 +1600,35 @@ https://www.youtube.com/@canal/videos"></textarea>
       return;
     }
 
+    // Uma unica reserva, sempre pela mesma chave (o id do item), liberada no
+    // finally. Antes havia add duplicado e mistura com item.videoId: o item
+    // podia ficar reservado para sempre e nunca mais ser processado.
     _baixando.add(item.id);
-    const local = await window.electronAPI.localizarVideo(item.videoId);
-
-    if (local) {
-      await ref.update({ disponivel: true }).catch(() => {});
-      return;
-    }
-
-    _baixando.add(item.videoId);
-    mostrarToast(`⬇ Baixando "${item.musica}"...`);
-    await ref.update({ statusDownload: 'baixando' }).catch(() => {});
-
     try {
+      const local = await window.electronAPI.localizarVideo(item.videoId);
+      if (local) {
+        await ref.update({ disponivel: true }).catch(() => {});
+        return;
+      }
+
+      mostrarToast(`⬇ Baixando "${item.musica}"...`);
+      await ref.update({ statusDownload: 'baixando' }).catch(() => {});
+
+      // Sem qualidade/renomear/organizar explicitos: valem as preferencias que
+      // o KJ definiu em Ajustes.
       const r = await window.electronAPI.ytDownload({
         urls: [item.videoUrl],
         pasta: pastaMusicasAtual || undefined,
-        qualidade: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-        renomear: true, organizar: false, cookies: false, navegador: null, playlist: false,
+        cookies: false, navegador: null, playlist: false,
       });
       const ok = r && r.sucesso;
       await ref.update({ disponivel: !!ok, statusDownload: ok ? 'pronto' : 'erro' }).catch(() => {});
-      mostrarToast(ok ? `✅ "${item.musica}" pronta` : `❌ Falha ao baixar "${item.musica}"`);
+      mostrarToast(ok ? `✅ "${item.musica}" pronta` : `❌ ${(r && r.erro) || 'Falha ao baixar'}`);
     } catch (e) {
       await ref.update({ statusDownload: 'erro' }).catch(() => {});
       mostrarToast(`❌ ${e.message}`);
     } finally {
-      _baixando.delete(item.videoId);
+      _baixando.delete(item.id);
     }
   }
 
