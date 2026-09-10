@@ -527,16 +527,23 @@ ipcMain.handle("get-music-links", () => store.get("musicLinks", {}));
 
 // ── IPC: Player ────────────────────────────────────────────
 ipcMain.handle("play-song", (_, filePath) => {
-  if (playerWindow) {
-    if (playerWindow.webContents.isLoading()) {
-      playerWindow.webContents.once("did-finish-load", () => {
-        playerWindow.webContents.send("play-video", filePath);
+  // O video precisa ir para o Palco E para o painel do publico: a plateia
+  // acompanha a letra na tela, sem audio (o painel nasce mudo, o som e so do
+  // Palco). Antes so o Palco recebia, entao a tela do publico ficava parada.
+  const enviarVideo = (janela) => {
+    if (!janela || janela.isDestroyed()) return;
+    if (janela.webContents.isLoading()) {
+      janela.webContents.once("did-finish-load", () => {
+        janela.webContents.send("play-video", filePath);
       });
     } else {
-      playerWindow.webContents.send("play-video", filePath);
+      janela.webContents.send("play-video", filePath);
     }
-    console.log(`[PLAY] → ${filePath}`);
-  }
+  };
+
+  enviarVideo(playerWindow);
+  enviarVideo(audienceWindow);
+  console.log(`[PLAY] → ${filePath}`);
 });
 
 ipcMain.handle("player-command", (_, cmd) => {

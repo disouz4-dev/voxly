@@ -1003,7 +1003,6 @@ https://www.youtube.com/@canal/videos"></textarea>
           escutarConfirmacoes();
           escutarHistorico();
           escutarSessaoDoc();
-          sincronizarCatalogoGlobal();
           return;
         }
       } catch(e) {
@@ -1109,7 +1108,6 @@ https://www.youtube.com/@canal/videos"></textarea>
     escutarConfirmacoes();
     escutarHistorico();
     escutarSessaoDoc();
-    sincronizarCatalogoGlobal();
 
     // Notifica player
     if (window.electronAPI) {
@@ -2816,40 +2814,15 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!window.electronAPI) return;
     const n = await window.electronAPI.scanMusicFolder();
     alert(`Varredura concluída: ${n} músicas encontradas.`);
-    sincronizarCatalogoGlobal();
   }
 
-  async function sincronizarCatalogoGlobal() {
-    try {
-      const resp = await fetch('http://127.0.0.1:7432/catalogo');
-      if (!resp.ok) return;
-      const songs = await resp.json();
-      if (!songs.length) return;
-      // Verifica se mudou antes de escrever
-      const meta = await db.collection('configuracoes').doc('catalogo').get();
-      if (meta.exists && meta.data().total === songs.length) return;
-      // Guarda só os campos necessários para o catálogo (reduz tamanho)
-      const mini = songs.map(s => ({
-        artista:   s.artista   || '',
-        musica:    s.musica    || '',
-        disponivel: s.disponivel !== false
-      }));
-      await db.collection('configuracoes').doc('catalogo').set({
-        songs: mini,
-        total: songs.length,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      console.log(`[HOST] Catálogo global sincronizado: ${songs.length} músicas`);
-    } catch(e) {
-      console.warn('[HOST] Erro ao sincronizar catálogo global:', e);
-    }
-  }
+  // O catalogo deixou de ser espelhado no Firestore: ele vive na pasta de
+  // musicas do host e e servido pela porta 7432. Espelhar criava uma copia que
+  // envelhecia sozinha e ainda dependia de rede para uma informacao puramente
+  // local.
 
   // ── Electron listeners ────────────────────────────────────
   if (window.electronAPI) {
-    window.electronAPI.onMusicFolderChanged(() => {
-      sincronizarCatalogoGlobal();
-    });
     let processandoFim = false;
     window.electronAPI.onSongEnded(async () => {
       if (processandoFim) return;

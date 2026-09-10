@@ -1349,16 +1349,14 @@ function escutarFila() {
       _artistasCache = {};
       _artistaQueue  = [];
 
-      // Busca via Firestore — funciona em qualquer dispositivo/rede
-      try {
-        const snap = await db.collection('configuracoes').doc('catalogo').get();
-        if (snap.exists) _catalogoSongs = snap.data().songs || [];
-      } catch(e) { console.warn('[CATALOGO]', e); }
+      // Catalogo vem do host, nao do Firestore: ele e local por definicao, e a
+      // copia na nuvem envelhecia sozinha.
+      _catalogoSongs = (await garantirCatalogo()) || [];
 
       if (!_catalogoSongs.length) {
         el.innerHTML = `<div class="empty" style="padding:40px 0;">
           Catálogo não disponível.<br>
-          <span style="font-size:0.75rem;color:var(--muted);">O host precisa abrir o app com uma pasta configurada.</span><br>
+          <span style="font-size:0.75rem;color:var(--muted);" id="cat-motivo">O host precisa abrir o app com uma pasta configurada.</span><br>
           <button onclick="carregarCatalogo()" style="margin-top:12px;padding:8px 20px;background:var(--accent2);border:none;border-radius:8px;color:#fff;cursor:pointer;font-weight:700;">🔄 Tentar novamente</button>
         </div>`;
         return;

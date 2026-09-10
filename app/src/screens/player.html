@@ -508,8 +508,8 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
           <div class="pub-qr-label" id="pub-qr-label" style="display:none;">Aponte a câmera<br>e entre na sessão</div>
         </div>
       </div>
-      <div class="pub-center">
-        <div class="pub-center-idle">
+      <div class="pub-center" id="pub-center">
+        <div class="pub-center-idle" id="pub-center-idle">
           <img src="../assets/logo/logo_voxly.png" alt="Voxly">
           <div class="pub-center-idle-text">Aguardando próxima música...</div>
         </div>
@@ -580,6 +580,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // src, entao basta marcar uma vez.
   if (isAudience) {
     document.querySelectorAll("video, audio").forEach(el => { el.muted = true; });
+
+    // O <video> nasce fora do painel; no modo publico ele precisa estar dentro
+    // da coluna central, que e onde .pub-center video o dimensiona.
+    const centro = document.getElementById("pub-center");
+    const vid    = document.getElementById("video-player");
+    if (centro && vid) centro.appendChild(vid);
   }
 
   // ── Contagem regressiva para o início do show ────────────
@@ -1012,6 +1018,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Play video (canal legado)
   window.electronAPI.onPlayVideo(filePath => {
     idle.style.display  = "none";
+    // No painel do publico quem sai de cena e o aviso de espera, nao o idle.
+    const centroIdle = document.getElementById("pub-center-idle");
+    if (centroIdle) centroIdle.style.display = "none";
     video.style.display = "block";
     video.src = toFileUrl(filePath);
     video.load();
@@ -1353,6 +1362,11 @@ intervaloDeck = [];
       idleNextInfo ? 'Próximo no palco:' : 'Aguardando próxima música...';
     atualizarIdleNext(idleNextInfo);
     idle.style.display = "flex";
+    // No painel do publico o idle fica escondido por CSS; quem volta a cena e
+    // o aviso da coluna central, e o video sai.
+    const centroIdle = document.getElementById("pub-center-idle");
+    if (centroIdle) centroIdle.style.display = "";
+    if (isAudience) video.style.display = "none";
     idleAtivo = true;
     tocarIntervalo();
   }
