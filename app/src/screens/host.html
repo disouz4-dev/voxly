@@ -447,9 +447,9 @@ footer strong { color:var(--ambar); font-weight:700; }
     <span class="session-badge inativa" id="sessionBadge">● Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="abrirModalSessao()">▶ Iniciar Sessão</button>
+    <button class="btn btn-danger btn-sm" id="btnDerrubarSessao" onclick="derrubarSessoes()" title="Apaga do servidor qualquer sessão em aberto, inclusive as presas de outra máquina">💥 Derrubar sessão</button>
     <button class="btn btn-ok btn-sm" id="startQueueBtn" onclick="iniciarFila()" style="display:none;">▶ Iniciar Fila</button>
     <button class="btn btn-danger btn-sm" id="stopSessionBtn" onclick="finalizarSessao()" style="display:none;">⏹ Finalizar</button>
-    <button class="btn btn-secondary btn-sm" id="btnAdicionarCantor" onclick="abrirModalCantor()" style="display:none;">➕ Cantor</button>
     <button class="btn btn-ghost btn-sm" onclick="reabrirPlayer()">🖥 Player</button>
     <button class="btn btn-ghost btn-sm" id="btnAudiencia" onclick="toggleAudiencia()" title="Liga/desliga a tela do público (cantor + música + QR)">🎥 Público</button>
     <button class="btn btn-ghost btn-sm" id="btnIntervalo" onclick="toggleIntervalo()" title="Música de intervalo">🎵 Intervalo</button>
@@ -561,7 +561,11 @@ footer strong { color:var(--ambar); font-weight:700; }
 
   <!-- PAINEL DIREITO: CANTORES + HISTÓRICO -->
   <div class="panel">
-    <div class="panel-header">Cantores Online</div>
+    <div class="panel-header" style="display:flex;align-items:center;gap:8px;">
+      <span>Cantores Online</span>
+      <button class="btn btn-secondary btn-sm" id="btnAdicionarCantor" onclick="abrirModalCantor()"
+              style="display:none;margin-left:auto;" title="Cadastrar quem chegou sem celular">➕ Cantor</button>
+    </div>
     <div class="panel-body" id="users-list" style="flex:1;min-height:0;">
       <div class="empty">Nenhum cantor conectado.</div>
     </div>
@@ -1351,6 +1355,34 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('startQueueBtn').style.display = 'none';
   }
 
+  // "Finalizar" encerra a SUA sessao com ordem. "Derrubar" e para quando uma
+  // sessao ficou presa no servidor — o app fechou no meio, ou ela foi aberta em
+  // outra maquina — e o KJ nao consegue comecar a noite.
+  async function derrubarSessoes() {
+    try {
+      const snap = await db.collection('sessoes').get();
+      if (snap.empty) { mostrarToast('Não há sessão nenhuma no servidor'); return; }
+
+      const nomes = snap.docs
+        .map(d => (d.data() || {}).nomeCasa || d.id)
+        .slice(0, 5).join(', ');
+      const aviso = `Derrubar ${snap.size} sessão(ões) do servidor?\n\n${nomes}` +
+        `\n\nOs cantores serão desconectados e a fila será apagada. Não dá para desfazer.`;
+      if (!confirm(aviso)) return;
+
+      mostrarToast('Derrubando...', 4000);
+      for (const doc of snap.docs) await apagarSessao(doc.ref);
+
+      SESSAO_ID = null;
+      sessaoCodigo = null;
+      dadosSessaoAtual = null;
+      desativarInterfaceSessao();
+      mostrarToast(`💥 ${snap.size} sessão(ões) derrubada(s)`, 6000);
+    } catch (e) {
+      mostrarToast('❌ ' + e.message, 8000);
+    }
+  }
+
   async function finalizarSessao() {
     if (!confirm('Finalizar a sessão? Todos os cantores serão desconectados.')) return;
 
@@ -1378,6 +1410,13 @@ https://www.youtube.com/@canal/videos"></textarea>
       window.electronAPI.playerCommand('sessao-encerrada');
     }
 
+    desativarInterfaceSessao();
+  }
+
+  // Estava embutido dentro do finalizarSessao. Extraido porque "Derrubar
+  // sessao" precisa do mesmo reset e duplicar isso e receita para uma das
+  // duas esquecer de limpar alguma coisa.
+  function desativarInterfaceSessao() {
     localStorage.removeItem('voxly_sessao_id');
     localStorage.removeItem('voxly_backup_fila');
     localStorage.removeItem('voxly_backup_presencas');
@@ -1405,7 +1444,6 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('stopSessionBtn').style.display  = 'none';
     document.getElementById('cycle-label').style.display        = 'none';
     document.getElementById('btnAdicionarCantor').style.display = 'none';
-    // Removed session QR code reset as per user request
     document.getElementById('queue-list').innerHTML  = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
     document.getElementById('users-list').innerHTML  = '<div class="empty">Nenhum cantor conectado.</div>';
     document.getElementById('np-song').textContent   = '—';
@@ -3767,9 +3805,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     },
   });
 
+  // Reserva quando o iTunes nao devolve nada: cota estourada, ou catalogo
+  // nacional que ele simplesmente nao tem. O Deezer nao pode ser chamado do
+  // navegador (nao envia CORS), entao a consulta sai pelo servidor local.
+  const _deezerHost = VoxlyLimite.criarConsultaLimitada({
+    consultar: async (termo) => {
+      const r = await fetch(`http://127.0.0.1:7432/sugerir?q=${encodeURIComponent(termo)}`);
+      if (!r.ok) throw new Error(`servidor local respondeu ${r.status}`);
+      return ((await r.json()).itens || []).map(i => ({ artistName: i.artista, trackName: i.musica }));
+    },
+  });
+
   async function sugerirItunesHost(termo) {
     try {
-      const resultados = await _itunesHost(termo);
+      let resultados = await _itunesHost(termo);
+      if (!resultados || !resultados.length) resultados = await _deezerHost(termo);
       if (!resultados) return [];
       const d = { results: resultados };
       const termos = normSug(termo).split(' ').filter(p => p.length > 2);

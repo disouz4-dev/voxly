@@ -9,7 +9,8 @@ const ytBusca = require("./yt-busca");
 const { versoesLocais } = require("./versoes");
 const { escolherPorNome } = require("./casamento");
 const { pastaDeDownload } = require("./pastas");
-const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identificacao");
+const { escolherIdentidade, criarBuscaItunes, semCanal, escolherDoItunes } = require("./identificacao");
+const { criarConsultaLimitada } = require("./limite");
 const { escolherArquivoBaixado, idDaUrl, arquivoDaSaida } = require("./baixado");
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
@@ -1419,6 +1420,25 @@ const MINUTOS_EDICAO_MANUAL = 3;
 // virou "erro de IA" no Linux. O iTunes ja e a fonte oficial dos nomes no app.
 const buscaItunes = criarBuscaItunes({});
 
+// Reserva do iTunes. O iTunes recusa consultas quando a cota do IP estoura e
+// simplesmente nao tem parte do catalogo nacional; o Deezer cobre os dois casos.
+// Passa pelo mesmo cache e teto, senao a reserva vira o novo gargalo.
+const buscaDeezer = criarConsultaLimitada({
+  consultar: async (termo) => {
+    const itens = await sugerirNoDeezer(termo);
+    // Mesma forma do iTunes para reaproveitar o criterio de escolha.
+    return escolherDoItunes(
+      itens.map(i => ({ artistName: i.artista, trackName: i.musica })),
+      termo,
+    );
+  },
+});
+
+// iTunes primeiro; o que ele nao souber, o Deezer tenta.
+async function identificarPeloCatalogo(termo) {
+  return (await buscaItunes(termo)) || (await buscaDeezer(termo));
+}
+
 async function baixarUrl(opts) {
   const { urls, cookies, navegador, playlist } = opts;
   const pasta = pastaDeDownload({
@@ -1662,12 +1682,12 @@ async function baixarUrl(opts) {
       });
 
       if (!identificado) {
-        enviarProgresso({ log: "🔎 Consultando o iTunes pelo título...", logTipo: 'info' });
-        identificado = escolherIdentidade({ itunes: await buscaItunes(semCanal(nomeLimpo, canal)) });
+        enviarProgresso({ log: "🔎 Consultando o catálogo pelo título...", logTipo: 'info' });
+        identificado = escolherIdentidade({ itunes: await identificarPeloCatalogo(semCanal(nomeLimpo, canal)) });
       }
 
       if (identificado) {
-        const de = { pedido: "pelo pedido", metadados: "pelos metadados", itunes: "pelo iTunes" }[identificado.origem];
+        const de = { pedido: "pelo pedido", metadados: "pelos metadados", itunes: "pelo catálogo" }[identificado.origem];
         enviarProgresso({ log: `🎯 ${identificado.artista} — ${identificado.musica} (${de})`, logTipo: 'ok' });
       } else {
         enviarProgresso({

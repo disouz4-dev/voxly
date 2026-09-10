@@ -44,10 +44,10 @@ function alvos() {
   });
 }
 
-function avaliar(alvo, expressao) {
+function avaliar(alvo, expressao, limiteMs = 20000) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(alvo.webSocketDebuggerUrl);
-    const prazo = setTimeout(() => { try { ws.close(); } catch {} reject(new Error("sem resposta")); }, 20000);
+    const prazo = setTimeout(() => { try { ws.close(); } catch {} reject(new Error("sem resposta")); }, limiteMs);
     ws.onmessage = e => {
       const m = JSON.parse(e.data);
       if (m.id !== 1) return;
@@ -152,7 +152,8 @@ try {
   confere("há uma pasta de músicas (padrão ou configurada)", !!pasta, String(pasta));
 
   console.log("\n== as dependências respondem ==");
-  const dep = JSON.parse(await avaliar(host, 'window.electronAPI.ytdlpEstado().then(e => JSON.stringify(e))'));
+  const dep = JSON.parse(await avaliar(host,
+    'window.electronAPI.ytdlpEstado().then(e => JSON.stringify(e))', 120000));
   confere("yt-dlp encontrado", !!dep.versao, JSON.stringify(dep));
   confere("ffmpeg encontrado", !!dep.ffmpeg, JSON.stringify(dep.ffmpeg));
   confere("yt-dlp não se declara desatualizado sem motivo",
