@@ -637,6 +637,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const video = document.getElementById("video-player");
   const idle  = document.getElementById("idle-screen");
+
+  // Declarados aqui, antes de qualquer handler: onPlayVideo e registrado bem
+  // acima do ponto onde estavam e usa os dois. Comando de video chegando
+  // antes de o script terminar de carregar caia em zona morta temporal, o
+  // handler estourava e a tela ficava sem video.
+  let idleAtivo = true;          // true enquanto a idle screen estiver visivel
+  let idleFallbackTimer = null;  // volta para a espera se o preview nao chegar
   const introOverlay  = document.getElementById("intro-overlay");
   const introProgress = document.getElementById("intro-progress");
 
@@ -924,7 +931,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // abrir, a musica comecava sozinha e era cortada quando o "intervalo-off"
   // finalmente chegava — o "toca e para" que se via na pratica.
   let intervaloHabilitado = false;
-  let idleAtivo = true; // true enquanto idle screen estiver visível
 
   function tocarIntervalo() {
     if (!intervaloHabilitado || !idleAtivo) return;
@@ -1449,7 +1455,6 @@ intervaloDeck = [];
     }
   });
 
-  let idleFallbackTimer = null;
   let idleNextInfo = null; // { cantor, duo, musica, artista }
 
   function atualizarIdleNext(info) {
