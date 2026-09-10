@@ -684,12 +684,10 @@ https://www.youtube.com/@canal/videos"></textarea>
         <div>
           <label class="modal-label">Qualidade</label>
           <select class="modal-select" id="yt-qualidade">
-            <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Vídeo — Melhor (mp4)</option>
-            <option value="bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]">📺 Vídeo — 1080p</option>
-            <option value="bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]">📺 Vídeo — 720p</option>
-            <option value="bestaudio/best" selected>🎵 Áudio — Melhor qualidade</option>
-            <option value="bestaudio[ext=m4a]/bestaudio/best">🎵 Áudio — M4A (sem conversão)</option>
-            <option value="bestaudio[ext=webm]/bestaudio/best">🎵 Áudio — WebM (sem conversão)</option>
+            <option value="bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" selected>📺 Vídeo — Melhor (mp4 · H.264)</option>
+            <option value="bestvideo[vcodec^=avc1][height&lt;=1080][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 Vídeo — 1080p (mp4 · H.264)</option>
+            <option value="bestvideo[vcodec^=avc1][height&lt;=720][ext=mp4]+bestaudio[acodec^=mp4a][ext=m4a]/bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 Vídeo — 720p (mp4 · H.264)</option>
+            <option value="bestaudio[ext=m4a]/bestaudio">🎵 Só áudio — M4A (sem letra na tela)</option>
           </select>
         </div>
         <div>
@@ -1945,7 +1943,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   function resetarModalYoutube() {
     document.getElementById('yt-urls').value = '';
-    document.getElementById('yt-qualidade').value = 'bestaudio/best';
+    document.getElementById('yt-qualidade').selectedIndex = 0;
     document.getElementById('yt-renomear').checked = true;
     document.getElementById('yt-organizar').checked = false;
     document.getElementById('yt-cookies').checked = false;

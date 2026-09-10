@@ -119,6 +119,23 @@
     /* ── Catálogo ── */
     .cat-search { width:100%; padding:12px 16px; background:var(--surface2); border:1px solid #ffffff18; border-radius:10px; color:var(--text); font-size:0.9rem; }
     .cat-search:focus { outline:none; border-color:var(--accent2); }
+
+    /* Autocomplete: sugestao ancorada no campo, com navegacao por teclado. */
+    .cat-search-wrap { position:relative; }
+    #catSugestoes {
+      display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
+      background:var(--surface); border:1px solid #ffffff20; border-radius:10px;
+      max-height:264px; overflow-y:auto; box-shadow:0 18px 44px rgba(0,0,0,.55);
+    }
+    .cat-sug {
+      padding:10px 14px; cursor:pointer; display:flex; align-items:baseline; gap:8px;
+      border-bottom:1px solid #ffffff0d;
+    }
+    .cat-sug:last-child { border-bottom:none; }
+    .cat-sug.ativa, .cat-sug:hover { background:rgba(255,180,84,.10); }
+    .cat-sug-musica { font-weight:600; font-size:.88rem; color:var(--text); }
+    .cat-sug-artista { font-size:.74rem; color:var(--muted); margin-left:auto; white-space:nowrap; }
+    .cat-sug mark { background:none; color:var(--accent); font-weight:700; }
     .filtro-orig { padding:6px 16px; border-radius:20px; border:1px solid #ffffff20; background:var(--surface2); color:var(--muted); font-size:0.78rem; font-weight:600; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
     .filtro-orig.ativo { background:var(--accent2); color:#fff; border-color:var(--accent2); }
     .origem-titulo { padding:14px 16px 6px; font-size:0.62rem; font-weight:800; letter-spacing:2px; color:var(--muted); text-transform:uppercase; }
@@ -262,7 +279,11 @@
     <!-- TAB: CATÁLOGO -->
     <div id="tab-catalogo" style="display:none;">
       <div class="section" style="padding-bottom:10px;">
-        <input id="catBusca" class="cat-search" type="search" placeholder="Buscar artista ou música..." oninput="filtrarCatalogo()">
+        <div class="cat-search-wrap">
+          <input id="catBusca" class="cat-search" type="search" placeholder="Buscar artista ou música..."
+                 autocomplete="off" oninput="filtrarCatalogo()">
+          <div id="catSugestoes"></div>
+        </div>
       </div>
       <div style="padding:0 16px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <div style="display:flex;gap:8px;">
@@ -1421,7 +1442,110 @@ function escutarFila() {
     function filtrarCatalogo() {
       _catBuscaTermo = (document.getElementById('catBusca')?.value || '').toLowerCase().trim();
       renderCatalogo();
+      sugerirCatalogo();
     }
+
+    // ── Autocomplete do catalogo ─────────────────────────────
+    // Antes a barra so filtrava a lista inteira a cada tecla. Aqui a sugestao
+    // vem ancorada no campo, ordenada por prefixo e navegavel pelo teclado.
+    let _sugestoes = [];
+    let _sugAtiva  = -1;
+
+    function normCat(t) {
+      return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+
+    function fecharSugestoes() {
+      const box = document.getElementById('catSugestoes');
+      if (box) box.style.display = 'none';
+      _sugestoes = [];
+      _sugAtiva  = -1;
+    }
+
+    function sugerirCatalogo() {
+      const box = document.getElementById('catSugestoes');
+      if (!box) return;
+      const bruto = (document.getElementById('catBusca')?.value || '').trim();
+      if (bruto.length < 2 || !_catalogoSongs.length) { fecharSugestoes(); return; }
+
+      const termo = normCat(bruto);
+      const porPrefixo = [], porTrecho = [];
+
+      // Varredura simples com corte cedo: 11 mil itens sao rapidos, mas nao ha
+      // motivo para percorrer tudo depois de encher as duas listas.
+      for (const m of _catalogoSongs) {
+        const musica  = limparNome(m.musica || '');
+        const artista = m.artista || '';
+        const nm = normCat(musica), na = normCat(artista);
+        if (nm.startsWith(termo) || na.startsWith(termo)) porPrefixo.push({ musica, artista });
+        else if (nm.includes(termo) || na.includes(termo)) porTrecho.push({ musica, artista });
+        if (porPrefixo.length >= 8) break;
+      }
+
+      _sugestoes = porPrefixo.concat(porTrecho).slice(0, 8);
+      _sugAtiva  = -1;
+
+      if (!_sugestoes.length) { fecharSugestoes(); return; }
+
+      box.innerHTML = _sugestoes.map((s, i) =>
+        '<div class="cat-sug" data-i="' + i + '">' +
+          '<span class="cat-sug-musica">' + realcar(s.musica, bruto) + '</span>' +
+          '<span class="cat-sug-artista">' + escHtml(s.artista) + '</span>' +
+        '</div>').join('');
+      box.style.display = 'block';
+
+      box.querySelectorAll('.cat-sug').forEach(el => {
+        el.addEventListener('mousedown', ev => {   // mousedown: o blur do input
+          ev.preventDefault();                     // fecharia a lista antes do click
+          escolherSugestao(Number(el.dataset.i));
+        });
+      });
+    }
+
+    // Escapa primeiro e so entao envolve o trecho digitado, para o texto do
+    // catalogo nunca chegar cru ao innerHTML.
+    function realcar(texto, termo) {
+      const seguro = escHtml(texto);
+      const i = normCat(seguro).indexOf(normCat(termo));
+      if (i < 0) return seguro;
+      return seguro.slice(0, i) + '<mark>' + seguro.slice(i, i + termo.length) + '</mark>' +
+             seguro.slice(i + termo.length);
+    }
+
+    function marcarSugestao(i) {
+      const itens = document.querySelectorAll('#catSugestoes .cat-sug');
+      itens.forEach(el => el.classList.remove('ativa'));
+      if (i >= 0 && itens[i]) {
+        itens[i].classList.add('ativa');
+        itens[i].scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function escolherSugestao(i) {
+      const s = _sugestoes[i];
+      if (!s) return;
+      const campo = document.getElementById('catBusca');
+      campo.value = s.musica;
+      fecharSugestoes();
+      filtrarCatalogo();
+      campo.blur();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const campo = document.getElementById('catBusca');
+      if (!campo) return;
+
+      campo.addEventListener('keydown', e => {
+        if (!_sugestoes.length) return;
+        if (e.key === 'ArrowDown')      { e.preventDefault(); _sugAtiva = Math.min(_sugAtiva + 1, _sugestoes.length - 1); marcarSugestao(_sugAtiva); }
+        else if (e.key === 'ArrowUp')   { e.preventDefault(); _sugAtiva = Math.max(_sugAtiva - 1, -1); marcarSugestao(_sugAtiva); }
+        else if (e.key === 'Enter')     { if (_sugAtiva >= 0) { e.preventDefault(); escolherSugestao(_sugAtiva); } else fecharSugestoes(); }
+        else if (e.key === 'Escape')    { fecharSugestoes(); }
+      });
+
+      campo.addEventListener('blur', () => setTimeout(fecharSugestoes, 120));
+      campo.addEventListener('focus', sugerirCatalogo);
+    });
 
     function renderCatalogo() {
       const el = document.getElementById('cat-lista');

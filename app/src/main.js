@@ -817,6 +817,10 @@ async function baixarUrl(opts) {
       "--sleep-interval", "2",
       "--max-sleep-interval", "5",
       "--extractor-args", "youtubetab:skip=authcheck",
+      // Karaoke precisa tocar no QuickTime e no Finder, nao so no Chromium do
+      // player. Sem fixar o contêiner, o merge de bestvideo+bestaudio pode sair
+      // em mkv/webm mesmo quando as faixas escolhidas sao mp4.
+      "--merge-output-format", "mp4",
     ];
 
     if (cookies && navegador) {
