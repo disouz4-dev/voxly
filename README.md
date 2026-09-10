@@ -40,11 +40,21 @@ chmod +x Voxly-${VER}.AppImage
 ```
 
 ### 🍎 macOS
+
+O release traz **dois .dmg**: `Voxly-<versao>.dmg` para Mac Intel (x64) e
+`Voxly-<versao>-arm64.dmg` para Apple Silicon (M1/M2/M3). Instalar o errado
+resulta em app que não abre.
+
 ```bash
-# Descobre a versao mais recente automaticamente
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
 [ -n "$VER" ] || { echo "Falha ao consultar a versao mais recente"; exit 1; }
-curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.dmg
+
+# Escolhe o pacote da arquitetura desta maquina
+case "$(uname -m)" in
+  arm64) ARQ="-arm64" ;;
+  *)     ARQ=""       ;;
+esac
+curl -fL -o Voxly.dmg "https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}${ARQ}.dmg"
 
 # Monte e copie para /Applications
 hdiutil attach Voxly.dmg
@@ -62,7 +72,7 @@ open /Applications/Voxly.app
 ## ✨ Funcionalidades
 
 - 🎵 **Sessões ao vivo** — o host inicia uma sessão e gera um código + QR Code.
-- 🖥️ **3 telas** — uma para o **host (KJ)**, uma para o **palco** (roda o vídeo karaokê em tela cheia) e uma opcional para o **público** (cantor + música + QR, sem vídeo).
+- 🖥️ **3 telas** — **Gerência** (KJ), **Palco** (vídeo em tela cheia) e **Público** (opcional), que espelha o vídeo do Palco junto com o cantor, o avatar, os próximos da fila e o QR grande.
 - ⏱️ **Horário do show** — o KJ define quando o show começa; o público e o app dos cantores mostram a **contagem regressiva** até a hora marcada.
 - 🎛️ **Temas de intervalo** — playlists editáveis por tema (Rock, Pagode, MPB...). Casa de rock? Só toca Rock no intervalo.
 - 📱 **Participação pelo celular** — escaneie o QR e entre na sessão instantaneamente.
@@ -70,6 +80,11 @@ open /Applications/Voxly.app
 - 🎚️ **Controle de tom (pitch shift)** para quem quer cantar em outro tom.
 - 🧑🤝🧑 **Presença online** — o host vê quem está conectado.
 - 📂 **Catálogo de músicas** — busca com cache no Firestore e capas via iTunes.
+- ⬇️ **Download automático do YouTube** — o cantor pesquisa só artista e música (nomes vindos do iTunes, para saírem escritos igual dos dois lados). O Voxly procura as versões de karaokê, filtra e ordena por relevância, canal e data de postagem, e **quem escolhe a versão é o KJ** — pelos cards, com duração, visualizações e idade do vídeo. Padrão 1080p, configurável em ⚙ Config.
+- 🎚️ **Versões no acervo** — a mesma música costuma existir em vários canais. O KJ escolhe qual toca, procura outras no YouTube mesmo já tendo o arquivo, apaga do disco a que não quer, ou aponta um arquivo à mão (📎 Vincular).
+- 🗣️ **Chamada por voz (opcional)** — anuncia o próximo cantor com vozes neurais brasileiras do **Piper**. Não vem instalada: o KJ marca em ⚙ Config e o app baixa e configura. A chamada fica em loop durante os 30s de confirmação.
+- ⏳ **Prazo da sessão** — a sessão acaba no horário que o KJ marcou, com 5 minutos de tolerância. Depois disso o cantor não põe mais música; o KJ segue tocando o que está na fila.
+- 🔒 **Uma sessão por vez** — abrir uma nova expurga as anteriores e os cantores das sessões antigas são desconectados.
 - 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases.
 - 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
 
@@ -119,7 +134,16 @@ npm run build:mac     # macOS  (DMG + ZIP)   — requer macOS
 npm run build:win     # Windows (NSIS + portable)
 npm run build:linux   # Linux  (AppImage + .deb)
 ```
-> O instalador **.dmg/.zip do macOS** é gerado pela pipeline `build-electron-mac` do CI (macOS runner). O **.deb** já sai pronto no `make build-linux`. O ícone do app é gerado a partir de `app/src/assets/icons/icon.png` (1024×1024) para todas as plataformas, com `icon.ico` multi-tamanho no Windows.
+> ⚠️ **O `.deb` não pode ser gerado no macOS.** O `fpm` usa o `ar` do próprio
+> sistema e produz um pacote de ~96 bytes, com exit code 0 e sem nenhum aviso —
+> o arquivo parece pronto e está vazio. Gere o `.deb` no Linux ou deixe com o
+> CI (job `build-electron-linux`). O AppImage sai correto no macOS.
+>
+> O CI compila macOS em **arm64**; para Mac Intel o `.dmg` x64 precisa ser
+> gerado localmente (`npx electron-builder --mac --x64`) e anexado ao release.
+>
+> O ícone é gerado de `app/src/assets/icons/icon.png` (1024×1024) para todas as
+> plataformas, com `icon.ico` multi-tamanho no Windows.
 
 ### 🐧 Instalação (Linux)
 
@@ -170,15 +194,22 @@ chmod +x Voxly-${VER}.AppImage
 
 | Tela | Janela | O que mostra |
 |---|---|---|
-| **1 · Host (KJ)** | Gerência | Fila, presenças, now-playing, QR, regras e botão 🎥 **Público** |
-| **2 · Palco** | Fullscreen | O vídeo karaokê + intro/preview |
-| **3 · Público** | Outro monitor | Cantor, música, tom e QR de acesso — **sem vídeo** |
+| **1 · Gerência (KJ)** | Janela principal | Fila, presenças, now-playing, QR, regras, downloads e botão 🎥 **Público** |
+| **2 · Palco** | Tela cheia | Vídeo do karaokê, chamada de 30s e anúncio do cantor. É a **única fonte de áudio** |
+| **3 · Público** | Outro monitor | Espelha o vídeo do Palco, mais cantor, avatar, próximos da fila e QR grande. Nasce **mudo** |
+
+> As três janelas se organizam sozinhas. Com monitor externo, Palco e Público ocupam a tela inteira; em tela única elas se dividem em faixas para não cobrir a Gerência.
 
 - O host liga/desliga a tela do público pelo botão **🎥 Público**.
 - **Horário do show**: no painel *Controle do Palco* o KJ define a hora (`🎬 Horário do Show`) e o **público, o palco e o app dos cantores** exibem a contagem regressiva até o show começar. Na hora, é só dar ▶ Play.
 
 ### 🔄 Atualização automática
-Os instaladores publicados como *release draft* no **GitHub Releases** são detectados pelo `electron-updater` e instalados na próxima reinicialização (macOS requer assinatura/notarização da Apple).
+Os instaladores publicados no **GitHub Releases** são detectados pelo
+`electron-updater` e instalados na próxima reinicialização.
+
+> No **macOS a atualização automática não funciona hoje**: exige app assinado e
+> notarizado pela Apple, e o build não é assinado (por isso o aviso do
+> Gatekeeper na primeira abertura). Em macOS, baixe o `.dmg` novo à mão.
 
 ### 🎛️ Temas de intervalo
 No botão **🎛 Temas** do host você cria temas (ex.: *Rock*) com **playlist própria e editável**, montada a partir do catálogo local. O tema ativo define o que toca entre as músicas; sem tema, voltam as faixas animadas padrão.
@@ -198,6 +229,18 @@ npm test             # node --test test/*.test.js
 npm run lint         # validação de sintaxe dos processos principais
 ```
 
+A suíte cobre sobretudo as falhas que **não** dão erro visível:
+
+| Arquivo | O que trava |
+|---|---|
+| `casamento.test.js` | título contido em outro não é a mesma música — o que fazia *Miss You Love* virar *I Miss You* no palco |
+| `versoes.test.js`, `yt-busca.test.js` | ranqueamento e versões locais |
+| `fila.test.js` | o que o Play faz em cada estado da fila |
+| `sessao.test.js` | prazo da sessão e a tolerância de 5 min |
+| `ligacao.test.js` | `onclick` apontando para função inexistente e erro de sintaxe no `<script>` |
+| `preload-api.test.js` | chamada a `electronAPI` que o preload não expõe (falha em silêncio) |
+| `carga.test.js` | uso antes da declaração no código que roda ao carregar a tela |
+
 ### Docker
 ```bash
 docker compose up -d        # sobe os serviços
@@ -209,7 +252,7 @@ make docker-build           # build da imagem
 
 - **Firebase Hosting** (web dos cantores): `make deploy` ou pipeline de CI (staging/produção).
 - **Imagem Docker** para o host: publicada no GitHub Container Registry via CI.
-- **Instalador Windows (Electron)**: gerado pela pipeline `build-electron`.
+- **Instaladores**: `build-electron-win` (NSIS + portable), `build-electron-linux` (AppImage + .deb) e `build-electron-mac` (DMG + ZIP, **arm64**). O job `release` publica no GitHub Releases quando uma tag `v*` é enviada.
 
 ## 🧰 Tecnologias
 
@@ -222,18 +265,29 @@ make docker-build           # build da imagem
 ## 📁 Estrutura
 
 ```
-app/                     # aplicação Electron (host + player + servidor LAN)
-  src/main.js            # processo principal (inicia o servidor LAN)
-  src/local-server.js    # servidor LAN: estáticos + REST + SSE
-  src/screens/           # telas (host, player, profile)
-  test/                  # testes automatizados
-web/                     # web dos cantores (Firebase Hosting)
-  public/                # index, profile, signup + offline-client.js
-  firestore.rules        # regras de segurança do Firestore
+app/                       # aplicação Electron (Gerência + Palco + Público + servidor LAN)
+  src/main.js              # processo principal: janelas, IPC, yt-dlp, Piper
+  src/preload.js           # única ponte entre as telas e o processo principal
+  src/local-server.js      # servidor LAN: estáticos + REST + SSE
+  src/screens/host.html    # Gerência (KJ)
+  src/screens/player.html  # Palco e Público — a mesma página, "?tela=publico" separa
+  src/yt-busca.js          # consulta e ranqueamento das versões de karaokê
+  src/casamento.js         # qual arquivo do acervo atende o pedido
+  src/versoes.js           # versões da mesma música já baixadas
+  src/fila.js              # o que o botão Play faz em cada estado da fila
+  test/                    # testes automatizados (node --test)
+web/                       # web dos cantores (Firebase Hosting)
+  public/                  # index, profile, signup + offline-client.js
+  public/sessao-regras.js  # prazo da sessão — mesma regra no app e no site
+  firestore.rules          # regras de segurança do Firestore
 Dockerfile / docker-compose.yml
 .github/workflows/ci-cd.yml   # pipeline CI/CD
 scripts/                 # deploy e health-check
 ```
+
+> `player.html` serve **as duas** telas de vídeo. Ao depurar, filtre pela query
+> string: sem ela é o Palco, com `?tela=publico` é o Público. Confundir as duas
+> já custou um diagnóstico inteiro.
 
 ## 🤝 Contribuindo
 

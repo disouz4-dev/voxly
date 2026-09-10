@@ -45,7 +45,14 @@ chmod +x Voxly-${VER}.AppImage
 # Resolves the latest version automatically
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
 [ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
-curl -L -o Voxly.dmg https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.dmg
+# Releases ship two .dmg files: Voxly-<version>.dmg for Intel Macs (x64) and
+# Voxly-<version>-arm64.dmg for Apple Silicon. Installing the wrong one gives
+# you an app that will not launch.
+case "$(uname -m)" in
+  arm64) ARCH="-arm64" ;;
+  *)     ARCH=""       ;;
+esac
+curl -fL -o Voxly.dmg "https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}${ARCH}.dmg"
 
 # Mount and copy to /Applications
 hdiutil attach Voxly.dmg
@@ -63,7 +70,10 @@ open /Applications/Voxly.app
 ## ✨ Features
 
 - 🎵 **Live sessions** — the host starts a session and generates a code + QR Code.
-- 🖥️ **3 screens** — one for the **host (KJ)**, one for the **stage** (plays the karaoke video fullscreen) and an optional **audience** screen (singer + song + QR, no video).
+- 🖥️ **3 screens** — **Host** (KJ), **Stage** (karaoke video fullscreen) and an optional **Audience** screen that mirrors the Stage video alongside the singer, their avatar, who is up next and a large QR.
+- ⬇️ **Automatic YouTube downloads** — singers search by artist and title only (names come from iTunes so both sides spell them the same). Voxly finds karaoke versions, filters and ranks them by relevance, channel and upload date, and **the KJ picks the version** from cards showing duration, views and age. 1080p by default.
+- 🗣️ **Optional voice call-ups** — announces the next singer with Brazilian neural voices from **Piper**, installed on demand from Settings.
+- ⏳ **Session deadline** — the session ends when the KJ said it would, plus 5 minutes of slack. After that singers can no longer queue songs; the KJ keeps playing what is already in the queue.
 - ⏱️ **Show start time** — the KJ sets when the show begins; the audience screen and the singers' app show a live **countdown**.
 - 🎛️ **Interval themes** — editable, theme-based playlists (Rock, Pagode, MPB...). Rock venue? Only rock plays between songs.
 - 📱 **Join from a phone** — scan the QR and join the session instantly.
@@ -120,7 +130,16 @@ npm run build:mac     # macOS  (DMG + ZIP)   — requires macOS
 npm run build:win     # Windows (NSIS + portable)
 npm run build:linux   # Linux  (AppImage + .deb)
 ```
-> The macOS **.dmg/.zip** installer is produced by the `build-electron-mac` CI job (macOS runner). The Linux **.deb** is produced by `make build-linux`. The app icon is generated from `app/src/assets/icons/icon.png` (1024×1024) for all platforms, with a multi-size `icon.ico` on Windows.
+> ⚠️ **The `.deb` cannot be built on macOS.** `fpm` falls back to the system
+> `ar` and writes a ~96-byte package with exit code 0 and no warning — the file
+> looks ready and is empty. Build it on Linux, or let the `build-electron-linux`
+> CI job do it. The AppImage does build correctly on macOS.
+>
+> CI builds macOS for **arm64** only; the Intel (x64) `.dmg` has to be built
+> locally with `npx electron-builder --mac --x64` and attached to the release.
+>
+> The app icon is generated from `app/src/assets/icons/icon.png` (1024×1024) for
+> all platforms, with a multi-size `icon.ico` on Windows.
 
 ### 🐧 Installation (Linux)
 
@@ -175,7 +194,7 @@ chmod +x Voxly-${VER}.AppImage
 |---|---|---|
 | **1 · Host (KJ)** | Console | Queue, attendance, now-playing, QR, rules and the 🎥 **Audience** toggle |
 | **2 · Stage** | Fullscreen | The karaoke video + intro/preview |
-| **3 · Audience** | Another monitor | Singer, song, key and access QR — **no video** |
+| **3 · Audience** | Another monitor | Mirrors the Stage video, plus singer, avatar, who is up next and a large QR. Starts **muted** |
 
 - The host turns the audience screen on/off with the **🎥 Público** button.
 - **Show start time**: in the *Controle do Palco* panel the KJ sets the time (`🎬 Horário do Show`) and the **audience, stage and singers' app** show a live countdown until the show starts. At the right time, just hit ▶ Play.
@@ -212,7 +231,7 @@ make docker-build           # build the image
 
 - **Firebase Hosting** (singer web app): `make deploy` or the CI pipeline (staging/production).
 - **Docker image** for the host: published to the GitHub Container Registry via CI.
-- **Windows installer (Electron)**: produced by the `build-electron` pipeline.
+- **Installers**: `build-electron-win` (NSIS + portable), `build-electron-linux` (AppImage + .deb) and `build-electron-mac` (DMG + ZIP, **arm64**). The `release` job publishes to GitHub Releases when a `v*` tag is pushed.
 
 ## 🧰 Tech stack
 
