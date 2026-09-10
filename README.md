@@ -16,11 +16,24 @@ As versões mais recentes estão sempre em: **[github.com/disouz4-dev/voxly/rele
 
 **Opção A — .deb (Ubuntu/Debian, recomendado):**
 ```bash
-# Descobre a versao mais recente automaticamente
+# 1. Remove qualquer versão anterior (não falha se não houver nenhuma)
+sudo apt-get remove -y voxly 2>/dev/null || true
+
+# 2. Descobre a versão mais recente publicada
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
-wget https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
+echo "Instalando Voxly $VER"
+
+# 3. Baixa com o nome explícito da versão.
+#    NUNCA use "voxly_*.deb": o curinga casa com downloads antigos que ainda
+#    estejam na pasta, e você reinstala uma versão velha sem perceber.
+wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/download/v$VER/voxly_${VER}_amd64.deb
+
+# 4. Instala e resolve dependências
 sudo dpkg -i voxly_${VER}_amd64.deb
-sudo apt-get install -f   # corrige dependências, se necessário
+sudo apt-get install -f -y
+
+# 5. Confirma — deve mostrar a versão que você acabou de baixar
+dpkg -s voxly | grep ^Version
 ```
 
 **Opção B — AppImage (portátil):**
@@ -129,10 +142,13 @@ wget -O voxly_${VER}_amd64.deb https://github.com/disouz4-dev/voxly/releases/dow
 sudo dpkg -i voxly_${VER}_amd64.deb
 sudo apt-get install -f  # corrige dependências, se necessário
 
-# Confirme a versão instalada
+# Confirme a versão instalada — deve mostrar a que você baixou
 dpkg -s voxly | grep ^Version
+```
 
-# Remoção
+Para **remover** o Voxly (bloco separado — não rode junto com a instalação):
+
+```bash
 sudo apt-get remove voxly
 ```
 
