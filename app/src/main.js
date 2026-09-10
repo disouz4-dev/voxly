@@ -934,6 +934,21 @@ function extrairCanalDoTitulo(titulo, uploader, channel) {
   return "Desconhecido";
 }
 
+// Identificacao confiavel, sem depender de LLM: usa artist/track que o proprio
+// YouTube preenche em faixas de musica.
+//
+// Deliberadamente NAO deduz do titulo. Foi testado e sai errado justamente no
+// caso de uso: "Evidencias - Chitaozinho e Xororo (Karaoke Version)" daria
+// artista "Evidencias", e "Karaoke - Evidencias - ..." daria artista
+// "Karaoke". Nao ha como distinguir "Artista - Musica" de "Musica - Artista"
+// pelo texto, e gravar nome errado no disco e pior que manter o titulo cru.
+function identificarPorMetadados(meta) {
+  if (meta && meta.artist && meta.track) {
+    return { artista: String(meta.artist).trim(), musica: String(meta.track).trim() };
+  }
+  return null;
+}
+
 async function identificarComIA(nomeArquivo) {
   // Tenta usar Ollama local primeiro (gratuito)
   try {
@@ -1142,7 +1157,15 @@ async function baixarUrl(opts) {
         .replace(/\s+/g, " ")
         .trim();
 
-      let identificado = await identificarComIA(nomeLimpo);
+      // Metadados e titulo resolvem a maioria dos casos e nao dependem de o
+      // Ollama estar instalado — que e justamente por que a renomeacao vinha
+      // falhando, deixando o arquivo com o titulo cru do YouTube.
+      let identificado = identificarPorMetadados(meta);
+      if (identificado) {
+        enviarProgresso({ log: `🎯 Identificado pelos metadados: ${identificado.artista} — ${identificado.musica}`, logTipo: 'ok' });
+      } else {
+        identificado = await identificarComIA(nomeLimpo);
+      }
 
       if (!identificado || !identificado.artista || !identificado.musica) {
         // IA falhou - solicita edição manual
