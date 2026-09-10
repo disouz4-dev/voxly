@@ -709,6 +709,9 @@ https://www.youtube.com/@canal/videos"></textarea>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem;">
               <input type="checkbox" id="yt-cookies"> <span>🍪 Cookies do navegador</span>
             </label>
+            <label style="display:flex;align-items:center;gap:7px;font-size:.8rem;cursor:pointer;">
+              <input type="checkbox" id="yt-playlist"> <span>📃 Baixar playlist inteira</span>
+            </label>
           </div>
         </div>
         <div>
@@ -1947,6 +1950,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('yt-renomear').checked = true;
     document.getElementById('yt-organizar').checked = false;
     document.getElementById('yt-cookies').checked = false;
+    document.getElementById('yt-playlist').checked = false;
     document.getElementById('yt-navegador').value = 'chrome';
     document.getElementById('yt-status').textContent = 'Aguardando...';
     document.getElementById('yt-progress').value = 0;
@@ -1994,6 +1998,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       qualidade: document.getElementById('yt-qualidade').value,
       renomear: document.getElementById('yt-renomear').checked,
       organizar: document.getElementById('yt-organizar').checked,
+      playlist: document.getElementById('yt-playlist').checked,
       cookies: document.getElementById('yt-cookies').checked,
       navegador: document.getElementById('yt-cookies').checked ? document.getElementById('yt-navegador').value : null
     };

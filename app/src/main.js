@@ -789,7 +789,7 @@ Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
 }
 
 async function baixarUrl(opts) {
-  const { urls, pasta, qualidade, renomear, organizar, cookies, navegador } = opts;
+  const { urls, pasta, qualidade, renomear, organizar, cookies, navegador, playlist } = opts;
 
   const ytDlp = resolverBinario("yt-dlp");
   if (!ytDlp) {
@@ -822,6 +822,12 @@ async function baixarUrl(opts) {
       // em mkv/webm mesmo quando as faixas escolhidas sao mp4.
       "--merge-output-format", "mp4",
     ];
+
+    // Link copiado de dentro de uma Mix vem com "&list=" grudado, e o yt-dlp
+    // trata isso como "baixe a lista inteira" — uma Mix do YouTube chega a
+    // passar de mil videos. Baixa so o video pedido, a menos que o KJ marque
+    // explicitamente que quer a playlist.
+    args.push(playlist ? "--yes-playlist" : "--no-playlist");
 
     if (cookies && navegador) {
       args.push("--cookies-from-browser", navegador);
