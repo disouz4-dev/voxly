@@ -954,8 +954,21 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // ── Inicialização ─────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', async () => {
-    // QR do app: sempre usa URL do Firebase Hosting (conforme solicitado)
     atualizarQrHost();
+
+    // appUrlLocal era declarada e nunca recebia valor, entao
+    // "appUrlLocal || APP_URL" caia sempre no site HTTPS. Como o navegador
+    // proibe uma pagina https de chamar o catalogo local (http), o cantor caia
+    // justamente onde a busca nao tem como funcionar. Apontando o QR para o
+    // servidor do proprio host, busca e autocomplete passam a funcionar.
+    if (window.electronAPI && window.electronAPI.getLocalWebAppUrl) {
+      window.electronAPI.getLocalWebAppUrl().then(url => {
+        if (!url) return;
+        appUrlLocal = url;
+        atualizarQrHost();
+        console.log('[HOST] App do cantor na LAN:', url);
+      }).catch(() => {});
+    }
 
     // Estado do intervalo
     carregarTemas();
