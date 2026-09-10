@@ -595,7 +595,7 @@ footer strong { color:var(--ambar); font-weight:700; }
 <!-- Modal: Adicionar Música Manual -->
 <div class="modal-overlay" id="modalMusica">
   <div class="modal-box">
-    <h2>🎵 Adicionar Música</h2>
+    <h2 id="modalMusicaTitulo">🎵 Adicionar Música</h2>
     <label class="modal-label">Cantor principal</label>
     <select class="modal-select" id="selectCantorMusica"></select>
     <div id="duoSection" style="display:none;">
@@ -1871,7 +1871,22 @@ https://www.youtube.com/@canal/videos"></textarea>
       });
   }
 
+  // A coluna da esquerda do painel do publico nunca teve fonte de dados: o
+  // player so recebia o cantor atual. Vai junto de cada render da fila.
+  function enviarFilaAoPublico() {
+    if (!window.electronAPI) return;
+    const itens = filaData
+      .filter(i => i.status !== 'tocando' && i.slot !== 'espera')
+      .slice(0, 6)
+      .map(i => ({
+        cantor: (i.nomeArtistico || '—') + (i.duoNome ? ' & ' + i.duoNome : ''),
+        musica: i.musica || '—',
+      }));
+    window.electronAPI.playerCommand(JSON.stringify({ cmd: 'fila-publico', itens }));
+  }
+
   function renderQueue() {
+    enviarFilaAoPublico();
     const el = document.getElementById('queue-list');
     if (!filaData.length) {
       el.innerHTML = '<div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>';
@@ -1923,6 +1938,9 @@ https://www.youtube.com/@canal/videos"></textarea>
           baixarBtn = `<button class="btn btn-secondary btn-sm" onclick="procurarVersoes('${item.id}')" title="Procurar no YouTube">🔎 Procurar versões</button>`;
         }
       }
+      const trocarBtn = (!isPlaying && !isPronto)
+        ? `<button class="btn btn-ghost btn-sm" onclick="trocarMusicaFila('${item.id}')" title="Trocar a música deste cantor">🔄 Trocar</button>`
+        : '';
       const duoBtn    = isDraggable && !isDuet && regras.permitirDuo
         ? `<button class="btn btn-secondary btn-sm" onclick="abrirModalDuoFila(${i})" title="Adicionar parceiro duo">🎤 Duo</button>`
         : '';
@@ -1951,7 +1969,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
-          <div class="queue-actions">${baixarBtn}${playBtn}${restartBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
+          <div class="queue-actions">${baixarBtn}${playBtn}${restartBtn}${skipBtn}${trocarBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
         </div>
         ${badge}
       </div>`;
@@ -3462,8 +3480,24 @@ https://www.youtube.com/@canal/videos"></textarea>
     abrirModalMusica(u.id || u.uid || '', u.nomeArtistico || '');
   }
 
+  // itemId preenchido = o modal esta trocando a musica de quem ja esta na fila.
+  let trocandoItemId = null;
+
+  function trocarMusicaFila(itemId) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item) return;
+    abrirModalMusica(item.cantorUid || '', item.nomeArtistico || '');
+    trocandoItemId = itemId;
+    document.getElementById('modalMusicaTitulo').textContent = '🔄 Trocar música';
+    document.getElementById('btnConfirmarMusica').textContent = 'Trocar';
+    document.getElementById('inputBuscaMusica').focus();
+  }
+
   function abrirModalMusica(preUid = '', preNome = '') {
     if (!SESSAO_ID) return;
+    trocandoItemId = null;
+    document.getElementById('modalMusicaTitulo').textContent = '🎵 Adicionar Música';
+    document.getElementById('btnConfirmarMusica').textContent = 'Adicionar à Fila';
     musicaModalSelecionada = null;
     document.getElementById('inputBuscaMusica').value = '';
     document.getElementById('resultadosBuscaModal').innerHTML = '';
@@ -3561,19 +3595,65 @@ https://www.youtube.com/@canal/videos"></textarea>
     buscaModalTimeout = setTimeout(() => _buscarModal(termo), 300);
   }
 
+  // O iTunes repete a mesma faixa em varios albuns e devolve versoes que nao
+  // servem para karaoke. Mesma regra do app do cantor, para artista e titulo
+  // sairem escritos igual dos dois lados — e o rename do download bater.
+  const RE_VERSAO_INDESEJADA =
+    /\b(ao vivo|live|ac[ou]?ustic\w*|unplugged|remix\w*|remaster\w*|karaoke|instrumental|cover|tribute|made famous|originally performed|sped up|slowed|8d|nightcore|demo|edit)\b|\(.*(?:ao vivo|live|remix|acoustic|version|feat|part).*\)/i;
+
+  function normSug(t) {
+    return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  async function sugerirItunesHost(termo) {
+    try {
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}` +
+                  `&entity=song&limit=25&country=BR`;
+      const d = await fetch(url).then(r => r.json());
+      const termos = normSug(termo).split(' ').filter(p => p.length > 2);
+      const vistos = new Set();
+      const itens  = [];
+      for (const t of d.results || []) {
+        const musica  = t.trackName  || '';
+        const artista = t.artistName || '';
+        if (!musica || RE_VERSAO_INDESEJADA.test(musica)) continue;
+        const alvo = normSug(artista + ' ' + musica);
+        if (termos.length && !termos.every(w => alvo.includes(w))) continue;
+        const chave = normSug(artista) + '|' + normSug(musica);
+        if (vistos.has(chave)) continue;
+        vistos.add(chave);
+        itens.push({ artista, musica, disponivel: false });
+        if (itens.length >= 5) break;
+      }
+      return itens;
+    } catch (e) {
+      console.warn('[MODAL] iTunes falhou:', e.message);
+      return [];
+    }
+  }
+
   async function _buscarModal(termo) {
     const palavras = termo.toLowerCase().split(/\s+/).filter(Boolean);
-    let resultados = [];
+    let locais = [];
     try {
       const resp = await fetch('http://127.0.0.1:7432/catalogo');
       if (resp.ok) {
         const cat = await resp.json();
-        resultados = cat.filter(d => {
+        locais = cat.filter(d => {
           const h = (d.musica + ' ' + d.artista).toLowerCase();
           return palavras.every(p => h.includes(p));
-        }).slice(0, 8);
+        }).slice(0, 6);
       }
     } catch(e) {}
+
+    // Antes a busca parava no acervo: musica que ainda nao foi baixada dava
+    // "Nenhum resultado" e o KJ nao tinha como colocar ninguem na fila com ela.
+    const vistos = new Set(locais.map(r => normSug(r.artista) + '|' + normSug(r.musica)));
+    const doItunes = (await sugerirItunesHost(termo))
+      .filter(r => !vistos.has(normSug(r.artista) + '|' + normSug(r.musica)));
+
+    const resultados = [...locais.map(r => ({ ...r, disponivel: true })), ...doItunes];
     const el = document.getElementById('resultadosBuscaModal');
     el._res = resultados;
     if (!resultados.length) {
@@ -3582,7 +3662,9 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
     el.innerHTML = resultados.map((r, i) => `
       <div class="modal-result-item" onclick="selecionarMusicaModal(${i})">
-        <div style="font-weight:600;">${escHtml(r.musica)}</div>
+        <div style="font-weight:600;">${escHtml(r.musica)}
+          <span style="float:right;font-size:.68rem;color:${r.disponivel ? 'var(--ok)' : 'var(--ambar)'};">${r.disponivel ? '✓ na biblioteca' : '⬇ baixar'}</span>
+        </div>
         <div style="color:var(--muted);font-size:.74rem;">${escHtml(r.artista)}</div>
       </div>`).join('');
   }
@@ -3602,6 +3684,31 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   async function adicionarMusicaManual() {
     if (!musicaModalSelecionada) return;
+
+    // Troca: o pedido continua do mesmo cantor, so muda a musica. Tudo que
+    // apontava para o arquivo anterior tem que cair junto, senao o item fica
+    // marcado como pronto e o Tocar abre a gravacao errada.
+    if (trocandoItemId) {
+      const novo = {
+        musica: musicaModalSelecionada.musica,
+        artista: musicaModalSelecionada.artista,
+        disponivel: musicaModalSelecionada.disponivel ?? false,
+        statusDownload: null, candidatos: [],
+        videoId: null, videoUrl: null, arquivoEscolhido: null,
+      };
+      if (modoOffline) {
+        const it = filaData.find(d => d.id === trocandoItemId);
+        if (it) Object.assign(it, novo);
+        salvarBackupLocal(); renderQueue();
+      } else {
+        await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+          .doc(trocandoItemId).update(novo).catch(() => {});
+      }
+      mostrarToast(`Música trocada para "${musicaModalSelecionada.musica}"`);
+      fecharModalMusica();
+      return;
+    }
+
     const sel  = document.getElementById('selectCantorMusica');
     const uid  = sel.value;
     const nome = sel.options[sel.selectedIndex]?.dataset?.nome || '';

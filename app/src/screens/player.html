@@ -258,6 +258,32 @@ body.modo-publico #entrada-publica { display:flex; }
 }
 .pub-duo-name { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1rem,2.5vw,1.8rem); margin-bottom:clamp(16px,3vh,28px); }
 .pub-song-title { font-family:'Unbounded'; font-weight:600; font-size:clamp(1.1rem,2.8vw,2.2rem); color:var(--ambar); line-height:1.2; margin-bottom:6px; }
+.pub-proximos { margin-top:clamp(16px,3vh,28px); }
+.pub-proximos-titulo {
+  font-family:'Space Mono', monospace; font-size:.62rem; letter-spacing:.4em;
+  text-transform:uppercase; color:var(--azul); margin-bottom:10px;
+}
+.pub-proximos ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.pub-proximo {
+  display:flex; align-items:baseline; gap:10px;
+  padding-bottom:8px; border-bottom:1px solid var(--linha);
+}
+.pub-proximo:last-child { border-bottom:none; }
+.pub-proximo-num {
+  font-family:'Space Mono', monospace; font-size:.7rem; color:var(--mudo); flex:none; min-width:1.4em;
+}
+.pub-proximo-txt { min-width:0; }
+.pub-proximo-cantor {
+  display:block;
+  font-family:'Unbounded'; font-weight:600; font-size:clamp(.85rem,1.5vw,1.15rem);
+  color:var(--texto); line-height:1.2;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.pub-proximo-musica {
+  display:block;
+  font-family:'Space Mono', monospace; font-size:clamp(.65rem,1.1vw,.82rem); color:var(--ambar);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
 .pub-song-artist { font-family:'Space Mono', monospace; font-size:clamp(.75rem,1.6vw,1.1rem); letter-spacing:.2em; text-transform:uppercase; color:var(--mudo); }
 
 /* Coluna central: Vídeo */
@@ -511,6 +537,10 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
         <div class="pub-duo-name"    id="pub-duo" style="display:none;"></div>
         <div class="pub-song-title"  id="pub-song">Aguardando o próximo cantor...</div>
         <div class="pub-song-artist" id="pub-artist"></div>
+        <div class="pub-proximos" id="pub-proximos" style="display:none;">
+          <div class="pub-proximos-titulo">Próximos</div>
+          <ol id="pub-proximos-lista"></ol>
+        </div>
         <div class="pub-qr">
           <div class="pub-qr-espera" id="pub-qr-espera">
             <svg class="pub-dino" id="pub-dino" viewBox="0 0 20 21" shape-rendering="crispEdges" aria-hidden="true"></svg>
@@ -694,6 +724,29 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Painel da tela do público (tela 3)
+  // A plateia quer saber quando e a sua vez. So nome e musica: o painel e lido
+  // de longe, qualquer coisa a mais vira ruido.
+  function atualizarProximosPublico(itens) {
+    const caixa = document.getElementById("pub-proximos");
+    const lista = document.getElementById("pub-proximos-lista");
+    if (!caixa || !lista) return;
+    if (!itens || !itens.length) { caixa.style.display = "none"; lista.innerHTML = ""; return; }
+    lista.innerHTML = itens.map((it, i) => `
+      <li class="pub-proximo">
+        <span class="pub-proximo-num">${i + 1}</span>
+        <span class="pub-proximo-txt">
+          <span class="pub-proximo-cantor">${escapaPub(it.cantor)}</span>
+          <span class="pub-proximo-musica">${escapaPub(it.musica)}</span>
+        </span>
+      </li>`).join("");
+    caixa.style.display = "block";
+  }
+
+  function escapaPub(t) {
+    return String(t == null ? "" : t).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
   function pubAvatarHtml(nome, url) {
     return url
       ? `<div class="pub-avatar" style="background-image:url('${url}')"></div>`
@@ -1328,6 +1381,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (cmd.startsWith("{")) {
       try {
         const dados = JSON.parse(cmd);
+
+        if (dados.cmd === "fila-publico") {
+          if (isAudience) atualizarProximosPublico(dados.itens || []);
+          return;
+        }
 
         if (dados.cmd === "show-horario") {
           setShowHorario(dados.horarioInicio || null, !!dados.started);
