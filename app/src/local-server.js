@@ -20,7 +20,14 @@ const fs     = require("fs");
 const os     = require("os");
 
 const PORT            = 8030;
-const WEB_PUBLIC_DIR  = path.join(__dirname, "..", "..", "web", "public");
+// Rodando do fonte, o app do cantor esta em ../../web/public. No app
+// empacotado essa pasta nao existe: ela e copiada para Resources/web/public
+// via extraResources. Sem isto, o servidor LAN respondia 404 para tudo no app
+// instalado — o modo LAN so funcionava rodando pelo codigo-fonte.
+const EMPACOTADO = __dirname.includes("app.asar");
+const WEB_PUBLIC_DIR = EMPACOTADO
+  ? path.join(process.resourcesPath, "web", "public")
+  : path.join(__dirname, "..", "..", "web", "public");
 
 class ServidorLocal {
   constructor(opcoes = {}) {
