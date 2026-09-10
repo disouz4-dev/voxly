@@ -10,11 +10,16 @@
 const DURACAO_MIN = 90;        // < 1min30 costuma ser trecho ou anuncio
 const DURACAO_MAX = 12 * 60;   // > 12min costuma ser coletanea ou live longa
 
-// Sinais no titulo de que E uma faixa de karaoke.
+// Sinais fortes: sozinhos ja indicam faixa de karaoke.
 const TERMOS_KARAOKE = [
-  "karaoke", "playback", "instrumental",
+  "karaoke", "playback",
   "backing track", "sing along", "singalong", "cantar junto",
 ];
+
+// "Instrumental" sozinho nao serve: costuma ser a faixa sem voz e sem letra na
+// tela, que nao da para cantar acompanhando. So conta quando vem junto de um
+// sinal forte ("Karaoke Instrumental").
+const TERMOS_FRACOS = ["instrumental", "sem vocal", "no vocals", "minus one"];
 
 // Sinais de que NAO e: gravacao original, clipe, apresentacao ao vivo.
 const TERMOS_INDESEJADOS = [
@@ -69,8 +74,14 @@ function pontuar(video, pedido, agora, canaisPreferidos) {
   const motivos = [];
   let pontos = 0;
 
-  if (contemAlgum(titulo, TERMOS_KARAOKE)) { pontos += 30; motivos.push("titulo de karaoke"); }
-  if (contemAlgum(canal,  TERMOS_KARAOKE)) { pontos += 25; motivos.push("canal de karaoke"); }
+  const forteTitulo = contemAlgum(titulo, TERMOS_KARAOKE);
+  const forteCanal  = contemAlgum(canal,  TERMOS_KARAOKE);
+  if (forteTitulo) { pontos += 30; motivos.push("titulo de karaoke"); }
+  if (forteCanal)  { pontos += 25; motivos.push("canal de karaoke"); }
+  if ((forteTitulo || forteCanal) && contemAlgum(titulo, TERMOS_FRACOS)) {
+    pontos += 6;
+    motivos.push("instrumental de karaoke");
+  }
 
   // Lista que o KJ mantem: canais em que ele ja confia valem mais que o resto.
   if (canaisPreferidos.some(c => canal.includes(normalizar(c)))) {
@@ -115,20 +126,33 @@ function descartar(video) {
   const titulo = normalizar(video.title);
   const canal  = normalizar(video.channel || video.uploader);
   if (!contemAlgum(titulo, TERMOS_KARAOKE) && !contemAlgum(canal, TERMOS_KARAOKE)) {
-    return "nao e karaoke";
+    // Instrumental puro cai aqui: sem sinal forte, nao entra.
+    return contemAlgum(titulo, TERMOS_FRACOS) ? "instrumental sem karaoke" : "nao e karaoke";
   }
   return null;
 }
 
 // Recebe o que o yt-dlp devolveu e entrega o que vale mostrar ao KJ, do melhor
 // para o pior. `agora` e injetado para o teste nao depender da data de hoje.
+// O titulo precisa conter a musica pedida. Sem isto, qualquer karaoke passava
+// no filtro: buscar "Scarlett" do Periphery devolvia Lana Del Rey, porque o
+// video tem "karaoke" no titulo e o filtro so exigia esse sinal.
+const COBERTURA_MINIMA = 0.5;
+
+function relevante(video, pedido) {
+  const alvo = normalizar(pedido && pedido.musica);
+  const palavras = alvo.split(" ").filter(p => p.length > 2);
+  if (!palavras.length) return true; // musica de nome curto demais para exigir
+  return cobertura(normalizar(video.title), pedido.musica) >= COBERTURA_MINIMA;
+}
+
 function ordenarCandidatos(videos, pedido, opcoes = {}) {
   const agora = opcoes.agora ?? Date.now();
   const canaisPreferidos = opcoes.canaisPreferidos || [];
   const limite = opcoes.limite || 8;
 
   return (videos || [])
-    .filter(v => v && v.id && !descartar(v))
+    .filter(v => v && v.id && !descartar(v) && relevante(v, pedido))
     .map(v => {
       const { pontos, motivos } = pontuar(v, pedido, agora, canaisPreferidos);
       return {
@@ -150,6 +174,7 @@ function ordenarCandidatos(videos, pedido, opcoes = {}) {
 module.exports = {
   montarConsulta,
   ordenarCandidatos,
+  relevante,
   // exportados para teste
   normalizar,
   cobertura,

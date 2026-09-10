@@ -832,6 +832,29 @@ https://www.youtube.com/@canal/videos"></textarea>
       A verificação funciona no app instalado (no modo desenvolvedor ela fica desativada).
     </p>
 
+    <label class="modal-label">Qualidade dos downloads</label>
+    <select class="modal-select" id="pref-qualidade" onchange="salvarPrefsDownload()">
+      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4 (padrão)</option>
+      <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4</option>
+      <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
+      <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
+    </select>
+
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+      <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;cursor:pointer;">
+        <input type="checkbox" id="pref-renomear" onchange="salvarPrefsDownload()"> <span>✏️ Renomear como "Artista - Música - Canal [id]"</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;cursor:pointer;">
+        <input type="checkbox" id="pref-organizar" onchange="salvarPrefsDownload()"> <span>📂 Criar uma subpasta por artista</span>
+      </label>
+    </div>
+
+    <p style="font-size:.72rem;color:var(--mudo);line-height:1.5;margin-top:10px;">
+      Vale para todo download disparado pela fila. O <strong>[id]</strong> no nome é o
+      identificador do vídeo no YouTube — é por ele que o Voxly sabe que a música já
+      está na pasta e não baixa de novo.
+    </p>
+
     <div class="modal-footer">
       <button class="btn btn-primary" id="btnRestartAtualizar" onclick="reiniciarParaAtualizar()" style="display:none;">🔄 Reiniciar e atualizar</button>
       <button class="btn btn-ghost" onclick="verificarAtualizacao()">🔎 Verificar atualização</button>
@@ -1292,6 +1315,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
 
     fecharModalCandidatos();
+    if (_baixando.has(itemId)) { mostrarToast('Já está baixando esta música'); return; }
+    _baixando.add(itemId);
     await ref.update({ statusDownload: 'baixando', videoId: c.id, videoUrl: c.url }).catch(() => {});
     mostrarToast(`⬇ Baixando "${c.titulo.slice(0, 40)}"...`);
 
@@ -1307,6 +1332,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     } catch (e) {
       await ref.update({ statusDownload: 'erro' }).catch(() => {});
       mostrarToast(`❌ ${e.message}`);
+    } finally {
+      _baixando.delete(itemId);
     }
   }
 
@@ -1319,8 +1346,9 @@ https://www.youtube.com/@canal/videos"></textarea>
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     mostrarToast('🔎 Procurando versões no YouTube...');
     try {
-      const termo = [item.artista, item.musica].filter(t => t && t !== 'Desconhecido').join(' ');
-      const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(termo)}`);
+      const art = (item.artista && item.artista !== 'Desconhecido') ? item.artista : '';
+      const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(item.musica)}` +
+                               `&artista=${encodeURIComponent(art)}`);
       const { candidatos, brutos, consulta } = await resp.json();
       if (!candidatos || !candidatos.length) {
         await ref.update({ statusDownload: 'erro' }).catch(() => {});
@@ -1525,21 +1553,25 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   async function garantirArquivoDaFila(item) {
     if (item.disponivel) return;
+    // Guarda unica por ITEM. Sem ela, gravar o videoId escolhido pelo KJ
+    // disparava de novo o listener da fila e um segundo download comecava em
+    // paralelo com o primeiro — dois arquivos, de videos diferentes.
+    if (item.statusDownload === 'baixando' || _baixando.has(item.id)) return;
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id);
 
     // Pedido veio do catalogo (sem videoId): confere se o arquivo existe na
     // pasta e, se nao existir, levanta os candidatos para o KJ escolher. Quem
     // decide o que baixar e ele, nao o automatico.
     if (!item.videoId) {
-      if (item.statusDownload === 'escolher' || item.statusDownload === 'baixando') return;
-      if (_baixando.has(item.id)) return;
+      if (item.statusDownload === 'escolher') return;
       _baixando.add(item.id);
       try {
         const arquivo = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
         if (arquivo) { await ref.update({ disponivel: true }).catch(() => {}); return; }
 
-        const termo = [item.artista, item.musica].filter(t => t && t !== 'Desconhecido').join(' ');
-        const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(termo)}`);
+        const art = (item.artista && item.artista !== 'Desconhecido') ? item.artista : '';
+        const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(item.musica)}` +
+                                 `&artista=${encodeURIComponent(art)}`);
         const { candidatos } = await resp.json();
         await ref.update({
           statusDownload: 'escolher',
@@ -1554,8 +1586,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       return;
     }
 
-    if (_baixando.has(item.videoId)) return;
-
+    _baixando.add(item.id);
     const local = await window.electronAPI.localizarVideo(item.videoId);
 
     if (local) {
@@ -2364,7 +2395,28 @@ https://www.youtube.com/@canal/videos"></textarea>
     mostrarToast(intervaloAtivo ? 'Música de intervalo ativada' : 'Música de intervalo desativada');
   }
 
-  function openSettings() { document.getElementById('modalAjustes').classList.add('open'); }
+  async function carregarPrefsDownload() {
+    if (!window.electronAPI || !window.electronAPI.getPrefsDownload) return;
+    const p = await window.electronAPI.getPrefsDownload();
+    document.getElementById('pref-qualidade').value    = p.qualidade;
+    document.getElementById('pref-renomear').checked   = p.renomear !== false;
+    document.getElementById('pref-organizar').checked  = !!p.organizar;
+  }
+
+  async function salvarPrefsDownload() {
+    if (!window.electronAPI || !window.electronAPI.setPrefsDownload) return;
+    await window.electronAPI.setPrefsDownload({
+      qualidade: document.getElementById('pref-qualidade').value,
+      renomear:  document.getElementById('pref-renomear').checked,
+      organizar: document.getElementById('pref-organizar').checked,
+    });
+    mostrarToast('Preferências de download salvas');
+  }
+
+  function openSettings() {
+    document.getElementById('modalAjustes').classList.add('open');
+    carregarPrefsDownload();
+  }
   function fecharModalAjustes() { document.getElementById('modalAjustes').classList.remove('open'); }
 
   // ── YouTube Download Modal ───────────────────────────────────

@@ -9,6 +9,10 @@ const ytBusca = require("./yt-busca");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
+// mp4 720p por padrao: resolucao suficiente para projecao, arquivo bem menor e
+// H.264/AAC, que toca em qualquer lugar. O KJ pode trocar.
+const QUALIDADE_PADRAO = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]";
+
 const store = new Store();
 const SESSAO_ID = "sessao_default";
 
@@ -34,6 +38,18 @@ function ehSidecarMac(nome) {
   return nome.startsWith("._") || nome === ".DS_Store";
 }
 
+// Intermediarios do yt-dlp: ao baixar video e audio separados ele grava
+// "Nome.f399.mp4" e "Nome.f140.m4a" antes de juntar. Se o merge nao completa,
+// eles ficam na pasta — e o codigo que procura o "arquivo mais recente" tratava
+// o fragmento de audio como se fosse a musica.
+function ehFragmentoYt(nome) {
+  return /\.f\d{2,4}\.[a-z0-9]+$/i.test(nome) || nome.endsWith(".part");
+}
+
+function ehArquivoUtil(nome) {
+  return !ehSidecarMac(nome) && !ehFragmentoYt(nome);
+}
+
 function listarArquivosRecursivo(dir, exts) {
   const resultado = [];
   try {
@@ -41,7 +57,7 @@ function listarArquivosRecursivo(dir, exts) {
       const fullPath = path.join(dir, entrada.name);
       if (entrada.isDirectory()) {
         resultado.push(...listarArquivosRecursivo(fullPath, exts));
-      } else if (entrada.isFile() && !ehSidecarMac(entrada.name)
+      } else if (entrada.isFile() && ehArquivoUtil(entrada.name)
                  && exts.includes(path.extname(entrada.name).toLowerCase())) {
         resultado.push(fullPath);
       }
@@ -171,13 +187,13 @@ async function sugerirNoDeezer(termo) {
 }
 
 // Consulta o YouTube e devolve so o que serve para uma fila de karaoke.
-async function buscarKaraokeYt(termo) {
+async function buscarKaraokeYt(termo, artista) {
   const ytDlp = resolverBinario("yt-dlp");
   if (!ytDlp) throw new Error("yt-dlp nao encontrado no host.");
 
-  // O cantor digita so a musica (e talvez o artista); a tag karaoke e
-  // responsabilidade nossa.
-  const consulta = ytBusca.montarConsulta({ musica: termo, artista: "" });
+  // Artista separado da musica: com ele vazio, a pontuacao por artista somava
+  // sempre zero e versoes de OUTROS cantores empatavam com a certa.
+  const consulta = ytBusca.montarConsulta({ musica: termo, artista: artista || "" });
 
   const saida = await new Promise((resolve, reject) => {
     const proc = spawn(ytDlp, [
@@ -201,7 +217,7 @@ async function buscarKaraokeYt(termo) {
   const jaTemos = idsBaixados(pasta);
 
   const candidatos = ytBusca
-    .ordenarCandidatos(videos, { musica: termo, artista: "" }, { limite: 8 })
+    .ordenarCandidatos(videos, { musica: termo, artista: artista || "" }, { limite: 8 })
     .map(c => ({ ...c, jaBaixado: jaTemos.has(c.id) }));
 
   // Devolve tambem o que o YouTube trouxe antes do filtro. Sem isso, "nada
@@ -230,13 +246,15 @@ function iniciarServidorCatalogo() {
     // filtrados e ordenados. Tambem informa o que ja existe na pasta, para a
     // interface poder dizer "toca na hora" em vez de "vai baixar".
     if (req.url.startsWith("/buscar")) {
-      const q = new URL(req.url, "http://local").searchParams.get("q") || "";
+      const params = new URL(req.url, "http://local").searchParams;
+      const q = params.get("q") || "";
+      const artistaParam = params.get("artista") || "";
       if (!q.trim()) {
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ candidatos: [] }));
         return;
       }
-      buscarKaraokeYt(q)
+      buscarKaraokeYt(q, artistaParam)
         .then(r => {
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(r));
@@ -604,8 +622,13 @@ ipcMain.handle("select-music-folder", async () => {
 });
 
 ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
-ipcMain.handle("get-yt-qualidade", () => store.get("ytQualidade", QUALIDADE_PADRAO));
-ipcMain.handle("set-yt-qualidade", (_, v) => { store.set("ytQualidade", v); return true; });
+// Preferencias de download, definidas uma vez pelo KJ e usadas em todo pedido.
+const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false };
+ipcMain.handle("get-prefs-download", () => ({ ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) }));
+ipcMain.handle("set-prefs-download", (_, p) => {
+  store.set("prefsDownload", { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}), ...p });
+  return true;
+});
 
 // Caminho local de um video ja baixado, pelo id do YouTube. E assim que o host
 // decide entre apontar para o arquivo e disparar o download.
@@ -1023,13 +1046,12 @@ Responda APENAS JSON: {"artista": "...", "musica": "..."}`;
   return null;
 }
 
-// mp4 720p por padrao: resolucao suficiente para projecao, arquivo bem menor e
-// H.264/AAC, que toca em qualquer lugar. O KJ pode trocar.
-const QUALIDADE_PADRAO = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]";
-
 async function baixarUrl(opts) {
-  const { urls, pasta, renomear, organizar, cookies, navegador, playlist } = opts;
-  const qualidade = opts.qualidade || store.get("ytQualidade") || QUALIDADE_PADRAO;
+  const { urls, pasta, cookies, navegador, playlist } = opts;
+  const prefs = { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) };
+  const qualidade = opts.qualidade || prefs.qualidade;
+  const renomear  = opts.renomear  !== undefined ? opts.renomear  : prefs.renomear;
+  const organizar = opts.organizar !== undefined ? opts.organizar : prefs.organizar;
 
   const ytDlp = resolverBinario("yt-dlp");
   if (!ytDlp) {
@@ -1151,7 +1173,7 @@ async function baixarUrl(opts) {
     if (!arquivoBaixado || !fs.existsSync(arquivoBaixado)) {
       // Tenta achar arquivo novo na pasta
       const files = fs.readdirSync(pasta).filter(f => {
-        if (ehSidecarMac(f)) return false;
+        if (!ehArquivoUtil(f)) return false;
         const full = path.join(pasta, f);
         return fs.statSync(full).isFile() && [".mp4", ".mkv", ".webm", ".mp3", ".m4a"].includes(path.extname(f).toLowerCase());
       });
@@ -1283,6 +1305,22 @@ async function baixarUrl(opts) {
         ytDbSave(db);
 
         enviarProgresso({ log: `✏️ Renomeado: ${path.basename(arquivoBaixado)}`, logTipo: 'ok' });
+      }
+    }
+
+    // Mesmo sem conseguir identificar artista e musica, o [id] tem que estar no
+    // nome: e ele que responde "ja baixei isto?". Sem isso, uma identificacao
+    // falha condenava a musica a ser baixada de novo toda vez.
+    if (idVideo && arquivoBaixado && !RE_ID_VIDEO.test(path.basename(arquivoBaixado))) {
+      const ext = path.extname(arquivoBaixado);
+      const base = path.basename(arquivoBaixado, ext);
+      const comId = path.join(path.dirname(arquivoBaixado), `${base} [${idVideo}]${ext}`);
+      try {
+        fs.renameSync(arquivoBaixado, comId);
+        arquivoBaixado = comId;
+        enviarProgresso({ log: `🔖 Id do video anexado: ${path.basename(comId)}`, logTipo: 'info' });
+      } catch (e) {
+        console.warn("[YT] nao consegui anexar o id:", e.message);
       }
     }
 
