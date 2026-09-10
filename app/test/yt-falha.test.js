@@ -53,3 +53,24 @@ test("aviso nao e confundido com erro", () => {
   const err = "WARNING: Falling back to generic extractor\nERROR: Video unavailable";
   assert.doesNotMatch(motivoFalha(1, err), /generic extractor/);
 });
+
+// 403/404 vindos do YouTube quase sempre significam yt-dlp velho: o site muda
+// e a versao empacotada pela distro fica meses atras. O .deb declara yt-dlp
+// como dependencia, entao no Linux o KJ recebe justamente a versao da distro.
+// Dizer "404" nao ajuda; dizer "atualize o yt-dlp" resolve.
+test("404 e 403 do YouTube apontam para o yt-dlp desatualizado", () => {
+  for (const err of [
+    "ERROR: unable to download video data: HTTP Error 404: Not Found",
+    "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+    "ERROR: [youtube] abc: nsig extraction failed: Some formats may be missing",
+  ]) {
+    const m = motivoFalha(1, err);
+    assert.match(m, /yt-dlp/i, err);
+    assert.match(m, /atualiz/i, "tem que dizer o que fazer");
+  }
+});
+
+test("o texto original continua visivel junto da orientacao", () => {
+  const m = motivoFalha(1, "ERROR: unable to download video data: HTTP Error 404: Not Found");
+  assert.match(m, /404/, "o KJ precisa do erro real para reportar ou pesquisar");
+});

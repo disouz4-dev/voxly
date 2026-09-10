@@ -12,6 +12,7 @@ const { pastaDeDownload } = require("./pastas");
 const { escolherIdentidade, criarBuscaItunes, semCanal } = require("./identificacao");
 const { escolherArquivoBaixado, idDaUrl } = require("./baixado");
 const { motivoFalha } = require("./yt-falha");
+const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const { autoUpdater } = require("electron-updater");
 
 // mp4 1080p por padrao: qualidade de projecao sem pegar 4K, que incha o arquivo
@@ -27,6 +28,7 @@ const ICONE_APP  = path.join(__dirname, "assets", "icons", "icon.png");
 let hostWindow      = null;
 let playerWindow    = null;
 let audienceWindow  = null;
+let arquivoAtualizacao = null;   // pacote baixado pelo updater, quando ha
 let musicWatcher    = null;
 let catalogoLocal   = [];
 let servidorCatalogo= null;
@@ -698,9 +700,34 @@ function configurarAutoUpdate() {
 
   autoUpdater.on("update-downloaded", async (info) => {
     console.log(`[UPDATE] pronto (${info.version})`);
-    confiarEstadoAtualizacao({ fase: "pronto", versao: info.version });
+    arquivoAtualizacao = info.downloadedFile || null;
+
+    const instalacao = comoInstalar({
+      plataforma: process.platform,
+      appimage: !!process.env.APPIMAGE,
+      arquivo: arquivoAtualizacao,
+    });
+    confiarEstadoAtualizacao({
+      fase: "pronto", versao: info.version,
+      modo: instalacao.modo, comando: instalacao.comando || null,
+    });
+
     const janela = hostWindow || playerWindow || null;
-    if (!janela) { autoUpdater.quitAndInstall(); return; }
+    if (!janela) { if (instalacao.modo === "automatico") autoUpdater.quitAndInstall(); return; }
+
+    if (instalacao.modo !== "automatico") {
+      // Prometer "Reiniciar agora" num pacote .deb e mentir: sem sudo grafico
+      // o quitAndInstall nao faz nada e o botao parece quebrado.
+      await dialog.showMessageBox(janela, {
+        type: "info",
+        title: "Voxly — atualização baixada",
+        message: `Versão ${info.version} baixada.`,
+        detail: `Para aplicar, rode no terminal:\n\n${instalacao.comando}`,
+        buttons: ["Entendi"],
+      });
+      return;
+    }
+
     const { response } = await dialog.showMessageBox(janela, {
       type: "info",
       title: "Voxly — atualização disponível",
@@ -713,12 +740,19 @@ function configurarAutoUpdate() {
     if (response === 0) autoUpdater.quitAndInstall();
   });
 
+  const permissao = podeAtualizarSozinho({ plataforma: process.platform, empacotado: app.isPackaged });
+  if (!permissao.pode) {
+    console.log("[UPDATE] checagem desligada:", permissao.motivo);
+    confiarEstadoAtualizacao({ fase: "indisponivel", erro: permissao.motivo });
+    return;
+  }
   autoUpdater.checkForUpdatesAndNotify().catch((e) => console.warn("[UPDATE] falha ao checar:", e.message));
 }
 
 // ── IPC: Atualização automática ────────────────────────────
 ipcMain.handle("check-for-updates", () => {
-  if (!app.isPackaged) return { fase: "dev" };
+  const permissao = podeAtualizarSozinho({ plataforma: process.platform, empacotado: app.isPackaged });
+  if (!permissao.pode) return { fase: "indisponivel", erro: permissao.motivo };
   try {
     autoUpdater.checkForUpdates();
     return { fase: "checando" };
@@ -728,7 +762,16 @@ ipcMain.handle("check-for-updates", () => {
 });
 
 ipcMain.handle("restart-to-update", () => {
-  try { autoUpdater.quitAndInstall(); return true; } catch { return false; }
+  const instalacao = comoInstalar({
+    plataforma: process.platform,
+    appimage: !!process.env.APPIMAGE,
+    arquivo: arquivoAtualizacao,
+  });
+  // Devolve o comando em vez de tentar e falhar calado: era isso que fazia o
+  // botao "Reiniciar para atualizar" nao responder no pacote .deb.
+  if (instalacao.modo !== "automatico") return { ok: false, comando: instalacao.comando };
+  try { autoUpdater.quitAndInstall(); return { ok: true }; }
+  catch (e) { return { ok: false, erro: e.message }; }
 });
 
 ipcMain.handle("app-versao", () => app.getVersion());
@@ -1229,6 +1272,15 @@ async function baixarUrl(opts) {
       "ou aponte o caminho em Configuracoes."
     );
   }
+
+  // A versao do yt-dlp e o dado que mais explica falha de download: o YouTube
+  // muda e a versao empacotada pela distro fica meses atras. Fica no log para
+  // essa duvida nao precisar ser levantada de novo.
+  try {
+    const v = require("child_process").execFileSync(ytDlp, ["--version"], { timeout: 5000 })
+      .toString().trim();
+    enviarProgresso({ log: `yt-dlp ${v}`, logTipo: 'info' });
+  } catch (_) {}
 
   ytCancelado = false;
   const archive = ytArchiveLoad();

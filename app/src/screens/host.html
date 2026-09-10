@@ -3035,18 +3035,26 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!window.electronAPI) return;
     const st = document.getElementById('status-atualizacao');
     window.electronAPI.checkForUpdates().then(r => {
-      if (r && r.fase === 'dev') {
-        st.textContent = 'Modo desenvolvedor: a atualização automática fica ativa no app instalado. Você já está na versão deste código.';
+      if (r && r.fase === 'indisponivel') {
+        st.textContent = r.erro || 'Atualização automática indisponível nesta plataforma.';
       } else if (r && r.fase === 'erro') {
-        st.textContent = 'Não foi possível consultar atualizações.';
+        st.textContent = r.erro ? `Não foi possível consultar atualizações: ${r.erro}` : 'Não foi possível consultar atualizações.';
       }
     }).catch(() => {
       st.textContent = 'Não foi possível consultar atualizações.';
     });
   }
 
-  function reiniciarParaAtualizar() {
-    if (window.electronAPI) window.electronAPI.restartToUpdate();
+  async function reiniciarParaAtualizar() {
+    if (!window.electronAPI) return;
+    const r = await window.electronAPI.restartToUpdate();
+    // No pacote .deb o electron-updater precisa de sudo grafico e nao faz nada
+    // sem ele. Em vez de um botao que parece quebrado, mostra o comando.
+    if (r && r.ok === false) {
+      const st = document.getElementById('status-atualizacao');
+      if (st) st.textContent = r.comando || r.erro || 'Não consegui aplicar a atualização.';
+      if (r.comando) mostrarToast('Copie o comando mostrado em Ajustes para atualizar', 7000);
+    }
   }
 
   function inicializarAtualizacaoUI() {
@@ -3066,7 +3074,14 @@ https://www.youtube.com/@canal/videos"></textarea>
           btn.style.display = '';
           break;
         case 'atualizado': st.textContent = '✔ Você já está na versão mais recente.'; break;
-        case 'erro':      st.textContent = 'Não foi possível verificar atualizações agora.'; break;
+        case 'indisponivel': st.textContent = info.erro || 'Atualização automática indisponível nesta plataforma.'; break;
+        case 'erro':
+          // Esconder o motivo aqui e o mesmo vicio que havia no download: o KJ
+          // fica sem nada para pesquisar nem reportar.
+          st.textContent = info.erro
+            ? `Não foi possível verificar atualizações: ${info.erro}`
+            : 'Não foi possível verificar atualizações agora.';
+          break;
       }
     });
   }

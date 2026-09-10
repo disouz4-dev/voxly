@@ -30,6 +30,17 @@ const CONHECIDAS = [
                                           texto: "Sem conexão com a internet." },
 ];
 
+// 403, 404 e falha de nsig quase sempre significam a mesma coisa: o YouTube
+// mudou e o yt-dlp desta maquina ficou para tras. No Linux isso e a regra, nao
+// a excecao — o .deb declara yt-dlp como dependencia e a distro empacota uma
+// versao de meses atras. Mantem o texto original junto: o KJ pode precisar dele.
+const RE_YTDLP_VELHO = /HTTP Error 40[34]|nsig extraction failed|player response|signature extraction/i;
+
+const COMO_ATUALIZAR =
+  "Provavelmente o yt-dlp desta máquina está desatualizado — o YouTube muda e a " +
+  "versão da distro fica para trás. Atualize com: sudo yt-dlp -U   (ou, se veio do " +
+  "apt: sudo apt remove yt-dlp && sudo pip install -U yt-dlp)";
+
 function motivoFalha(codigoSaida, stderr) {
   if (codigoSaida === 0) return null;
 
@@ -38,12 +49,17 @@ function motivoFalha(codigoSaida, stderr) {
     if (re.test(texto)) return msg;
   }
 
+  const erros = texto.split("\n").filter(l => /^\s*ERROR[:\s]/i.test(l));
+  const ultimaLinha = erros.length ? erros[erros.length - 1].trim() : "";
+
+  if (RE_YTDLP_VELHO.test(texto)) {
+    return `${COMO_ATUALIZAR}\n\n${ultimaLinha}`.trim();
+  }
+
   // Desconhecido: devolve a mensagem crua. Um generico ("falha no download")
   // nao da ao KJ nada para pesquisar nem para reportar. A ULTIMA linha ERROR e
   // a que derrubou; as anteriores costumam ser tentativas que o yt-dlp fez.
-  const erros = texto.split("\n").filter(l => /^\s*ERROR[:\s]/i.test(l));
-  const ultima = erros.length ? erros[erros.length - 1].trim() : "";
-  return ultima || `O yt-dlp terminou com código ${codigoSaida} e não explicou o motivo.`;
+  return ultimaLinha || `O yt-dlp terminou com código ${codigoSaida} e não explicou o motivo.`;
 }
 
 module.exports = { motivoFalha };
