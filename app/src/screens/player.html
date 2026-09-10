@@ -1331,8 +1331,10 @@ intervaloDeck = [];
 
           // Chamada por voz — aguarda 0.8s para o TTS não sobrepor o fade-in
           definirVozPreferida(dados.voz);
-          // Chamada por voz e opcional: o KJ liga ou desliga em Ajustes.
-          if (dados.chamadaVoz !== false) {
+          // Exige autorizacao EXPLICITA. Antes o teste era "!== false", entao
+          // qualquer preview sem o campo — como o reenvio de estado ao ligar a
+          // tela do publico — fazia a locucao disparar mesmo desmarcada.
+          if (dados.chamadaVoz === true) {
             setTimeout(() => iniciarLoopChamada(cantor, duo, dados.segundos || 30), 800);
           }
 

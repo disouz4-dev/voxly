@@ -3087,6 +3087,8 @@ https://www.youtube.com/@canal/videos"></textarea>
           musica:   atual.musica,
           artista:  atual.artista,
           semitons: atual.semitons ?? 0,
+          // Reenvio de estado nao e uma chamada nova: nao pode falar de novo.
+          chamadaVoz: false,
         }));
       }
     }, 1200);
