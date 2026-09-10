@@ -5,6 +5,7 @@ const chokidar = require("chokidar");
 const fs     = require("fs");
 const http   = require("http");
 const ServidorLocal = require("./local-server");
+const ytBusca = require("./yt-busca");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
@@ -119,6 +120,41 @@ function agendarDownloadFotos(folder) {
 
 // ── Servidor HTTP ──────────────────────────────────────────
 
+// Consulta o YouTube e devolve so o que serve para uma fila de karaoke.
+async function buscarKaraokeYt(termo) {
+  const ytDlp = resolverBinario("yt-dlp");
+  if (!ytDlp) throw new Error("yt-dlp nao encontrado no host.");
+
+  // O cantor digita so a musica (e talvez o artista); a tag karaoke e
+  // responsabilidade nossa.
+  const consulta = ytBusca.montarConsulta({ musica: termo, artista: "" });
+
+  const saida = await new Promise((resolve, reject) => {
+    const proc = spawn(ytDlp, [
+      `ytsearch12:${consulta}`,
+      "--dump-json", "--skip-download", "--no-warnings",
+      "--socket-timeout", "15",
+      "--extractor-args", "youtubetab:skip=authcheck",
+    ], { windowsHide: true });
+
+    let out = "", err = "";
+    proc.stdout.on("data", d => out += d.toString());
+    proc.stderr.on("data", d => err += d.toString());
+    proc.on("error", e => reject(new Error(`Falha ao executar o yt-dlp: ${e.message}`)));
+    proc.on("close", () => out.trim() ? resolve(out) : reject(new Error(err.trim() || "busca sem resultado")));
+  });
+
+  const videos = saida.split("\n").map(l => l.trim()).filter(Boolean)
+    .flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } });
+
+  const pasta = store.get("musicFolder");
+  const jaTemos = idsBaixados(pasta);
+
+  return ytBusca
+    .ordenarCandidatos(videos, { musica: termo, artista: "" }, { limite: 8 })
+    .map(c => ({ ...c, jaBaixado: jaTemos.has(c.id) }));
+}
+
 function iniciarServidorCatalogo() {
   if (servidorCatalogo) return;
   servidorCatalogo = http.createServer((req, res) => {
@@ -131,6 +167,30 @@ function iniciarServidorCatalogo() {
     if (req.method === "OPTIONS") {
       res.statusCode = 204;
       res.end();
+      return;
+    }
+
+    // Busca de karaoke no YouTube. O app do cantor roda no navegador e nao
+    // alcanca o yt-dlp; quem fala com ele e o host, e devolve os candidatos ja
+    // filtrados e ordenados. Tambem informa o que ja existe na pasta, para a
+    // interface poder dizer "toca na hora" em vez de "vai baixar".
+    if (req.url.startsWith("/buscar")) {
+      const q = new URL(req.url, "http://local").searchParams.get("q") || "";
+      if (!q.trim()) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ candidatos: [] }));
+        return;
+      }
+      buscarKaraokeYt(q)
+        .then(candidatos => {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ candidatos }));
+        })
+        .catch(e => {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ erro: e.message }));
+        });
       return;
     }
 

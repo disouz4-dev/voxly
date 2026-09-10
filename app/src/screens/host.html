@@ -2262,7 +2262,16 @@ https://www.youtube.com/@canal/videos"></textarea>
       .where('status', 'in', ['tocando', 'confirmando']).limit(1).get();
     if (!snap.empty) await pularMusica(snap.docs[0].id);
   }
-  function reabrirPlayer() { if (window.electronAPI) window.electronAPI.invoke('open-player'); }
+  function reabrirPlayer() {
+    if (!window.electronAPI) return;
+    window.electronAPI.invoke('open-player');
+    // O Palco nasce com o intervalo desligado e espera autorizacao; sem este
+    // reenvio, reabrir a janela deixaria o intervalo mudo para sempre.
+    setTimeout(() => {
+      window.electronAPI.playerCommand(intervaloAtivo ? 'intervalo-on' : 'intervalo-off');
+      if (intervaloAtivo) enviarPlaylistIntervalo();
+    }, 1500);
+  }
 
   // ── Tela do público (opcional) ───────────────────────────
   function atualizarBotaoAudiencia(ativa) {

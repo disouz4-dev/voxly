@@ -912,7 +912,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Nasce desligado no painel do publico: o Palco e a fonte unica de audio.
   // As guardas de intervalo-on/off ja cobriam o caminho por comando, mas o
   // intervalo tambem comeca sozinho via mostrarIdleScreen() -> tocarIntervalo().
-  let intervaloHabilitado = !isAudience;
+  // Nasce DESLIGADO e so toca quando o host autoriza. Antes comecava ligado no
+  // Palco: como o host so informa o estado do botao de intervalo ~2,5s depois de
+  // abrir, a musica comecava sozinha e era cortada quando o "intervalo-off"
+  // finalmente chegava — o "toca e para" que se via na pratica.
+  let intervaloHabilitado = false;
   let idleAtivo = true; // true enquanto idle screen estiver visível
 
   function tocarIntervalo() {
