@@ -68,3 +68,23 @@ test("nada configurado: usa o padrao mesmo que ainda nao exista", () => {
   const nadaExiste = () => false;
   assert.strictEqual(pastaDeDownload({ padrao: PADRAO, existe: nadaExiste }), PADRAO);
 });
+
+// A checagem de "pasta que sumiu" nao pode valer para a pasta PADRAO: ela ainda
+// nao existe numa instalacao nova, e e criada logo depois. Barrando ela, todo
+// download falha com "reaponte em Biblioteca" — inclusive no primeiro uso.
+test("a pasta padrao pode nao existir ainda: e criada, nao barrada", () => {
+  const nadaExiste = () => false;
+  assert.strictEqual(
+    pastaDeDownload({ pedida: PADRAO, configurada: null, padrao: PADRAO, existe: nadaExiste }),
+    PADRAO,
+    "get-music-folder devolve o padrao e o host reenvia como pedida");
+  assert.strictEqual(
+    pastaDeDownload({ configurada: PADRAO, padrao: PADRAO, existe: nadaExiste }), PADRAO);
+});
+
+test("pasta escolhida pelo KJ que sumiu continua sendo barrada", () => {
+  const so_o_padrao = p => p === PADRAO;
+  assert.throws(
+    () => pastaDeDownload({ pedida: "/Volumes/M2 portable/Karaoke", padrao: PADRAO, existe: so_o_padrao }),
+    /M2 portable/);
+});

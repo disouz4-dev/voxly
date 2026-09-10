@@ -44,7 +44,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onYtProgress:       (cb) => ipcRenderer.on("yt-progress", (_e, info) => cb(info)),
   onYtDone:           (cb) => ipcRenderer.on("yt-done", (_e, info) => cb(info)),
   onYtEditRequest:    (cb) => ipcRenderer.on("yt-edit-request", (_e, info) => cb(info)),
-  ytConfirmEdit:      (info) => ipcRenderer.invoke("yt-confirm-edit", info),
+  // send, nao invoke: quem espera a edicao e um ipcMain.on dentro do download.
+  // Com invoke a mensagem ia para um handle que so devolvia true, e a edicao
+  // manual nunca chegava — o download ficava esperando por nada.
+  ytConfirmEdit:      (info) => ipcRenderer.send("yt-confirm-edit", info),
 
   // Invoke restrito a canais explicitamente permitidos
   invoke:            (channel, ...args) => {

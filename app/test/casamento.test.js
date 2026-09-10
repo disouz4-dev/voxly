@@ -91,3 +91,36 @@ test("acha mesmo sem o artista no nome do arquivo", () => {
     escolherPorNome(legado, { musica: "I Miss You", artista: "Blink 182" }) || "",
     /I Miss You/);
 });
+
+// ── Artista curto e candidato unico ──────────────────────────────────────
+// "One" existe do U2 e do Metallica. palavrasChave descartava palavra de ate
+// 2 letras, entao "U2" virava lista vazia e mesmoArtista respondia true para
+// qualquer um. E escolherPorNome devolvia o unico candidato SEM olhar artista.
+const { mesmoArtista } = require("../src/versoes");
+
+test("nome de artista curto nao vira coringa", () => {
+  assert.strictEqual(mesmoArtista("Metallica", "U2"), false);
+  assert.strictEqual(mesmoArtista("U2", "U2"), true);
+  assert.strictEqual(mesmoArtista("AC DC", "Metallica"), false);
+});
+
+test("sem informacao de artista no arquivo, segue permissivo", () => {
+  assert.strictEqual(mesmoArtista("", "U2"), true, "acervo antigo nao tem o campo");
+});
+
+test("candidato unico do artista errado nao e entregue", () => {
+  const acervo = ["Metallica - One - Sing King [aaaaaaaaaaa].mp4"];
+  assert.strictEqual(escolherPorNome(acervo, { musica: "One", artista: "U2" }), null,
+    "melhor nao achar e o KJ baixar do que tocar Metallica para quem pediu U2");
+  assert.match(escolherPorNome(acervo, { musica: "One", artista: "Metallica" }) || "", /Metallica/);
+});
+
+test("sem artista no pedido, o unico candidato serve", () => {
+  const acervo = ["Metallica - One - Sing King [aaaaaaaaaaa].mp4"];
+  assert.match(escolherPorNome(acervo, { musica: "One", artista: "Desconhecido" }) || "", /Metallica/);
+});
+
+test("arquivo antigo sem artista continua sendo achado", () => {
+  const legado = ["One - Sing King [aaaaaaaaaaa].mp4"];
+  assert.match(escolherPorNome(legado, { musica: "One", artista: "U2" }) || "", /One/);
+});

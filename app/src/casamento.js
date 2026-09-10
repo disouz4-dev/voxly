@@ -26,16 +26,21 @@ function escolherPorNome(arquivos, pedido) {
   // "Artista - Musica - Canal" quanto o legado "Musica - Canal", sem precisar
   // adivinhar qual pedaco e qual.
   const candidatos = (arquivos || []).filter(c => mesmaMusica(nomeBase(c), musica));
-  if (candidatos.length <= 1) return candidatos[0] || null;
+  if (!candidatos.length) return null;
 
-  // Varias versoes da mesma musica: o artista desempata. Se nenhuma casar,
-  // devolve a primeira — ja passaram todas pelo crivo do titulo.
+  // Sem artista no pedido nao ha como julgar: vale o titulo.
   if (!artista || normalizar(artista) === "desconhecido") return candidatos[0];
+
+  // O artista nao e so desempate. "One" existe do U2 e do Metallica; com um
+  // unico candidato o codigo antigo o entregava sem olhar de quem era, e o
+  // cantor de U2 recebia Metallica. mesmoArtista ja e permissivo quando o
+  // arquivo nao traz artista nenhum (acervo antigo), entao exigir aqui nao
+  // custa os arquivos legados.
   const doArtista = candidatos.filter(c => {
     const v = decompor(nomeBase(c));
     return mesmoArtista(v.artista, artista) || mesmoArtista(v.canal, artista);
   });
-  return doArtista.length ? doArtista[0] : candidatos[0];
+  return doArtista.length ? doArtista[0] : null;
 }
 
 module.exports = { escolherPorNome };

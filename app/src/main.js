@@ -1582,11 +1582,6 @@ ipcMain.handle("yt-cancel", () => {
   return true;
 });
 
-ipcMain.handle("yt-confirm-edit", (_, info) => {
-  // Apenas dispara o evento para quem está aguardando
-  return true;
-});
-
 // ── Watcher ────────────────────────────────────────────────
 function startWatcher(folder) {
   if (musicWatcher) musicWatcher.close();

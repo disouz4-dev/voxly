@@ -19,8 +19,14 @@ function pastaDeDownload({ pedida, configurada, padrao, existe } = {}) {
   // configuracao de um para o outro, o caminho gravado nao existe mais.
   // Cair calado na pasta padrao seria pior que falhar: baixaria para o disco
   // interno e o KJ so descobriria com o show rolando.
+  const reservaPadrao = limpa(padrao);
+
   if (escolhida) {
-    if (existe && !existe(escolhida)) {
+    // A pasta PADRAO nao passa por esta checagem: numa instalacao nova ela
+    // ainda nao existe e e criada logo em seguida. Barrando-a, todo download
+    // falhava pedindo para "reapontar em Biblioteca" — inclusive o primeiro.
+    const ehPadrao = reservaPadrao && escolhida === reservaPadrao;
+    if (!ehPadrao && existe && !existe(escolhida)) {
       throw new Error(
         `A pasta de músicas "${escolhida}" não existe nesta máquina. ` +
         `Se for um HD externo, ele monta num caminho diferente em cada sistema — ` +
@@ -30,13 +36,12 @@ function pastaDeDownload({ pedida, configurada, padrao, existe } = {}) {
     return escolhida;
   }
 
-  const reserva = limpa(padrao);
-  if (!reserva) {
+  if (!reservaPadrao) {
     throw new Error(
       "Nenhuma pasta de músicas definida. Escolha uma em 📁 Biblioteca antes de baixar."
     );
   }
-  return reserva;
+  return reservaPadrao;
 }
 
 module.exports = { pastaDeDownload };

@@ -34,8 +34,11 @@ function decompor(nomeArquivo) {
 // por sobreposicao das palavras que importam.
 const LIGACOES = new Set(["e", "and", "feat", "ft", "com", "the", "de", "da", "do"]);
 
+// Nome de artista curto e nome, nao ruido: "U2", "AC DC", "MC". Descartando
+// palavra de ate 2 letras, "U2" virava lista vazia e mesmoArtista respondia
+// true para qualquer um — "One" do U2 casava com o arquivo do Metallica.
 function palavrasChave(txt) {
-  return normalizar(txt).split(" ").filter(p => p.length > 2 && !LIGACOES.has(p));
+  return normalizar(txt).split(" ").filter(p => p.length > 1 && !LIGACOES.has(p));
 }
 
 function mesmoArtista(a, b) {
