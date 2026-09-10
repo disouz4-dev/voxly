@@ -1302,6 +1302,29 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // Levanta as versoes do YouTube sob demanda, quando o KJ pede.
+  async function procurarVersoes(itemId) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item) return;
+    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
+    mostrarToast('🔎 Procurando versões no YouTube...');
+    try {
+      const termo = [item.artista, item.musica].filter(t => t && t !== 'Desconhecido').join(' ');
+      const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(termo)}`);
+      const { candidatos } = await resp.json();
+      if (!candidatos || !candidatos.length) {
+        await ref.update({ statusDownload: 'erro' }).catch(() => {});
+        mostrarToast('Nenhuma versão de karaokê encontrada');
+        return;
+      }
+      await ref.update({ statusDownload: 'escolher', candidatos: candidatos.slice(0, 6) }).catch(() => {});
+      abrirModalCandidatos(itemId);
+    } catch (e) {
+      await ref.update({ statusDownload: 'erro' }).catch(() => {});
+      mostrarToast('❌ ' + e.message);
+    }
+  }
+
   function abrirModalCandidatos(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item || !item.candidatos || !item.candidatos.length) {
@@ -1591,6 +1614,22 @@ https://www.youtube.com/@canal/videos"></textarea>
       const restartBtn = isPlaying ? `<button class="btn btn-ghost btn-sm" onclick="reiniciarMusica()" title="Voltar ao início">⏮ Reiniciar</button>` : '';
       const skipBtn    = (isPlaying || isPronto) ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
       const removeBtn = `<button class="btn btn-danger btn-sm" onclick="abrirModalExpulsar(${i})" title="Remover da fila">✕</button>`;
+
+      // Musica pedida que ainda nao esta na pasta: o KJ escolhe a versao e
+      // dispara o download. Sem este botao o modal de candidatos era
+      // inalcancavel — o item aparecia na fila sem nenhuma acao possivel.
+      let baixarBtn = '';
+      if (!item.disponivel) {
+        if (item.statusDownload === 'baixando') {
+          baixarBtn = `<span class="btn btn-ghost btn-sm" style="opacity:.7;cursor:default;">⏳ Baixando...</span>`;
+        } else if (item.statusDownload === 'escolher' && (item.candidatos || []).length) {
+          baixarBtn = `<button class="btn btn-primary btn-sm" onclick="abrirModalCandidatos('${item.id}')" title="Escolher a versão e baixar">⬇ Escolher versão (${item.candidatos.length})</button>`;
+        } else if (item.statusDownload === 'erro') {
+          baixarBtn = `<button class="btn btn-danger btn-sm" onclick="procurarVersoes('${item.id}')" title="Tentar de novo">↻ Tentar de novo</button>`;
+        } else {
+          baixarBtn = `<button class="btn btn-secondary btn-sm" onclick="procurarVersoes('${item.id}')" title="Procurar no YouTube">🔎 Procurar versões</button>`;
+        }
+      }
       const duoBtn    = isDraggable && !isDuet && regras.permitirDuo
         ? `<button class="btn btn-secondary btn-sm" onclick="abrirModalDuoFila(${i})" title="Adicionar parceiro duo">🎤 Duo</button>`
         : '';
@@ -1619,7 +1658,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
-          <div class="queue-actions">${playBtn}${restartBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
+          <div class="queue-actions">${baixarBtn}${playBtn}${restartBtn}${skipBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
         </div>
         ${badge}
       </div>`;
