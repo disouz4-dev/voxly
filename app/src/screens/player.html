@@ -1021,6 +1021,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Play video (canal legado)
   window.electronAPI.onPlayVideo(filePath => {
+    pararLoopChamada(); // a musica comecou: a chamada nao pode continuar por cima
     idle.style.display  = "none";
     // No painel do publico quem sai de cena e o aviso de espera, nao o idle.
     const centroIdle = document.getElementById("pub-center-idle");
@@ -1088,23 +1089,68 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ── TTS — chamada por voz ────────────────────────────────
+  // A voz pegava o PRIMEIRO resultado pt-* da lista, que costuma ser uma voz
+  // compacta de baixa qualidade — e ainda distorcia com pitch 1.05 e rate 0.88.
+  // Agora respeita a escolha do KJ e usa valores naturais.
+  let _vozPreferida = null;
+
+  function definirVozPreferida(nome) { _vozPreferida = nome || null; }
+
+  function escolherVoz() {
+    const vozes = speechSynthesis.getVoices();
+    const ptBR = vozes.filter(v => /^pt[-_]?BR/i.test(v.lang));
+    const pt   = ptBR.length ? ptBR : vozes.filter(v => /^pt/i.test(v.lang));
+    if (!pt.length) return null;
+
+    if (_vozPreferida) {
+      const escolhida = pt.find(v => v.name === _vozPreferida);
+      if (escolhida) return escolhida;
+    }
+    // Sem escolha do KJ: prefere as masculinas mais claras desta plataforma.
+    const preferidas = ["Reed", "Eddy", "Rocko", "Luciana"];
+    for (const nome of preferidas) {
+      const v = pt.find(x => x.name.startsWith(nome));
+      if (v) return v;
+    }
+    return pt[0];
+  }
+
   function chamarPorVoz(cantor, duo) {
     if (isAudience) return; // locucao sai so pelo Palco, senao fala em dobro
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
+
     const texto = duo
-      ? `Próximos no palco: ${cantor} e ${duo}! Confirmem no celular.`
-      : `Próximo no palco: ${cantor}! Confirme no celular para cantar.`;
+      ? `${cantor} e ${duo}, preparem-se! Vocês são os próximos no palco.`
+      : `${cantor}, prepare-se! Você é o próximo no palco.`;
+
     const fala = new SpeechSynthesisUtterance(texto);
-    fala.lang  = 'pt-BR';
-    fala.rate  = 0.88;
-    fala.pitch = 1.05;
+    fala.lang   = 'pt-BR';
+    fala.rate   = 1;    // 0.88 arrastava e deixava a voz robotica
+    fala.pitch  = 1;    // 1.05 desafinava a voz
     fala.volume = 1;
-    // Tenta usar voz pt-BR se disponível
-    const vozes = speechSynthesis.getVoices();
-    const vozPT = vozes.find(v => v.lang.startsWith('pt')) || vozes[0];
-    if (vozPT) fala.voice = vozPT;
+    const voz = escolherVoz();
+    if (voz) fala.voice = voz;
     speechSynthesis.speak(fala);
+  }
+
+  // Durante a janela de confirmacao a chamada se repete, para quem estava longe
+  // do palco ouvir. Antes falava uma vez so, no comeco.
+  let _loopChamada = null;
+
+  function iniciarLoopChamada(cantor, duo, segundos) {
+    pararLoopChamada();
+    chamarPorVoz(cantor, duo);
+    const fim = Date.now() + (segundos || 30) * 1000;
+    _loopChamada = setInterval(() => {
+      if (Date.now() > fim - 4000) { pararLoopChamada(); return; }
+      chamarPorVoz(cantor, duo);
+    }, 9000);
+  }
+
+  function pararLoopChamada() {
+    if (_loopChamada) { clearInterval(_loopChamada); _loopChamada = null; }
+    if (window.speechSynthesis) speechSynthesis.cancel();
   }
 
   // ── Timer SVG ────────────────────────────────────────────
@@ -1242,7 +1288,8 @@ intervaloDeck = [];
           }
 
           // Chamada por voz — aguarda 0.8s para o TTS não sobrepor o fade-in
-          setTimeout(() => chamarPorVoz(cantor, duo), 800);
+          definirVozPreferida(dados.voz);
+          setTimeout(() => iniciarLoopChamada(cantor, duo, dados.segundos || 30), 800);
 
           // Timer regressivo
           prevTotalSecs = dados.segundos || 15;
@@ -1318,7 +1365,7 @@ intervaloDeck = [];
     if (cmd === "play")             video.play();
     if (cmd === "pause")            video.pause();
     if (cmd === "restart")          { video.currentTime = 0; video.play().catch(()=>{}); }
-    if (cmd === "stop-preview")     { pararPreview(); mostrarIdleScreen(); }
+    if (cmd === "stop-preview")     { pararLoopChamada(); pararPreview(); mostrarIdleScreen(); }
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { if (!isAudience) { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); } }
     if (cmd === "intervalo-off") { if (!isAudience) { intervaloHabilitado = false; pararIntervalo(); } }

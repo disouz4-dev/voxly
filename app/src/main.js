@@ -10,9 +10,10 @@ const { versoesLocais } = require("./versoes");
 const { montarConsulta, ordenarCandidatos } = require("./yt-busca");
 const { autoUpdater } = require("electron-updater");
 
-// mp4 720p por padrao: resolucao suficiente para projecao, arquivo bem menor e
-// H.264/AAC, que toca em qualquer lugar. O KJ pode trocar.
-const QUALIDADE_PADRAO = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]";
+// mp4 1080p por padrao: qualidade de projecao sem pegar 4K, que incha o arquivo
+// sem ganho numa TV de bar. H.264/AAC, que toca em qualquer lugar. O KJ troca
+// em Ajustes.
+const QUALIDADE_PADRAO = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]";
 
 const store = new Store();
 const SESSAO_ID = "sessao_default";
@@ -624,7 +625,7 @@ ipcMain.handle("select-music-folder", async () => {
 
 ipcMain.handle("get-music-folder", () => store.get("musicFolder", null));
 // Preferencias de download, definidas uma vez pelo KJ e usadas em todo pedido.
-const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false };
+const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false, voz: "" };
 ipcMain.handle("get-prefs-download", () => ({ ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) }));
 ipcMain.handle("set-prefs-download", (_, p) => {
   store.set("prefsDownload", { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}), ...p });
@@ -636,6 +637,25 @@ ipcMain.handle("set-prefs-download", (_, p) => {
 // Todas as versoes da musica ja presentes na pasta. O KJ escolhe qual tocar:
 // a mesma faixa costuma existir em canais diferentes, com tom e arranjo
 // diferentes, e pegar "a primeira que achar" tirava essa decisao dele.
+// Resolve o arquivo de um item da fila na ordem confiavel: versao escolhida
+// pelo KJ, depois id do video, e so entao casamento por nome. O nome e o pior
+// criterio — basta o arquivo ter sido renomeado de forma um pouco diferente do
+// pedido para "nao achar" uma musica que esta ali.
+ipcMain.handle("resolver-arquivo-item", (_, item) => {
+  const pasta = store.get("musicFolder", null);
+  if (!pasta || !fs.existsSync(pasta) || !item) return null;
+
+  if (item.arquivoEscolhido) {
+    const alvo = path.join(pasta, item.arquivoEscolhido);
+    if (fs.existsSync(alvo)) return alvo;
+  }
+  if (item.videoId) {
+    const porId = caminhoLocalDoVideo(pasta, item.videoId);
+    if (porId) return porId;
+  }
+  return null; // quem chama cai no resolveMusicFile por nome
+});
+
 ipcMain.handle("versoes-locais", (_, pedido) => {
   const pasta = store.get("musicFolder", null);
   if (!pasta || !fs.existsSync(pasta)) return [];

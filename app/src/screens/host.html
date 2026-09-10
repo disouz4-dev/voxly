@@ -782,8 +782,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     <div id="candidatosQualidadeBox">
     <label class="modal-label">Qualidade do download</label>
     <select class="modal-select" id="candidatosQualidade" onchange="salvarQualidade()">
-      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4 (padrão)</option>
-      <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4</option>
+      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4</option>
+      <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4 (padrão)</option>
       <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
       <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
     </select>
@@ -836,8 +836,8 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     <label class="modal-label">Qualidade dos downloads</label>
     <select class="modal-select" id="pref-qualidade" onchange="salvarPrefsDownload()">
-      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4 (padrão)</option>
-      <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4</option>
+      <option value="bestvideo[height&lt;=720][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=720]">📺 720p — mp4</option>
+      <option value="bestvideo[height&lt;=1080][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=1080]">📺 1080p — mp4 (padrão)</option>
       <option value="bestvideo[height&lt;=480][ext=mp4]+bestaudio[ext=m4a]/best[height&lt;=480]">📺 480p — mp4 (arquivo menor)</option>
       <option value="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best">📺 Melhor disponível — mp4</option>
     </select>
@@ -850,6 +850,18 @@ https://www.youtube.com/@canal/videos"></textarea>
         <input type="checkbox" id="pref-organizar" onchange="salvarPrefsDownload()"> <span>📂 Criar uma subpasta por artista</span>
       </label>
     </div>
+
+    <label class="modal-label">Voz que chama o cantor</label>
+    <div style="display:flex;gap:6px;">
+      <select class="modal-select" id="pref-voz" onchange="salvarPrefsDownload()" style="flex:1;">
+        <option value="">Automática (melhor pt-BR disponível)</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="testarVoz()" title="Ouvir">▶</button>
+    </div>
+    <p style="font-size:.72rem;color:var(--mudo);line-height:1.5;margin-top:6px;">
+      A chamada se repete durante os 30 segundos de confirmação, para quem
+      estiver longe do palco ouvir.
+    </p>
 
     <p style="font-size:.72rem;color:var(--mudo);line-height:1.5;margin-top:10px;">
       Vale para todo download disparado pela fila. O <strong>[id]</strong> no nome é o
@@ -1602,9 +1614,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     // de confiar — sem isso o pedido ficava marcado como pronto para sempre e
     // nunca voltava a procurar.
     if (item.disponivel) {
-      const aindaExiste = item.videoId
-        ? await window.electronAPI.localizarVideo(item.videoId)
-        : await window.electronAPI.resolveMusicFile(item.musica, item.artista);
+      // Mesma ordem de confianca do "Tocar": versao escolhida > id > nome.
+      const aindaExiste = await arquivoDoItem(item);
       if (aindaExiste) return;
 
       // Limpa tambem o video escolhido antes: sem isso o fluxo cairia no ramo de
@@ -1622,11 +1633,24 @@ https://www.youtube.com/@canal/videos"></textarea>
     // pasta e, se nao existir, levanta os candidatos para o KJ escolher. Quem
     // decide o que baixar e ele, nao o automatico.
     if (!item.videoId) {
-      if (item.statusDownload === 'escolher') return;
       _baixando.add(item.id);
       try {
-        const arquivo = await window.electronAPI.resolveMusicFile(item.musica, item.artista);
-        if (arquivo) { await ref.update({ disponivel: true }).catch(() => {}); return; }
+        // Confere a pasta mesmo com candidatos ja levantados. Pedindo a mesma
+        // musica duas vezes, o segundo pedido nasce enquanto o primeiro ainda
+        // baixa: nao acha nada, vira "escolher", e antes disso ficava preso
+        // nesse estado para sempre — o arquivo chegava e ninguem reparava.
+        const versoes = await window.electronAPI.versoesLocais({ musica: item.musica, artista: item.artista });
+        if (versoes.length) {
+          await ref.update({
+            disponivel: true,
+            statusDownload: null,
+            candidatos: [],
+            videoId: versoes[0].videoId || null,
+            arquivoEscolhido: versoes[0].arquivo,
+          }).catch(() => {});
+          return;
+        }
+        if (item.statusDownload === 'escolher') return;
 
         const art = (item.artista && item.artista !== 'Desconhecido') ? item.artista : '';
         const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(item.musica)}` +
@@ -1837,6 +1861,17 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Ações da fila ─────────────────────────────────────────
+  // Ordem de confianca: versao escolhida pelo KJ > id do video > nome.
+  async function arquivoDoItem(item) {
+    if (!window.electronAPI || !item) return null;
+    const exato = await window.electronAPI.resolverArquivoItem({
+      arquivoEscolhido: item.arquivoEscolhido || null,
+      videoId: item.videoId || null,
+    });
+    if (exato) return exato;
+    return window.electronAPI.resolveMusicFile(item.musica, item.artista);
+  }
+
   async function tocarMusica(itemId) {
     marcarShowComecou();
     const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
@@ -1849,9 +1884,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     const itemSnap = await itemRef.get();
     const item = itemSnap.data();
-    const filePath = window.electronAPI
-      ? await window.electronAPI.resolveMusicFile(item.musica, item.artista)
-      : null;
+    const filePath = await arquivoDoItem(item);
     currentSong = { id: itemId, ...item, filePath };
 
     document.getElementById('np-song').textContent   = item.musica  || '—';
@@ -1884,7 +1917,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     window.electronAPI.invoke('open-player');
     // Resolve filePath se não estiver cacheado
     const filePath = currentSong.filePath
-      || await window.electronAPI.resolveMusicFile(currentSong.musica, currentSong.artista);
+      || await arquivoDoItem(currentSong);
     if (!filePath) { alert('Arquivo não encontrado para reiniciar.'); return; }
     // Exibe animação de intro e toca do início
     setTimeout(() => {
@@ -2133,11 +2166,13 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     // Fire-and-forget: não bloqueia o envio do preview
     db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
-      .update({ status: 'confirmando', confirmandoAte: Date.now() + 15000 });
+      .update({ status: 'confirmando', confirmandoAte: Date.now() + SEGUNDOS_CONFIRMACAO * 1000 });
 
     let filePath = null;
+    let vozEscolhida = '';
     if (window.electronAPI) {
-      filePath = await window.electronAPI.resolveMusicFile(proxima.musica, proxima.artista);
+      filePath = await arquivoDoItem(proxima);
+      vozEscolhida = (await window.electronAPI.getPrefsDownload()).voz || '';
     }
 
     if (window.electronAPI) {
@@ -2146,7 +2181,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         musica: proxima.musica, artista: proxima.artista,
         cantor: proxima.nomeArtistico, duo: proxima.duoNome || null,
         photoURL: proxima.photoURL || null, duoPhotoURL: proxima.duoPhotoURL || null,
-        itemId: proxima.id, segundos: 15
+        itemId: proxima.id, segundos: SEGUNDOS_CONFIRMACAO, voz: vozEscolhida
       }));
     }
 
@@ -2166,8 +2201,12 @@ https://www.youtube.com/@canal/videos"></textarea>
         await iniciarConfirmacaoProxima();
       }
       // Se 'pronto', 'tocando', 'cancelada': não faz nada
-    }, 15000);
+    }, SEGUNDOS_CONFIRMACAO * 1000);
   }
+
+  // Janela de confirmacao, em um lugar so: mudar aqui muda o texto, a contagem
+  // do palco e o timeout juntos. Eram 15s espalhados por tres pontos.
+  const SEGUNDOS_CONFIRMACAO = 30;
 
   function escutarConfirmacoes() {
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
@@ -2465,12 +2504,40 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('pref-qualidade').value    = p.qualidade;
     document.getElementById('pref-renomear').checked   = p.renomear !== false;
     document.getElementById('pref-organizar').checked  = !!p.organizar;
+    popularVozes();
+    document.getElementById('pref-voz').value = p.voz || '';
   }
+
+  // As vozes vem do motor do sistema e so ficam disponiveis depois que o
+  // navegador carrega os pacotes — dai o onvoiceschanged.
+  function popularVozes() {
+    const sel = document.getElementById('pref-voz');
+    if (!sel || !window.speechSynthesis) return;
+    const atual = sel.value;
+    const vozes = speechSynthesis.getVoices().filter(v => /^pt/i.test(v.lang));
+    sel.innerHTML = '<option value="">Automática (melhor pt-BR disponível)</option>' +
+      vozes.map(v => '<option value="' + escHtml(v.name) + '">' + escHtml(v.name) + '</option>').join('');
+    sel.value = atual;
+  }
+
+  function testarVoz() {
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    const f = new SpeechSynthesisUtterance('Diego, prepare-se! Você é o próximo no palco.');
+    f.lang = 'pt-BR'; f.rate = 1; f.pitch = 1;
+    const nome = document.getElementById('pref-voz').value;
+    const v = speechSynthesis.getVoices().find(x => x.name === nome);
+    if (v) f.voice = v;
+    speechSynthesis.speak(f);
+  }
+
+  if (window.speechSynthesis) speechSynthesis.onvoiceschanged = popularVozes;
 
   async function salvarPrefsDownload() {
     if (!window.electronAPI || !window.electronAPI.setPrefsDownload) return;
     await window.electronAPI.setPrefsDownload({
       qualidade: document.getElementById('pref-qualidade').value,
+      voz:       document.getElementById('pref-voz').value,
       renomear:  document.getElementById('pref-renomear').checked,
       organizar: document.getElementById('pref-organizar').checked,
     });
