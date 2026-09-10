@@ -1283,6 +1283,11 @@ document.addEventListener("DOMContentLoaded", () => {
     video.src = toFileUrl(filePath);
     video.load();
     video.play().catch(e => console.error("[PLAYER] Erro:", e));
+
+    // O painel do publico espelha a imagem do Palco. Ele nao pode tocar sozinho
+    // ao receber "play-confirmed": ali o Palco ainda esta na intro, e as duas
+    // telas sairiam dessincronizadas. Quem avisa e o Palco, no play de verdade.
+    if (!isAudience) window.electronAPI.sincronizarPublico(filePath, 0);
   }
 
   // Comandos do host
@@ -1453,7 +1458,13 @@ intervaloDeck = [];
       if (isAudience) atualizarPainelPublico(null);
     }
     if (cmd === "stop") {
-      if (isAudience) { atualizarPainelPublico(null); return; }
+      if (isAudience) {
+        atualizarPainelPublico(null);
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        return;
+      }
       clearTimeout(idleFallbackTimer);
       pararPreview();
       clearTimeout(introTimeout);
