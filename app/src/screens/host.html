@@ -2118,6 +2118,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     // disparava de novo o listener da fila e um segundo download comecava em
     // paralelo com o primeiro — dois arquivos, de videos diferentes.
     if (item.statusDownload === 'baixando' || _baixando.has(item.id)) return;
+    // Em erro, espera o KJ (Procurar versoes / escolher outra). Sem isto cada
+    // mudanca qualquer na fila refazia o download ou a busca — yt-dlp rodando e
+    // avisos de erro em sequencia no meio do show.
+    if (item.statusDownload === 'erro') return;
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id);
 
     // "disponivel" e uma afirmacao sobre o disco, e o disco muda: arquivo
@@ -2298,7 +2302,10 @@ https://www.youtube.com/@canal/videos"></textarea>
   function escutarFila() {
     vigiarSessaoNoDiario();
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])
+      // "confirmado" entra: e o instante entre o cantor confirmar e virar
+      // "pronto". Fora da consulta, o pedido sumia da tela nesse meio tempo e o
+      // Play escolhia outro no lugar de quem acabou de confirmar.
+      .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'confirmado', 'pronto'])
       .onSnapshot(snap => {
         // Pedido novo com videoId: garante o arquivo antes da vez chegar.
         snap.docs.forEach(d => garantirArquivoDaFila({ id: d.id, ...d.data() }));
@@ -2527,9 +2534,13 @@ https://www.youtube.com/@canal/videos"></textarea>
     clearTimeout(timerConfirmacao);
     marcarShowComecou();
     const batch = db.batch();
+    // Quem estava sendo chamado volta para a fila tambem. Sem "confirmando" e
+    // "confirmado" aqui, o chamado ficava preso sem saida — e, se confirmasse
+    // depois, o Palco escondia o video que estava tocando.
     const tocandoSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', 'in', ['tocando', 'pronto']).get();
+      .where('status', 'in', ['tocando', 'pronto', 'confirmando', 'confirmado']).get();
     tocandoSnap.forEach(d => { if (d.id !== itemId) batch.update(d.ref, { status: 'aguardando' }); });
+    proximaConfirmando = null;
     batch.update(itemRef, { status: 'tocando' });
     await batch.commit();
     currentSong = { id: itemId, ...item, filePath, iniciadoEm: Date.now() };
@@ -2894,14 +2905,16 @@ https://www.youtube.com/@canal/videos"></textarea>
     clearTimeout(timerConfirmacao);
     timerConfirmacao = setTimeout(async () => {
       const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id).get();
-      const statusAtual = snap.data()?.status;
+      const statusAtual = snap.exists ? snap.data().status : 'removido';
       if (statusAtual === 'confirmando') {
         // Auto-confirma: cantor não respondeu, sobe mesmo assim
         await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
           .update({ status: 'confirmado' });
         if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
-      } else if (statusAtual === 'aguardando') {
-        // Cantor recusou e voltou para a fila — para o preview e avança para o próximo
+      } else if (['aguardando', 'cancelada', 'removido'].includes(statusAtual) && !currentSong) {
+        // Recusou (voltou para a fila), recusou pela 2a vez (cancelada) ou foi
+        // removido: chama o proximo. Antes so o primeiro caso avancava e o
+        // Palco ficava parado em "Proximo: X".
         if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
         await iniciarConfirmacaoProxima();
       }
@@ -2986,6 +2999,9 @@ https://www.youtube.com/@canal/videos"></textarea>
           proximaConfirmando = null;
           await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
             .update({ status: 'pronto' });
+          // Com musica no ar, a tela de "pronto" nao pode aparecer: ela
+          // esconde o video do Palco, e o fim da musica nunca era detectado.
+          if (currentSong) continue;
           // Para o overlay de preview e mostra tela de "aguardando host"
           if (window.electronAPI) {
             window.electronAPI.playerCommand(JSON.stringify({
@@ -4746,6 +4762,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         const fotoDuo = fotoDaPresenca(atual.duoUid);
         if (fotoDuo) novo.duoPhotoURL = fotoDuo;
       }
+      if (window.electronAPI && window.electronAPI.desvincularArquivo) window.electronAPI.desvincularArquivo(trocandoItemId);
       if (modoOffline) {
         if (atual) Object.assign(atual, novo);
         salvarBackupLocal(); renderQueue();

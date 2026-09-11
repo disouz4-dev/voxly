@@ -161,3 +161,11 @@ test("pedido em espera não conta na alternância do café com leite", () => {
   // E um normal vai para o fim, depois de tudo — inclusive do número do de espera.
   assert.strictEqual(ordemParaNovo(fila, { prioridade: false }), 3);
 });
+
+// "confirmado" e o instante entre o cantor confirmar e a Gerencia marcar
+// "pronto". Sem peso proprio ele caia para o fim da fila, e o Play escolhia
+// outro no lugar de quem acabou de confirmar.
+test("quem acabou de confirmar fica junto de quem está sendo chamado", () => {
+  const fila = [esp("a", 1), { id: "c", status: "confirmado", slot: "ativa", ordemFila: 9 }, esp("b", 2)];
+  assert.deepStrictEqual(ordenarFila(fila).map(i => i.id), ["c", "a", "b"]);
+});

@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   restartToUpdate:    () => ipcRenderer.invoke("restart-to-update"),
   appVersao:          () => ipcRenderer.invoke("app-versao"),
   linkMusicFile:      (songId) => ipcRenderer.invoke("link-music-file", songId),
+  desvincularArquivo: (songId) => ipcRenderer.invoke("desvincular-arquivo", songId),
   sincronizarPublico: (filePath, tempo) => ipcRenderer.invoke("sincronizar-publico", { filePath, tempo }),
   playerCommand:      (cmd) => ipcRenderer.invoke("player-command", cmd),
   getLocalWebAppUrl:  () => ipcRenderer.invoke("get-local-webapp-url"),

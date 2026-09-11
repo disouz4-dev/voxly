@@ -1217,16 +1217,10 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
   const exts  = [".mp4", ".mkv", ".avi", ".webm"];
   const files = listarArquivosRecursivo(folder, exts);
 
-  // Links manuais primeiro
-  const links = store.get("musicLinks", {});
-  for (const filePath of Object.values(links)) {
-    if (filePath && fs.existsSync(filePath)) {
-      const base = path.basename(filePath, path.extname(filePath)).toLowerCase();
-      if (base.includes(songName.toLowerCase()) || base.includes(artist.toLowerCase())) {
-        return filePath;
-      }
-    }
-  }
+  // Vinculos manuais NAO entram aqui: eles valem por pedido (resolver-arquivo-
+  // item, pelo id). Esta varredura devolvia o vinculo de qualquer noite cujo
+  // nome "contivesse" a musica ou o artista — outra musica do mesmo artista
+  // tocava no lugar, e com artista vazio includes('') casava com tudo.
 
   const melhor = escolherPorNome(files, { musica: songName, artista: artist });
   console.log(`[RESOLVE] "${artist} - ${songName}" → ${melhor || "nao encontrado"}`);
@@ -1249,6 +1243,14 @@ ipcMain.handle("link-music-file", async (_, songId) => {
     return filePath;
   }
   return null;
+});
+
+// Trocar a musica de um pedido desfaz o vinculo manual dele: senao o
+// resolver, que confia no vinculo antes de tudo, tocava o arquivo antigo.
+ipcMain.handle("desvincular-arquivo", (_, songId) => {
+  const links = store.get("musicLinks", {});
+  if (songId && links[songId]) { delete links[songId]; store.set("musicLinks", links); }
+  return true;
 });
 
 ipcMain.handle("sincronizar-publico", (_, { filePath, tempo }) => {

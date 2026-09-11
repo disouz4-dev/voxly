@@ -134,7 +134,8 @@ async function lerEstado() {
       tocando: currentSong ? currentSong.id : null,
       banco,
       tela: filaData.map(d => d.id),
-      telaNomes: filaData.filter(d => d.status !== 'tocando' && d.slot !== 'espera').slice(0, 6).map(d => d.nomeArtistico),
+      // Como o Publico escreve: com o parceiro do dueto.
+      telaNomes: filaData.filter(d => d.status !== 'tocando' && d.slot !== 'espera').slice(0, 6).map(d => d.nomeArtistico + (d.duoNome ? ' & ' + d.duoNome : '')),
       ordemRegra: VoxlyOrdem.ordenarFila(banco.filter(d => ['aguardando','tocando','confirmando','pronto'].includes(d.status) && d.slot !== 'espera')).map(d => d.id),
     };
   })()`);

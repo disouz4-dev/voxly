@@ -20,7 +20,7 @@
 (function (raiz) {
 
 // Quem ja esta no palco ou sendo chamado vem antes de qualquer pedido.
-const PESO = { tocando: 0, pronto: 1, confirmando: 2 };
+const PESO = { tocando: 0, pronto: 1, confirmado: 2, confirmando: 2 };
 const peso = i => (i && i.status in PESO) ? PESO[i.status] : 3;
 
 // Sem ordemFila vai para o fim: "|| 0" jogava registro antigo para o topo.

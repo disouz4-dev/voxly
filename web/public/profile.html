@@ -1341,8 +1341,12 @@ function escutarFila() {
 
     async function confirmarPresenca() {
       if (!itemConfirmando) return;
-      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemConfirmando.id)
-        .update({ status: 'confirmado' });
+      // So confirma quem ainda esta sendo chamado: um toque atrasado depois de
+      // o KJ tocar outra musica fazia a tela de "pronto" esconder o video no ar.
+      const agora = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemConfirmando.id).get();
+      if (agora.exists && agora.data().status === 'confirmando') {
+        await agora.ref.update({ status: 'confirmado' });
+      }
       esconderConfirmacao();
     }
 
@@ -1408,6 +1412,11 @@ function escutarFila() {
           return;
         }
         const data = snap.data();
+        // Regras e termino acompanham a sessao: lidos so na entrada, o KJ
+        // desligava o cafe com leite (ou mudava o limite, ou o horario) e os
+        // celulares ja conectados seguiam pela regra velha.
+        if (data.regras) sessaoRegras = { ...sessaoRegras, ...data.regras };
+        sessaoTermino = data.horarioTermino || null;
         const novaFilaAberta = data.filaAberta !== false;
         if (novaFilaAberta !== filaAberta) {
           filaAberta = novaFilaAberta;
@@ -1553,13 +1562,11 @@ function escutarFila() {
     function ativarPresencaOnDisconnect() {
       if (!currentUser) return;
       const ref = db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(currentUser.uid);
-      // Remove a presença automaticamente quando o cliente desconectar (sem heartbeat)
-      ref.onDisconnect().remove().catch(() => {});
-      // Escrita única ao entrar
-      ref.set({
-        status: 'online',
-        ultimoHeartbeat: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true }).catch(() => {});
+      // onDisconnect() e do Realtime Database, nao existe no Firestore: a
+      // chamada lancava erro e a escrita abaixo nunca rodava. E o status nao
+      // muda aqui — registrarPresenca ja gravou "aqui", e e por "aqui" que o
+      // seletor de duo procura; "online" tiraria todo mundo da lista.
+      ref.set({ ultimoHeartbeat: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
     }
 
     function sair() {
