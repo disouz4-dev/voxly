@@ -1777,7 +1777,13 @@ async function identificarPeloCatalogo(termo) {
 }
 
 async function baixarUrl(opts) {
-  const { urls, cookies, navegador, playlist } = opts;
+  const { cookies, navegador, playlist } = opts;
+  // As URLs vem da tela. Texto que nao e endereco http(s) — "--exec=..." por
+  // exemplo — viraria opcao do yt-dlp e rodaria comando neste computador. So
+  // endereco passa, e o "--" antes dele fecha a lista de opcoes de vez.
+  const urls = (Array.isArray(opts.urls) ? opts.urls : [])
+    .map(u => String(u || "").trim()).filter(u => /^https?:\/\/\S+$/i.test(u));
+  if (!urls.length) throw new Error("Nenhum endereço de vídeo válido para baixar.");
   const pasta = pastaDeDownload({
     pedida: opts.pasta,
     configurada: store.get("musicFolder", null),
@@ -1879,7 +1885,7 @@ async function baixarUrl(opts) {
     if (ffmpeg) args.push("--ffmpeg-location", path.dirname(ffmpeg));
 
     // yt-dlp com progress hooks
-    const child = spawn(ytDlp, [...args, url], { windowsHide: true });
+    const child = spawn(ytDlp, [...args, "--", url], { windowsHide: true });
     ytProcessoAtivo = child;
     let erroSpawn = null;
     child.on("error", (e) => { erroSpawn = e; });
@@ -1980,7 +1986,7 @@ async function baixarUrl(opts) {
     // Extrai metadados do yt-dlp (rodar novamente só para info)
     let meta = {};
     try {
-      const metaChild = spawn(ytDlp, ["--skip-download", "--print-json", url], { windowsHide: true });
+      const metaChild = spawn(ytDlp, ["--skip-download", "--print-json", "--", url], { windowsHide: true });
       let metaOut = "";
       metaChild.stdout.on("data", d => metaOut += d.toString());
       await new Promise(r => { metaChild.on("close", r); metaChild.on("error", r); });

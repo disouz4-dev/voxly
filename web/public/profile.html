@@ -405,6 +405,7 @@
   <script src="/texto.js"></script>
   <script src="/sugestoes.js"></script>
   <script src="/historico.js"></script>
+  <script src="/seguro.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -590,7 +591,8 @@
 
       const avatarEl = document.getElementById('avatarEl');
       if (perfilData.photoURL) {
-        avatarEl.innerHTML = `<img src="${perfilData.photoURL}" alt="foto">`;
+        const foto = VoxlySeguro.urlDeImagem(perfilData.photoURL);
+        avatarEl.innerHTML = foto ? `<img src="${foto}" alt="foto">` : '';
       } else {
         avatarEl.textContent = getInitials(perfilData.nomeArtistico);
         avatarEl.style.background = getAvatarColor(perfilData.nomeArtistico);
@@ -1205,17 +1207,27 @@ function escutarFila() {
           const el  = document.getElementById('convitesList');
           if (!convites.length) { sec.style.display = 'none'; return; }
           sec.style.display = 'block';
-          el.innerHTML = convites.map(c => `
+          // Os ids e o nome de quem convida vem de outro cantor: dentro de um
+          // onclick montado a mao, eles executavam codigo neste celular. Aqui
+          // o botao so carrega a posicao do convite; o resto vem da lista.
+          el.innerHTML = convites.map((c, i) => `
             <div style="padding:12px;border-radius:8px;background:var(--surface2);margin-bottom:8px;border:1px solid var(--accent);">
               <div style="font-size:0.85rem;font-weight:700;margin-bottom:4px;">🎤 Convite de duo de <strong>${escHtml(c.deNome)}</strong></div>
               <div style="font-size:0.8rem;color:var(--muted);">${escHtml(c.musica)} — ${escHtml(c.artista)}</div>
               <div style="display:flex;gap:8px;margin-top:10px;">
-                <button onclick="aceitarConvite('${c.id}','${c.filaItemId}','${escHtml(c.deNome)}')"
+                <button data-convite="${i}" data-acao="aceitar"
                   style="flex:1;padding:8px;background:var(--ok);color:#000;border:none;border-radius:8px;font-weight:700;cursor:pointer;">✓ Aceitar</button>
-                <button onclick="recusarConvite('${c.id}','${c.filaItemId}')"
+                <button data-convite="${i}" data-acao="recusar"
                   style="flex:1;padding:8px;background:#ff174430;color:#ff1744;border:1px solid #ff174450;border-radius:8px;font-weight:700;cursor:pointer;">✗ Recusar</button>
               </div>
             </div>`).join('');
+          el.onclick = ev => {
+            const b = ev.target.closest('[data-convite]');
+            const c = b && convites[Number(b.dataset.convite)];
+            if (!c) return;
+            if (b.dataset.acao === 'aceitar') aceitarConvite(c.id, c.filaItemId, c.deNome);
+            else recusarConvite(c.id, c.filaItemId);
+          };
         });
     }
 
@@ -1259,8 +1271,9 @@ function escutarFila() {
                 : isMinha
                   ? '<span class="evento-badge badge-eu">Você</span>'
                   : '';
-            const avatarHtml = d.photoURL
-              ? `<div class="evento-avatar"><img src="${d.photoURL}" alt=""></div>`
+            const fotoEvento = VoxlySeguro.urlDeImagem(d.photoURL);
+            const avatarHtml = fotoEvento
+              ? `<div class="evento-avatar"><img src="${fotoEvento}" alt=""></div>`
               : `<div class="evento-avatar">${getInitials(d.nomeArtistico||'?')}</div>`;
             return `<div class="${cls}">
               <div class="evento-pos">${isTocando ? '▶' : i + 1}</div>
@@ -1558,7 +1571,10 @@ function escutarFila() {
       }
     });
 
-    function escHtml(t) { const d=document.createElement('div');d.textContent=t;return d.innerHTML; }
+    // Escapa aspas tambem: o antigo nao escapava, e o nome de quem convida
+    // para duo, dentro de um onclick, executava codigo no celular de outro
+    // cantor (seguro.js).
+    function escHtml(t) { return VoxlySeguro.escaparHtml(t); }
 
     document.getElementById('modalOverlay').addEventListener('click', e => {
       // Durante o envio o modal nao fecha por fora: o pedido entraria mesmo assim.

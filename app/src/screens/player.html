@@ -662,6 +662,7 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
 
 <script src="../painel-sync.js"></script>
 <script src="../volume.js"></script>
+<script src="../seguro.js"></script>
 <script src="../guia.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", () => {
@@ -1149,7 +1150,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const chars = nome.split("").map((ch, i) => {
       const d = (baseDelay + i * 0.045).toFixed(3);
       if (ch === " ") return `<span class="intro-name-space"></span>`;
-      return `<span class="intro-name-char" style="animation-delay:${d}s">${ch}</span>`;
+      return `<span class="intro-name-char" style="animation-delay:${d}s">${escapaPub(ch)}</span>`;
     }).join("");
     return `<div class="intro-name">${chars}</div>`;
   }
@@ -1483,11 +1484,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Resolver URL de avatar via processo principal (bypassa CORS/CSP) ──
   const _avatarCache = {};
+  // Foto vem do cantor: endereco com aspas ou parenteses fecharia o url() do
+  // CSS onde ela e usada e viraria codigo nesta tela (seguro.js).
   async function resolveUrl(url) {
+    url = VoxlySeguro.urlDeImagem(url);
     if (!url) return null;
     if (_avatarCache[url]) return _avatarCache[url];
     if (window.electronAPI) {
-      const data = await window.electronAPI.invoke('fetch-image', url);
+      const data = VoxlySeguro.urlDeImagem(await window.electronAPI.invoke('fetch-image', url));
       if (data) { _avatarCache[url] = data; return data; }
     }
     return url;

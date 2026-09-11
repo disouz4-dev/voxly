@@ -1053,6 +1053,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
 <div class="toast" id="toast"></div>
 
+<script src="../seguro.js"></script>
 <script src="../fila.js"></script>
 <script src="../prioridade.js"></script>
 <script src="../chamada.js"></script>
@@ -1118,7 +1119,9 @@ https://www.youtube.com/@canal/videos"></textarea>
   let tomAtual           = 0; // semitons em relação ao original
 
   // ── Helpers ───────────────────────────────────────────────
-  function escHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+  // Escapa aspas tambem: o antigo (textContent/innerHTML) nao escapava, e todo
+  // atributo montado com ele era porta de entrada (seguro.js).
+  function escHtml(t) { return VoxlySeguro.escaparHtml(t); }
   function getInitials(n) { return (n||'?').trim().split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?'; }
 
   function gerarCodigo() {
@@ -2366,8 +2369,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       else if (isConfirming) badge = '<span class="queue-badge badge-confirming">⏱ CONFIRMANDO</span>';
       else if (isPriority)   badge = '<span class="queue-badge badge-priority">☕ PRIORIDADE</span>';
 
-      const avatarHtml = item.photoURL
-        ? `<img src="${item.photoURL}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+      const fotoItem = VoxlySeguro.urlDeImagem(item.photoURL);
+      const avatarHtml = fotoItem
+        ? `<img src="${fotoItem}" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
         : `<div style="width:30px;height:30px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0;">${getInitials(item.nomeArtistico)}</div>`;
 
       const isDraggable = !isPlaying && !isConfirming && !isPronto;
@@ -2465,8 +2469,9 @@ https://www.youtube.com/@canal/videos"></textarea>
         : cantadas === 1 ? '1 música' : `${cantadas} músicas`;
       const tagCls = u.modo === 'manual' ? 'tag tag-manual' : 'tag tag-online';
       const tagTxt = u.modo === 'manual' ? '👤 Manual' : '✅ Online';
-      const avatarHtml = u.photoURL
-        ? `<div class="user-avatar"><img src="${u.photoURL}"></div>`
+      const fotoCantor = VoxlySeguro.urlDeImagem(u.photoURL);
+      const avatarHtml = fotoCantor
+        ? `<div class="user-avatar"><img src="${fotoCantor}"></div>`
         : `<div class="user-avatar">${getInitials(u.nomeArtistico)}</div>`;
       return `<div class="user-item">
         ${avatarHtml}
