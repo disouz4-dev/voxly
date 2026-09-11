@@ -80,9 +80,9 @@ open /Applications/Voxly.app
 - 🎵 **Live sessions** — the host starts a session and generates a code + QR Code. The badge at the top shows the venue and time; clicking it lets the KJ **edit name, date and time without dropping** the session. **💥 Derrubar sessão** wipes any open session, including ones stuck on another machine.
 - 🖥️ **3 screens** — **Host** (KJ), **Stage** (karaoke video fullscreen) and an optional **Audience** screen that mirrors the Stage video alongside the singer, their avatar, who is up next and a large QR. The **next-singer call-up** shows on both Stage and Audience.
 - ⏱️ **Show start time** — the KJ sets when the show begins; the audience screen and the singers' app show a live **countdown**. With no song playing, the audience screen cycles through an **animated how-to-join guide**.
-- 🕐 **KJ clock** — current time in the top bar and how long the session has left ("termina em 1h12"). It turns amber during the grace period ("pedidos fecham em 3 min") and red after it.
+- 🕐 **KJ clock** — the time, in the top bar.
 - ⏳ **Session deadline** — the session ends when the KJ said it would, plus 5 minutes of slack. After that singers can no longer queue songs; the KJ keeps playing what is already in the queue.
-- 🔒 **One session at a time** — opening a new one purges the previous ones and disconnects their singers.
+- 🔒 **One session at a time** — opening a new one purges the previous ones and disconnects their singers. A session whose Host screen is open is never deleted by the automatic cleanup, not even from another machine: songs only leave the queue when the KJ ends, drops or replaces the session.
 
 **Queue**
 - 🎤 **Real-time queue** — singers request from their phones, the host controls it (play, skip, swap someone's song, remove, add a singer and song by hand). A request never lands twice, even on repeated taps.
@@ -95,6 +95,8 @@ open /Applications/Voxly.app
 - 🔊 **Volume fader** in the Host screen, next to the key control — the KJ does not depend on the sound desk. Remembered across launches.
 - 📏 **Even loudness across songs** — each file is measured once with ffmpeg (EBU R128 loudness) and the Stage applies the gain at playback: loud songs go down, quiet ones go up, nothing is re-encoded. Covers the existing library too. Toggle in ⚙ Config → Som.
 - 🤫 **No pop between songs** — the sound ramps down and up over a few milliseconds on every change, pause and stop.
+- 🔈 **Audio outputs** — in ⚙ Config → Som the KJ picks where the house sound goes (an audio interface, say) and a **monitor** output (their headphones), each with a test button.
+- 🎧 **Preview before downloading** — in the version picker, 🎧 Ouvir plays the YouTube version **on the monitor output only**, without downloading. With no headphones chosen, headphones disconnected, or the monitor on the same device as the house, the preview refuses to play.
 - 🗣️ **Optional voice call-ups** — announces the next singer with Brazilian neural voices from **Piper**, installed on demand from Settings.
 
 **Songs**
@@ -104,6 +106,7 @@ open /Applications/Voxly.app
 - 🔧 **Always-current yt-dlp** — Voxly keeps its own copy of yt-dlp and updates it by itself, checking the published SHA-256. An old yt-dlp was the #1 cause of "403 error" mid-show.
 
 **Records**
+- 📋 **Singer history** — in their profile, singers see everything they sang, night by night, with venue and date. Tapping a song opens a pre-filled request with the same version and key as last time.
 - 📊 **Reports** — every night gets a permanent summary (participants, songs sung, who sang what and when), saved before the session is deleted. The **📊 Relatórios** button shows every night: totals, averages, most-sung songs and regulars, with a per-venue filter. Tonight shows up as "ao vivo" (live).
 
 **Infra**
@@ -303,7 +306,8 @@ app/                       # Electron app (Host + Stage + Audience + LAN server)
   src/identificacao.js     # official name of a downloaded file (iTunes)
   src/loudness.js          # loudness measurement (ffmpeg ebur128) and gain
   src/relatorio.js         # per-night summary and totals across nights
-  src/ordem.js, prioridade.js, sessao-regras.js, trava.js, texto.js, sugestoes.js
+  src/saidas.js            # audio outputs and the rule that keeps the preview off the house sound
+  src/ordem.js, prioridade.js, sessao-regras.js, trava.js, texto.js, sugestoes.js, historico.js
                            # rules shared with the singers' app; copied to
                            # web/public by `npm run sincronizar-regras`,
                            # copias.test.js fails if they drift

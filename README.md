@@ -82,14 +82,14 @@ open /Applications/Voxly.app
 - 🎵 **Sessões ao vivo** — o host inicia uma sessão e gera um código + QR Code. O badge no topo mostra a casa e o horário; clicando nele o KJ **edita nome, data e horário sem derrubar** a sessão. **💥 Derrubar sessão** apaga qualquer sessão em aberto, inclusive presas em outra máquina.
 - 🖥️ **3 telas** — **Gerência** (KJ), **Palco** (vídeo em tela cheia) e **Público** (opcional), que espelha o vídeo do Palco junto com o cantor, o avatar, os próximos da fila e o QR grande. A **chamada do próximo cantor** aparece no Palco e no Público.
 - ⏱️ **Horário do show** — o KJ define quando o show começa; o público e o app dos cantores mostram a **contagem regressiva**. Sem música tocando, a tela do público alterna um **guia animado** de como participar.
-- 🕐 **Relógio do KJ** — hora atual na barra do topo e quanto falta na sessão ("termina em 1h12"). Na tolerância fica âmbar ("pedidos fecham em 3 min"); depois, vermelho.
+- 🕐 **Relógio do KJ** — a hora, na barra do topo.
 - ⏳ **Prazo da sessão** — a sessão acaba no horário que o KJ marcou, com 5 minutos de tolerância. Depois disso o cantor não põe mais música; o KJ segue tocando o que está na fila.
-- 🔒 **Uma sessão por vez** — abrir uma nova expurga as anteriores e os cantores das sessões antigas são desconectados.
+- 🔒 **Uma sessão por vez** — abrir uma nova expurga as anteriores e os cantores das sessões antigas são desconectados. Uma sessão com a Gerência aberta nunca é apagada pela faxina automática, nem pela de outra máquina: as músicas só saem da fila quando o KJ finaliza, derruba ou abre outra sessão.
 
 **Fila**
 - 🎤 **Fila em tempo real** — os cantores pedem pelo celular, o host controla (tocar, pular, trocar a música de alguém, remover, adicionar cantor e música à mão). O pedido nunca entra duas vezes, mesmo com clique repetido.
 - ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**.
-- ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. Pode ser desligado nas regras.
+- ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. O ☕ só aparece em quem de fato entrou assim. Pode ser desligado nas regras.
 - 🧑‍🤝‍🧑 **Presença online** — o host vê quem está conectado e **quantas músicas cada um já cantou** na noite.
 
 **Som**
@@ -97,6 +97,8 @@ open /Applications/Voxly.app
 - 🔊 **Fader de volume** na Gerência, ao lado do tom — o KJ não depende da mesa de som. Fica lembrado entre aberturas.
 - 📏 **Volume igual entre as músicas** — cada arquivo é medido uma vez com o ffmpeg (loudness EBU R128) e o Palco ajusta o ganho ao tocar: música alta desce, baixa sobe, nada é regravado. Vale para o acervo que já existe. Liga/desliga em ⚙ Config → Som.
 - 🤫 **Sem estalo na troca de música** — o som desce e sobe em rampa de milissegundos a cada troca, pausa e parada.
+- 🔈 **Saídas de áudio** — em ⚙ Config → Som o KJ escolhe por onde sai o som da casa (a interface de áudio, por exemplo) e a saída de **monitoria** (o fone dele), cada uma com botão de teste.
+- 🎧 **Prévia antes de baixar** — na escolha de versão, 🎧 Ouvir toca a versão do YouTube **só na monitoria**, sem baixar nada. Sem fone escolhido, com o fone desconectado ou com a monitoria no mesmo aparelho da casa, a prévia não toca.
 - 🗣️ **Chamada por voz (opcional)** — anuncia o próximo cantor com vozes neurais brasileiras do **Piper**. Não vem instalada: o KJ marca em ⚙ Config e o app baixa e configura.
 
 **Músicas**
@@ -106,6 +108,7 @@ open /Applications/Voxly.app
 - 🔧 **yt-dlp sempre atual** — o Voxly mantém a própria cópia do yt-dlp e a atualiza sozinho, conferindo o SHA-256 publicado. Versão velha era a causa nº 1 de "erro 403" no meio do show.
 
 **Registro**
+- 📋 **Histórico do cantor** — no perfil, o cantor vê tudo o que cantou, noite a noite, com a casa e a data. Tocar numa música abre o pedido já preenchido, com a mesma versão e o mesmo tom da última vez.
 - 📊 **Relatórios** — cada noite ganha um resumo permanente (participantes, músicas cantadas, quem cantou o quê e quando), guardado antes de a sessão ser apagada. O botão **📊 Relatórios** mostra todas as noites: totais, médias, músicas mais cantadas e quem mais vem, com filtro por casa. A noite em curso aparece "ao vivo".
 
 **Infra**
@@ -278,6 +281,8 @@ A suíte cobre sobretudo as falhas que **não** dão erro visível:
 
 | Arquivo | O que trava |
 |---|---|
+| `saidas.test.js` | a prévia da monitoria nunca sai no som da casa |
+| `sessao.test.js` (faxina) | sessão com a Gerência aberta não é apagada por outra máquina |
 | `casamento.test.js` | título contido em outro não é a mesma música — o que fazia *Miss You Love* virar *I Miss You* no palco |
 | `versoes.test.js`, `yt-busca.test.js` | ranqueamento e versões locais |
 | `fila.test.js` | o que o Play faz em cada estado da fila |
@@ -334,10 +339,11 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/loudness.js          # medida de volume (ffmpeg ebur128) e ganho de normalização
   src/volume.js            # curva do fader do KJ
   src/relatorio.js         # resumo de cada noite e soma entre noites
-  src/relogio.js           # tempo restante da sessão, para o relógio do KJ
+  src/saidas.js            # saídas de áudio e a regra que impede a prévia de vazar na casa
   src/ordem.js             # ┐ regras que valem nos DOIS lados (Gerência e app
   src/prioridade.js        # │ do cantor). O web app recebe cópias em
   src/sessao-regras.js     # │ web/public: `npm run sincronizar-regras`, e o
+  src/historico.js         # │ (histórico do cantor)
   src/trava.js             # │ copias.test.js falha se divergirem
   src/texto.js             # │
   src/sugestoes.js         # ┘
