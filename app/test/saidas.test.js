@@ -68,3 +68,12 @@ test("fone desconectado: não toca (o navegador jogaria o som no padrão, que é
 test("lista de dispositivos vazia ou torta: não toca", () => {
   assert.strictEqual(monitoriaSegura({ monitorId: "fone", principalId: "", dispositivos: null }).ok, false);
 });
+
+// A saida da casa escolhida (Scarlett) desconectada: o Palco cai no padrao do
+// sistema. Se a monitoria for justamente o aparelho padrao, a previa sairia na
+// casa — a regra tem que tratar a casa como o padrao nesse caso.
+test("casa escolhida desconectada: ela vira o padrão, e monitoria no padrão não pode", () => {
+  const semScarlett = DISPOSITIVOS.filter(d => d.deviceId !== "scarlett");
+  assert.strictEqual(monitoriaSegura({ monitorId: "mac", principalId: "scarlett", dispositivos: semScarlett }).ok, false);
+  assert.strictEqual(monitoriaSegura({ monitorId: "fone", principalId: "scarlett", dispositivos: semScarlett }).ok, true);
+});

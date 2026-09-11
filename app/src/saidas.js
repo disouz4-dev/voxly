@@ -35,7 +35,9 @@ function monitoriaSegura({ monitorId, principalId, dispositivos } = {}) {
   if (!monitor) {
     return { ok: false, motivo: "A saída de monitoria não está conectada. Conecte o fone ou escolha outra em ⚙ Config → Som." };
   }
-  const casa = aparelhoDe(principalId, lista);
+  // Saida da casa escolhida mas desconectada: o Chromium toca no padrao do
+  // sistema, entao para esta conta a casa E o padrao.
+  const casa = aparelhoDe(principalId, lista) || aparelhoDe("default", lista);
   if (casa && casa === monitor) {
     return { ok: false, motivo: "A monitoria está no mesmo aparelho do som da casa — o público ouviria a prévia." };
   }
