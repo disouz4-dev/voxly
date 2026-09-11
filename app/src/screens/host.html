@@ -886,6 +886,15 @@ https://www.youtube.com/@canal/videos"></textarea>
       </label>
     </div>
 
+    <label class="modal-label">Som</label>
+    <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;cursor:pointer;margin-bottom:4px;">
+      <input type="checkbox" id="pref-normalizar" onchange="salvarPrefsDownload()">
+      <span>🎚 Igualar o volume entre as músicas</span>
+    </label>
+    <div style="font-size:.7rem;color:var(--mudo);margin:0 0 12px 24px;line-height:1.45;">
+      Cada arquivo é medido uma vez (precisa do ffmpeg). Música alta desce, música baixa sobe, sem regravar nada.
+    </div>
+
     <label class="modal-label">Chamada por voz</label>
     <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;cursor:pointer;margin-bottom:8px;">
       <input type="checkbox" id="pref-chamada-voz" onchange="salvarPrefsDownload()">
@@ -3074,6 +3083,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('pref-renomear').checked   = p.renomear !== false;
     document.getElementById('pref-organizar').checked  = !!p.organizar;
     document.getElementById('pref-chamada-voz').checked = p.chamadaVoz !== false;
+    document.getElementById('pref-normalizar').checked = p.normalizar !== false;
     await popularVozes();
     document.getElementById('pref-voz').value = p.voz || '';
     atualizarStatusPiper();
@@ -3169,10 +3179,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       qualidade: document.getElementById('pref-qualidade').value,
       voz:        document.getElementById('pref-voz').value,
       chamadaVoz: document.getElementById('pref-chamada-voz').checked,
+      normalizar: document.getElementById('pref-normalizar').checked,
       renomear:  document.getElementById('pref-renomear').checked,
       organizar: document.getElementById('pref-organizar').checked,
     });
-    mostrarToast('Preferências de download salvas');
+    mostrarToast('Preferências salvas');
   }
 
   function openSettings() {

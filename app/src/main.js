@@ -15,6 +15,7 @@ const { escolherArquivoBaixado, idDaUrl, arquivoDaSaida } = require("./baixado")
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const ytdlp = require("./ytdlp");
+const loudness = require("./loudness");
 const { autoUpdater } = require("electron-updater");
 
 // mp4 1080p por padrao: qualidade de projecao sem pegar 4K, que incha o arquivo
@@ -108,7 +109,11 @@ function separarArtistaMusica(base) {
 function construirCatalogo(folder) {
   if (!folder || !fs.existsSync(folder)) return [];
   const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
-  return listarArquivosRecursivo(folder, exts).map(fullPath => {
+  const arquivos = listarArquivosRecursivo(folder, exts);
+  // Todo caminho que muda o acervo passa por aqui (abertura, download,
+  // varredura, arquivo apagado): e o ponto unico para medir o que for novo.
+  agendarMedicaoDoAcervo(arquivos);
+  return arquivos.map(fullPath => {
     const base   = path.basename(fullPath, path.extname(fullPath)).replace(RE_ID_SUFIXO, "").trim();
     const { artista, musica } = separarArtistaMusica(base);
     return {
@@ -119,6 +124,131 @@ function construirCatalogo(folder) {
     };
   });
 }
+
+// ── Normalizacao de volume ─────────────────────────────────
+// Cada arquivo e medido uma vez (ver loudness.js) e a medida fica num JSON na
+// pasta do app. O Palco pergunta o ganho antes de soltar o som.
+
+const CAMINHO_MEDIDAS = path.join(app.getPath("userData"), "loudness.json");
+let _medidas = null;
+let _timerSalvarMedidas = null;
+const _medindoAgora = new Map();   // arquivo -> Promise da medicao em curso
+let _filaMedicao = new Set();      // acervo esperando medicao, em ordem
+let _filaMedicaoRodando = false;
+let _timerAcervo = null;
+
+function medidas() {
+  if (!_medidas) {
+    let dados = {};
+    try { dados = JSON.parse(fs.readFileSync(CAMINHO_MEDIDAS, "utf8")); } catch (_) { /* primeira vez */ }
+    _medidas = loudness.criarCacheMedidas(dados);
+  }
+  return _medidas;
+}
+
+function salvarMedidasDepois() {
+  clearTimeout(_timerSalvarMedidas);
+  _timerSalvarMedidas = setTimeout(() => {
+    try { fs.writeFileSync(CAMINHO_MEDIDAS, JSON.stringify(medidas().dados())); }
+    catch (e) { console.warn("[VOLUME] nao salvei as medidas:", e.message); }
+  }, 2000);
+}
+
+function statDeArquivo(arquivo) {
+  if (!arquivo || typeof arquivo !== "string" || !path.isAbsolute(arquivo)) return null;
+  try { const st = fs.statSync(arquivo); return st.isFile() ? st : null; } catch (_) { return null; }
+}
+
+// Sem ffmpeg nao ha medida, e a musica toca como sempre tocou.
+function rodarMedicao(arquivo, { fundo = false } = {}) {
+  const ffmpeg = resolverBinario("ffmpeg");
+  if (!ffmpeg) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let saida = "";
+    const child = spawn(ffmpeg, [
+      "-hide_banner", "-nostats", "-threads", "1", "-i", arquivo,
+      "-vn", "-sn", "-dn", "-af", "ebur128=framelog=quiet:peak=sample", "-f", "null", "-",
+    ], { windowsHide: true });
+    // O acervo inteiro medido em segundo plano nao pode disputar CPU com o
+    // video que esta tocando: prioridade minima.
+    if (fundo) { try { os.setPriority(child.pid, os.constants.priority.PRIORITY_LOW); } catch (_) {} }
+    const limite = setTimeout(() => { try { child.kill(); } catch (_) {} }, 60000);
+    child.stderr.on("data", d => {
+      saida += d.toString();
+      // O resumo vem no fim; o comeco (cabecalho do arquivo) pode ir embora.
+      if (saida.length > 100000) saida = saida.slice(-20000);
+    });
+    child.on("close", () => { clearTimeout(limite); resolve(loudness.lerMedida(saida)); });
+    child.on("error", () => { clearTimeout(limite); resolve(null); });
+  });
+}
+
+// Medida guardada, ou mede agora. Duas perguntas pelo mesmo arquivo esperam a
+// mesma medicao, em vez de abrir dois ffmpeg.
+function medidaDe(arquivo, opcoes) {
+  const st = statDeArquivo(arquivo);
+  if (!st) return Promise.resolve(null);
+  const salva = medidas().obter(arquivo, st);
+  if (salva) return Promise.resolve(salva);
+  if (_medindoAgora.has(arquivo)) return _medindoAgora.get(arquivo);
+  const p = rodarMedicao(arquivo, opcoes).then(m => {
+    _medindoAgora.delete(arquivo);
+    if (m) { medidas().guardar(arquivo, st, m); salvarMedidasDepois(); }
+    return m;
+  });
+  _medindoAgora.set(arquivo, p);
+  return p;
+}
+
+// `primeiro` passa na frente do acervo: e a musica que vai tocar em seguida.
+function agendarMedicoes(arquivos, { primeiro = false } = {}) {
+  const novos = arquivos.filter(Boolean);
+  _filaMedicao = primeiro ? new Set([...novos, ..._filaMedicao]) : new Set([..._filaMedicao, ...novos]);
+  processarFilaMedicao();
+}
+
+async function processarFilaMedicao() {
+  if (_filaMedicaoRodando) return;
+  _filaMedicaoRodando = true;
+  try {
+    while (_filaMedicao.size) {
+      const arquivo = _filaMedicao.values().next().value;
+      _filaMedicao.delete(arquivo);
+      const st = statDeArquivo(arquivo);
+      if (!st || medidas().obter(arquivo, st)) continue;
+      await medidaDe(arquivo, { fundo: true });
+      // Folga entre uma e outra: mesmo em prioridade minima, medir o acervo
+      // de uma vez so ocuparia um nucleo por minutos seguidos.
+      await new Promise(r => setTimeout(r, 400));
+    }
+  } finally {
+    _filaMedicaoRodando = false;
+  }
+}
+
+// O acervo e reconstruido varias vezes seguidas (o watcher dispara a cada
+// arquivo de um download): so a ultima lista importa.
+function agendarMedicaoDoAcervo(arquivos) {
+  clearTimeout(_timerAcervo);
+  _timerAcervo = setTimeout(() => agendarMedicoes(arquivos), 15000);
+}
+
+function normalizacaoLigada() {
+  return (store.get("prefsDownload") || {}).normalizar !== false;
+}
+
+// O Palco pergunta antes de soltar o som. Sem medida guardada, espera a
+// medicao por pouco tempo (0,4 s por musica num Mac Intel); se passar disso,
+// toca sem normalizar desta vez e a medida fica pronta para a proxima — o show
+// nao espera o ffmpeg.
+ipcMain.handle("ganho-normalizacao", async (_, arquivo) => {
+  if (!normalizacaoLigada()) return 1;
+  const medida = await Promise.race([
+    medidaDe(arquivo),
+    new Promise(r => setTimeout(() => r(null), 2500)),
+  ]);
+  return loudness.ganhoDaMedida(medida);
+});
 
 // ── Fotos de artistas ──────────────────────────────────────
 
@@ -854,7 +984,7 @@ function pastaMusicasPadrao() {
 // dizia nada sobre a causa.
 ipcMain.handle("get-music-folder", () => store.get("musicFolder", null) || pastaMusicasPadrao());
 // Preferencias de download, definidas uma vez pelo KJ e usadas em todo pedido.
-const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false, voz: "", chamadaVoz: true };
+const PREFS_PADRAO = { qualidade: QUALIDADE_PADRAO, renomear: true, organizar: false, voz: "", chamadaVoz: true, normalizar: true };
 ipcMain.handle("get-prefs-download", () => ({ ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) }));
 ipcMain.handle("set-prefs-download", (_, p) => {
   store.set("prefsDownload", { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}), ...p });
@@ -878,13 +1008,14 @@ ipcMain.handle("resolver-arquivo-item", (_, item) => {
   const links = store.get("musicLinks", {});
   if (item.id && links[item.id] && fs.existsSync(links[item.id])) return links[item.id];
 
+  // Resolvido para a fila = vai tocar logo: mede antes de o Palco precisar.
   if (item.arquivoEscolhido) {
     const alvo = path.join(pasta, item.arquivoEscolhido);
-    if (fs.existsSync(alvo)) return alvo;
+    if (fs.existsSync(alvo)) { agendarMedicoes([alvo], { primeiro: true }); return alvo; }
   }
   if (item.videoId) {
     const porId = caminhoLocalDoVideo(pasta, item.videoId);
-    if (porId) return porId;
+    if (porId) { agendarMedicoes([porId], { primeiro: true }); return porId; }
   }
   return null; // quem chama cai no resolveMusicFile por nome
 });
@@ -977,6 +1108,7 @@ ipcMain.handle("resolve-music-file", (_, songName, artist) => {
 
   const melhor = escolherPorNome(files, { musica: songName, artista: artist });
   console.log(`[RESOLVE] "${artist} - ${songName}" → ${melhor || "nao encontrado"}`);
+  if (melhor) agendarMedicoes([melhor], { primeiro: true });
   return melhor;
 });
 

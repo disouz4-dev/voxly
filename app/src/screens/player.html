@@ -814,6 +814,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Áudio: compressor + pitch shift ──────────────────────
   let audioCtx   = null;
+  let normNode   = null;   // normalizacao de volume: um ganho por musica
   let rampaNode  = null;   // entradas e saidas sem estalo (vai a 0 na troca)
   let faderNode  = null;   // volume do KJ — independente da rampa
   let volumeKJ   = VoxlyVolume.PADRAO;
@@ -954,11 +955,28 @@ document.addEventListener("DOMContentLoaded", () => {
     rampaNode.connect(faderNode);
     faderNode.connect(audioCtx.destination);
 
+    // Normalizacao ANTES do compressor: musica baixa levantada chega a ele
+    // como as outras, e os picos que o reforco criar ele mesmo segura.
+    normNode = audioCtx.createGain();
+    normNode.connect(compNode);
+
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
     srcNode = audioCtx.createMediaElementSource(video);
     pitchNode = criarRubberbandNode();
     srcNode.connect(pitchNode);
-    pitchNode.connect(compNode);
+    pitchNode.connect(normNode);
+  }
+
+  // Quanto esta musica precisa subir ou descer para soar como as outras. O
+  // processo principal mede o arquivo com o ffmpeg (uma vez so) e responde; se
+  // algo der errado, toca como esta.
+  async function ganhoDoArquivo(filePath) {
+    try {
+      const g = await window.electronAPI.ganhoNormalizacao(filePath);
+      return Number.isFinite(g) && g > 0 ? g : 1;
+    } catch (_) {
+      return 1;
+    }
   }
 
   // Leva a rampa a `alvo` em `segundos` e espera terminar. Sem grafo ainda (a
@@ -1002,17 +1020,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return node;
   }
 
-  // Liga a fonte direto no compressor, tirando o ajuste de tom do caminho.
+  // Liga a fonte direto na normalizacao, tirando o ajuste de tom do caminho.
   function contornarPitch() {
-    if (!srcNode || !compNode) return;
+    if (!srcNode || !normNode) return;
     try { srcNode.disconnect(); } catch (e) {}
     if (pitchNode) { try { pitchNode.disconnect(); } catch (e) {} }
     pitchNode = null;
-    try { srcNode.connect(compNode); } catch (e) {}
+    try { srcNode.connect(normNode); } catch (e) {}
   }
 
   function resetarPitchNode() {
-    if (!srcNode || !compNode || !audioCtx) return;
+    if (!srcNode || !normNode || !audioCtx) return;
     // Sem "!pitchNode" na guarda: depois de um contorno ele fica nulo, e antes
     // isso impedia o ajuste de tom de voltar na musica seguinte.
     try { srcNode.disconnect(); } catch(e) {}
@@ -1023,7 +1041,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       pitchNode = criarRubberbandNode();
       srcNode.connect(pitchNode);
-      pitchNode.connect(compNode);
+      pitchNode.connect(normNode);
     } catch (e) {
       console.warn("[AUDIO] nao consegui criar o ajuste de tom:", e.message);
       contornarPitch();
@@ -1615,6 +1633,9 @@ document.addEventListener("DOMContentLoaded", () => {
     esconderPronto();
     idle.style.display  = "none";
     video.style.display = "block";
+    // O ganho e pedido ja, em paralelo com a rampa e o carregamento: com a
+    // medida guardada ele chega antes de o video estar pronto.
+    const ganhoPedido = isAudience ? Promise.resolve(1) : ganhoDoArquivo(filePath);
     // Silencia ANTES de cortar: o corte seco da forma de onda era o estalo.
     await rampar(0, 0.06);
     video.pause();
@@ -1623,6 +1644,9 @@ document.addEventListener("DOMContentLoaded", () => {
     await initAudio();
     resetarPitchNode();
     setSemitons(semitons !== undefined ? semitons : currentSemitons);
+    // Com a rampa em zero, trocar o ganho de uma vez nao faz barulho nenhum.
+    const ganho = await ganhoPedido;
+    if (normNode) normNode.gain.value = ganho;
     video.src = toFileUrl(filePath);
     video.load();
     video.play()

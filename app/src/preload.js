@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   versoesLocais:      (pedido) => ipcRenderer.invoke("versoes-locais", pedido),
   apagarArquivo:      (nome) => ipcRenderer.invoke("apagar-arquivo", nome),
   resolverArquivoItem:(item) => ipcRenderer.invoke("resolver-arquivo-item", item),
+  ganhoNormalizacao:  (arquivo) => ipcRenderer.invoke("ganho-normalizacao", arquivo),
   piperVozes:         () => ipcRenderer.invoke("piper-vozes"),
   piperInstalado:     () => ipcRenderer.invoke("piper-instalado"),
   piperInstalar:      (voz) => ipcRenderer.invoke("piper-instalar", voz),
