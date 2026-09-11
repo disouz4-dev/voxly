@@ -13,8 +13,9 @@
 //    ("cafe com leite") antes de tudo, a cada atualizacao. O KJ arrastava
 //    alguem para cima de um prioridade e ele voltava para tras.
 //
-// Agora a prioridade age na ENTRADA, escolhendo onde o pedido entra. Depois
-// disso so conta o ordemFila — e o arrastar do KJ reescreve o ordemFila.
+// Agora a prioridade age na ENTRADA, escolhendo onde o pedido entra — sempre
+// alternando com a fila principal. Depois disso so conta o ordemFila, e o
+// arrastar do KJ reescreve o ordemFila.
 
 (function (raiz) {
 
@@ -35,27 +36,38 @@ function ordenarFila(itens) {
     .map(x => x.item);
 }
 
+// Onde um pedido novo entra. Normal e cafe com leite formam duas filas que
+// ANDAM JUNTAS, alternando: um da fila principal, um cafe com leite, outro da
+// fila, outro cafe. Regra do dono do app — "a fila principal nunca pode parar
+// de andar". A primeira versao punha toda prioridade antes de todos os normais,
+// e com dez chegando a fila principal pararia ate as dez cantarem.
+//
+// Cada chegada entra logo depois do ultimo da PROPRIA fila, pulando um da
+// outra. Assim ninguem e passado por alguem do mesmo tipo que chegou depois, e
+// a alternancia se mantem.
 function ordemParaNovo(fila, { prioridade } = {}) {
   const itens = Array.isArray(fila) ? fila : [];
   const numeros = itens.map(i => i && i.ordemFila).filter(n => typeof n === "number");
   // MAIOR + 1, nunca contagem + 1: e o que garante ir para o fim com buracos.
   const fim = (numeros.length ? Math.max(...numeros) : 0) + 1;
-  if (!prioridade) return fim;
 
   const esperando = ordenarFila(itens)
     .filter(i => i.status === "aguardando" && i.slot !== "espera" && typeof i.ordemFila === "number");
+  if (!esperando.length) return fim;
 
-  // Entra depois da ultima prioridade que ja espera (ordem de chegada entre
-  // elas) e antes do primeiro normal que vem depois dela.
-  const prioridades = esperando.filter(i => i.tipo === "prioridade");
-  const depoisDe = prioridades.length ? prioridades[prioridades.length - 1].ordemFila : null;
-  const proximoNormal = esperando.find(i => i.tipo !== "prioridade" &&
-    (depoisDe === null || i.ordemFila > depoisDe));
+  const ehCafe = i => i.tipo === "prioridade";
+  const doMeuTipo = i => ehCafe(i) === !!prioridade;
 
-  if (!proximoNormal) return fim;             // nao ha normal para furar
-  const antes = depoisDe !== null ? depoisDe : proximoNormal.ordemFila - 1;
-  // Fracao entre os dois vizinhos: nao obriga renumerar a fila inteira.
-  return (antes + proximoNormal.ordemFila) / 2;
+  // O ultimo da minha fila; depois dele, o primeiro da outra.
+  let ultimoMeu = -1;
+  esperando.forEach((i, k) => { if (doMeuTipo(i)) ultimoMeu = k; });
+  const ancora = esperando.findIndex((i, k) => k > ultimoMeu && !doMeuTipo(i));
+
+  if (ancora === -1) return fim;              // nao ha ninguem da outra fila para alternar
+  const depois = esperando[ancora + 1];
+  const a = esperando[ancora].ordemFila;
+  // Fracao entre os vizinhos: nao obriga renumerar a fila inteira.
+  return depois ? (a + depois.ordemFila) / 2 : fim;
 }
 
 const api = { ordenarFila, ordemParaNovo };
