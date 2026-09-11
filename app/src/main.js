@@ -1994,8 +1994,14 @@ async function baixarUrl(opts) {
   };
 }
 
+// Quantos downloads este PROCESSO esta fazendo. A tela recarregada perde a
+// propria memoria do que baixava; e aqui que ela descobre que ainda ha um.
+let ytDownloadsEmCurso = 0;
+ipcMain.handle("yt-em-andamento", () => ytDownloadsEmCurso > 0);
+
 ipcMain.handle("yt-download", async (_, opts) => {
   ytCancelado = false;
+  ytDownloadsEmCurso++;
   try {
     const resultado = await baixarUrl(opts);
     if (hostWindow && !hostWindow.isDestroyed()) {
@@ -2008,6 +2014,8 @@ ipcMain.handle("yt-download", async (_, opts) => {
       hostWindow.webContents.send("yt-done", { sucesso: false, erro: e.message });
     }
     return { sucesso: false, erro: e.message };
+  } finally {
+    ytDownloadsEmCurso--;
   }
 });
 

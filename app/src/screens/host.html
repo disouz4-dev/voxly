@@ -2730,12 +2730,20 @@ https://www.youtube.com/@canal/videos"></textarea>
   let _primeiraFaxinaDownloads = true;
   async function destravarDownloadsOrfaos() {
     if (!SESSAO_ID || !filaData.length) return;
+    // "Recem aberto" era a primeira passada desta TELA. Recarregar a janela no
+    // meio de um download deixava o processo principal baixando enquanto a
+    // tela liberava o item como orfao — e o KJ baixava a mesma musica de novo.
+    // Aberto de verdade e so quando o processo nao tem download nenhum.
+    let recemAberto = _primeiraFaxinaDownloads;
+    _primeiraFaxinaDownloads = false;
+    if (recemAberto && window.electronAPI && window.electronAPI.ytEmAndamento) {
+      recemAberto = !(await window.electronAPI.ytEmAndamento().catch(() => false));
+    }
     const presos = VoxlyOrfaos.downloadsOrfaos(filaData, {
       agora: Date.now(),
       emAndamento: _baixando,
-      recemAberto: _primeiraFaxinaDownloads,
+      recemAberto,
     });
-    _primeiraFaxinaDownloads = false;
     if (!presos.length) return;
 
     for (const id of presos) {
