@@ -56,36 +56,61 @@ case "$(uname -m)" in
 esac
 curl -fL -o Voxly.dmg "https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}${ARQ}.dmg"
 
-# Monte e copie para /Applications
-hdiutil attach Voxly.dmg
-cp -R "/Volumes/Voxly/Voxly.app" /Applications/
-hdiutil detach /Volumes/Voxly
+# Monte num ponto fixo e copie para /Applications. O volume do .dmg leva a
+# versão no nome ("Voxly 1.1.25"), então /Volumes/Voxly não existe.
+hdiutil attach Voxly.dmg -mountpoint /Volumes/VoxlyInstalar
+cp -R /Volumes/VoxlyInstalar/Voxly.app /Applications/
+hdiutil detach /Volumes/VoxlyInstalar
 
-# Abra (na primeira vez, use o botão direito → Abrir, pois ainda não é assinado)
+# O app ainda não é assinado pela Apple: sem isto o macOS diz que "não pode
+# verificar" o Voxly e não abre.
+xattr -dr com.apple.quarantine /Applications/Voxly.app
+
+# ffmpeg junta vídeo e áudio dos downloads e mede o volume das músicas
+brew install ffmpeg
+
 open /Applications/Voxly.app
 ```
 
-> ⚠️ O macOS pode exibir "não verificado" por causa do **Gatekeeper** (o app ainda não é assinado/notarizado pela Apple). Para abrir: **botão direito no app → Abrir → Abrir**.
+> ⚠️ **Gatekeeper**: o app não é assinado/notarizado pela Apple. Nas versões recentes do macOS o "botão direito → Abrir" não basta — use o `xattr` acima (ou Ajustes do Sistema → Privacidade e Segurança → **Abrir Mesmo Assim**).
 
 ---
 
 ## ✨ Funcionalidades
 
-- 🎵 **Sessões ao vivo** — o host inicia uma sessão e gera um código + QR Code.
-- 🖥️ **3 telas** — **Gerência** (KJ), **Palco** (vídeo em tela cheia) e **Público** (opcional), que espelha o vídeo do Palco junto com o cantor, o avatar, os próximos da fila e o QR grande.
-- ⏱️ **Horário do show** — o KJ define quando o show começa; o público e o app dos cantores mostram a **contagem regressiva** até a hora marcada.
-- 🎛️ **Temas de intervalo** — playlists editáveis por tema (Rock, Pagode, MPB...). Casa de rock? Só toca Rock no intervalo.
-- 📱 **Participação pelo celular** — escaneie o QR e entre na sessão instantaneamente.
-- 🎤 **Fila de músicas em tempo real** — os cantores pedem, o host controla (marcar cantada, pular, remover).
-- 🎚️ **Controle de tom (pitch shift)** para quem quer cantar em outro tom.
-- 🧑🤝🧑 **Presença online** — o host vê quem está conectado.
-- 📂 **Catálogo de músicas** — busca com cache no Firestore e capas via iTunes.
-- ⬇️ **Download automático do YouTube** — o cantor pesquisa só artista e música (nomes vindos do iTunes, para saírem escritos igual dos dois lados). O Voxly procura as versões de karaokê, filtra e ordena por relevância, canal e data de postagem, e **quem escolhe a versão é o KJ** — pelos cards, com duração, visualizações e idade do vídeo. Padrão 1080p, configurável em ⚙ Config.
-- 🎚️ **Versões no acervo** — a mesma música costuma existir em vários canais. O KJ escolhe qual toca, procura outras no YouTube mesmo já tendo o arquivo, apaga do disco a que não quer, ou aponta um arquivo à mão (📎 Vincular).
-- 🗣️ **Chamada por voz (opcional)** — anuncia o próximo cantor com vozes neurais brasileiras do **Piper**. Não vem instalada: o KJ marca em ⚙ Config e o app baixa e configura. A chamada fica em loop durante os 30s de confirmação.
+**Sessão e telas**
+- 🎵 **Sessões ao vivo** — o host inicia uma sessão e gera um código + QR Code. O badge no topo mostra a casa e o horário; clicando nele o KJ **edita nome, data e horário sem derrubar** a sessão. **💥 Derrubar sessão** apaga qualquer sessão em aberto, inclusive presas em outra máquina.
+- 🖥️ **3 telas** — **Gerência** (KJ), **Palco** (vídeo em tela cheia) e **Público** (opcional), que espelha o vídeo do Palco junto com o cantor, o avatar, os próximos da fila e o QR grande. A **chamada do próximo cantor** aparece no Palco e no Público.
+- ⏱️ **Horário do show** — o KJ define quando o show começa; o público e o app dos cantores mostram a **contagem regressiva**. Sem música tocando, a tela do público alterna um **guia animado** de como participar.
+- 🕐 **Relógio do KJ** — hora atual na barra do topo e quanto falta na sessão ("termina em 1h12"). Na tolerância fica âmbar ("pedidos fecham em 3 min"); depois, vermelho.
 - ⏳ **Prazo da sessão** — a sessão acaba no horário que o KJ marcou, com 5 minutos de tolerância. Depois disso o cantor não põe mais música; o KJ segue tocando o que está na fila.
 - 🔒 **Uma sessão por vez** — abrir uma nova expurga as anteriores e os cantores das sessões antigas são desconectados.
-- 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases.
+
+**Fila**
+- 🎤 **Fila em tempo real** — os cantores pedem pelo celular, o host controla (tocar, pular, trocar a música de alguém, remover, adicionar cantor e música à mão). O pedido nunca entra duas vezes, mesmo com clique repetido.
+- ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**.
+- ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. Pode ser desligado nas regras.
+- 🧑‍🤝‍🧑 **Presença online** — o host vê quem está conectado e **quantas músicas cada um já cantou** na noite.
+
+**Som**
+- 🎚️ **Controle de tom (pitch shift)** para quem quer cantar em outro tom.
+- 🔊 **Fader de volume** na Gerência, ao lado do tom — o KJ não depende da mesa de som. Fica lembrado entre aberturas.
+- 📏 **Volume igual entre as músicas** — cada arquivo é medido uma vez com o ffmpeg (loudness EBU R128) e o Palco ajusta o ganho ao tocar: música alta desce, baixa sobe, nada é regravado. Vale para o acervo que já existe. Liga/desliga em ⚙ Config → Som.
+- 🤫 **Sem estalo na troca de música** — o som desce e sobe em rampa de milissegundos a cada troca, pausa e parada.
+- 🗣️ **Chamada por voz (opcional)** — anuncia o próximo cantor com vozes neurais brasileiras do **Piper**. Não vem instalada: o KJ marca em ⚙ Config e o app baixa e configura.
+
+**Músicas**
+- 📂 **Catálogo** — o acervo do host é publicado para o app do cantor buscar; o que não está no acervo é sugerido pelo **iTunes** (com o **Deezer** de reserva), já sem versões ao vivo, remixes e repetidas.
+- ⬇️ **Download do YouTube** — o cantor pesquisa só artista e música. O Voxly procura as versões de karaokê, ordena por relevância, canal e data, e **quem escolhe a versão é o KJ** — pelos cards, com duração, visualizações e idade do vídeo. O arquivo é renomeado com os nomes oficiais do iTunes. Padrão 1080p, configurável.
+- 🎚️ **Versões no acervo** — a mesma música costuma existir em vários canais. O KJ escolhe qual toca, procura outras no YouTube mesmo já tendo o arquivo, apaga do disco a que não quer, ou aponta um arquivo à mão (📎 Vincular).
+- 🔧 **yt-dlp sempre atual** — o Voxly mantém a própria cópia do yt-dlp e a atualiza sozinho, conferindo o SHA-256 publicado. Versão velha era a causa nº 1 de "erro 403" no meio do show.
+
+**Registro**
+- 📊 **Relatórios** — cada noite ganha um resumo permanente (participantes, músicas cantadas, quem cantou o quê e quando), guardado antes de a sessão ser apagada. O botão **📊 Relatórios** mostra todas as noites: totais, médias, músicas mais cantadas e quem mais vem, com filtro por casa. A noite em curso aparece "ao vivo".
+
+**Infra**
+- 🎛️ **Temas de intervalo** — playlists editáveis por tema (Rock, Pagode, MPB...). Casa de rock? Só toca Rock no intervalo.
+- 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases (Linux e Windows).
 - 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
 
 ## 🏗️ Arquitetura
@@ -194,7 +219,7 @@ chmod +x Voxly-${VER}.AppImage
 
 | Tela | Janela | O que mostra |
 |---|---|---|
-| **1 · Gerência (KJ)** | Janela principal | Fila, presenças, now-playing, QR, regras, downloads e botão 🎥 **Público** |
+| **1 · Gerência (KJ)** | Janela principal | Fila, presenças (com quantas músicas cada um cantou), now-playing, QR, regras, downloads, tom e fader de volume, relógio, 📊 relatórios e botão 🎥 **Público** |
 | **2 · Palco** | Tela cheia | Vídeo do karaokê, chamada de 30s e anúncio do cantor. É a **única fonte de áudio** |
 | **3 · Público** | Outro monitor | Espelha o vídeo do Palco, mais cantor, avatar, próximos da fila e QR grande. Nasce **mudo** |
 
@@ -222,6 +247,14 @@ app nunca sabia que havia versão nova. Corrigido a partir da v1.1.9.
 > instalação automática é direta no **AppImage**; com o `.deb` pode ser
 > necessário reinstalar o pacote à mão.
 
+**O yt-dlp tem atualização própria.** O YouTube muda com frequência e quebra
+versões antigas — o sintoma é 403/404 no meio do show. O yt-dlp da distro
+costuma estar meses atrás e `yt-dlp -U` se recusa a atualizar instalação vinda
+de gerenciador de pacotes. Por isso o Voxly baixa e mantém a própria cópia (em
+`~/.config/Voxly/bin` no Linux), confere o SHA-256 contra o `SHA2-256SUMS` do
+release oficial e só então troca. Entre a cópia própria e a do sistema, vale a
+mais nova. Estado e botão **Atualizar agora** em ⚙ Config → Motor de download.
+
 ### 🎛️ Temas de intervalo
 No botão **🎛 Temas** do host você cria temas (ex.: *Rock*) com **playlist própria e editável**, montada a partir do catálogo local. O tema ativo define o que toca entre as músicas; sem tema, voltam as faixas animadas padrão.
 
@@ -238,6 +271,7 @@ npx serve public -l 3000
 cd app
 npm test             # node --test test/*.test.js
 npm run lint         # validação de sintaxe dos processos principais
+npm run fumaca       # abre o app de verdade e confere 20 pontos (fora do npm test)
 ```
 
 A suíte cobre sobretudo as falhas que **não** dão erro visível:
@@ -251,6 +285,13 @@ A suíte cobre sobretudo as falhas que **não** dão erro visível:
 | `ligacao.test.js` | `onclick` apontando para função inexistente e erro de sintaxe no `<script>` |
 | `preload-api.test.js` | chamada a `electronAPI` que o preload não expõe (falha em silêncio) |
 | `carga.test.js` | uso antes da declaração no código que roda ao carregar a tela |
+| `carga-execucao.test.js` | roda a carga de cada tela num `vm` — pega o que a análise do `carga.test.js` deixa passar |
+| `copias.test.js` | as regras compartilhadas com o web app não divergiram da cópia |
+| `ordem.test.js`, `prioridade.test.js` | ordem de chegada, arrastar do KJ e o café com leite intercalado |
+| `trava.test.js` | clique repetido não põe a música duas vezes |
+| `loudness.test.js`, `volume.test.js` | medida de volume do ffmpeg, ganho de normalização e curva do fader |
+| `relatorio.test.js`, `relatorio-consolidado.test.js` | resumo de cada noite e a soma entre noites |
+| `ytdlp.test.js`, `yt-falha.test.js` | atualização do yt-dlp (com SHA-256) e o motivo real de cada falha de download |
 
 ### Docker
 ```bash
@@ -271,6 +312,8 @@ make docker-build           # build da imagem
 - **Firebase / Firestore** — autenticação, sessões e fila em tempo real
 - **Firebase Hosting** — web pública dos cantores
 - **Node.js** — servidor LAN, IPC e testes
+- **yt-dlp** (cópia própria, atualizada sozinha) e **ffmpeg** — downloads e medida de volume
+- **Web Audio** — tom (rubberband), normalização, compressor, rampa e fader
 - **qrcode, electron-store, soundtouchjs / rubberband-web**
 
 ## 📁 Estrutura
@@ -283,14 +326,25 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/screens/host.html    # Gerência (KJ)
   src/screens/player.html  # Palco e Público — a mesma página, "?tela=publico" separa
   src/yt-busca.js          # consulta e ranqueamento das versões de karaokê
+  src/ytdlp.js             # cópia própria do yt-dlp: versão, URL, SHA-256
+  src/identificacao.js     # nome oficial do arquivo baixado (iTunes)
   src/casamento.js         # qual arquivo do acervo atende o pedido
   src/versoes.js           # versões da mesma música já baixadas
   src/fila.js              # o que o botão Play faz em cada estado da fila
+  src/loudness.js          # medida de volume (ffmpeg ebur128) e ganho de normalização
+  src/volume.js            # curva do fader do KJ
+  src/relatorio.js         # resumo de cada noite e soma entre noites
+  src/relogio.js           # tempo restante da sessão, para o relógio do KJ
+  src/ordem.js             # ┐ regras que valem nos DOIS lados (Gerência e app
+  src/prioridade.js        # │ do cantor). O web app recebe cópias em
+  src/sessao-regras.js     # │ web/public: `npm run sincronizar-regras`, e o
+  src/trava.js             # │ copias.test.js falha se divergirem
+  src/texto.js             # │
+  src/sugestoes.js         # ┘
   test/                    # testes automatizados (node --test)
 web/                       # web dos cantores (Firebase Hosting)
-  public/                  # index, profile, signup + offline-client.js
-  public/sessao-regras.js  # prazo da sessão — mesma regra no app e no site
-  firestore.rules          # regras de segurança do Firestore
+  public/                  # index, profile, signup + offline-client.js + cópias das regras
+  firestore.rules          # regras de segurança (inclui relatorios/{sessaoId})
 Dockerfile / docker-compose.yml
 .github/workflows/ci-cd.yml   # pipeline CI/CD
 scripts/                 # deploy e health-check

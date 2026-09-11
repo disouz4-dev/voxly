@@ -54,34 +54,61 @@ case "$(uname -m)" in
 esac
 curl -fL -o Voxly.dmg "https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}${ARCH}.dmg"
 
-# Mount and copy to /Applications
-hdiutil attach Voxly.dmg
-cp -R "/Volumes/Voxly/Voxly.app" /Applications/
-hdiutil detach /Volumes/Voxly
+# Mount at a fixed point and copy to /Applications. The .dmg volume carries
+# the version in its name ("Voxly 1.1.25"), so /Volumes/Voxly does not exist.
+hdiutil attach Voxly.dmg -mountpoint /Volumes/VoxlyInstall
+cp -R /Volumes/VoxlyInstall/Voxly.app /Applications/
+hdiutil detach /Volumes/VoxlyInstall
 
-# Open (first time, right-click → Open, since it's not notarized yet)
+# The app is not signed by Apple yet: without this macOS says it "cannot
+# verify" Voxly and refuses to open it.
+xattr -dr com.apple.quarantine /Applications/Voxly.app
+
+# ffmpeg merges video and audio of downloads and measures song loudness
+brew install ffmpeg
+
 open /Applications/Voxly.app
 ```
 
-> ⚠️ macOS may show "unidentified developer" because of **Gatekeeper** (the app is not yet signed/notarized by Apple). To open: **right-click the app → Open → Open**.
+> ⚠️ **Gatekeeper**: the app is not signed/notarized by Apple. On recent macOS versions "right-click → Open" is not enough — use the `xattr` line above (or System Settings → Privacy & Security → **Open Anyway**).
 
 ---
 
 ## ✨ Features
 
-- 🎵 **Live sessions** — the host starts a session and generates a code + QR Code.
-- 🖥️ **3 screens** — **Host** (KJ), **Stage** (karaoke video fullscreen) and an optional **Audience** screen that mirrors the Stage video alongside the singer, their avatar, who is up next and a large QR.
-- ⬇️ **Automatic YouTube downloads** — singers search by artist and title only (names come from iTunes so both sides spell them the same). Voxly finds karaoke versions, filters and ranks them by relevance, channel and upload date, and **the KJ picks the version** from cards showing duration, views and age. 1080p by default.
-- 🗣️ **Optional voice call-ups** — announces the next singer with Brazilian neural voices from **Piper**, installed on demand from Settings.
+**Session and screens**
+- 🎵 **Live sessions** — the host starts a session and generates a code + QR Code. The badge at the top shows the venue and time; clicking it lets the KJ **edit name, date and time without dropping** the session. **💥 Derrubar sessão** wipes any open session, including ones stuck on another machine.
+- 🖥️ **3 screens** — **Host** (KJ), **Stage** (karaoke video fullscreen) and an optional **Audience** screen that mirrors the Stage video alongside the singer, their avatar, who is up next and a large QR. The **next-singer call-up** shows on both Stage and Audience.
+- ⏱️ **Show start time** — the KJ sets when the show begins; the audience screen and the singers' app show a live **countdown**. With no song playing, the audience screen cycles through an **animated how-to-join guide**.
+- 🕐 **KJ clock** — current time in the top bar and how long the session has left ("termina em 1h12"). It turns amber during the grace period ("pedidos fecham em 3 min") and red after it.
 - ⏳ **Session deadline** — the session ends when the KJ said it would, plus 5 minutes of slack. After that singers can no longer queue songs; the KJ keeps playing what is already in the queue.
-- ⏱️ **Show start time** — the KJ sets when the show begins; the audience screen and the singers' app show a live **countdown**.
-- 🎛️ **Interval themes** — editable, theme-based playlists (Rock, Pagode, MPB...). Rock venue? Only rock plays between songs.
-- 📱 **Join from a phone** — scan the QR and join the session instantly.
-- 🎤 **Real-time song queue** — singers request songs, the host controls the queue (mark as sung, skip, remove).
+- 🔒 **One session at a time** — opening a new one purges the previous ones and disconnects their singers.
+
+**Queue**
+- 🎤 **Real-time queue** — singers request from their phones, the host controls it (play, skip, swap someone's song, remove, add a singer and song by hand). A request never lands twice, even on repeated taps.
+- ↕️ **First come, first served** — whoever asked first sings first. The KJ drags to reorder and the app plays **exactly the order on screen**.
+- ☕ **"Café com leite"** — when the wait goes past the limit the KJ sets (40 min by default), people who have not sung yet tonight are **interleaved** with the main queue: one from the queue, one newcomer, another from the queue… The main queue never stops moving. Can be turned off in the rules.
+- 🧑‍🤝‍🧑 **Online presence** — the host sees who is connected and **how many songs each person has sung** tonight.
+
+**Sound**
 - 🎚️ **Pitch shifting** — singers can change the song key to match their voice.
-- 🧑🤝🧑 **Online presence** — the host sees who is currently connected.
-- 📂 **Song catalog** — search with Firestore cache and iTunes artwork.
-- 🔄 **Auto-update** — new installers are downloaded from GitHub Releases.
+- 🔊 **Volume fader** in the Host screen, next to the key control — the KJ does not depend on the sound desk. Remembered across launches.
+- 📏 **Even loudness across songs** — each file is measured once with ffmpeg (EBU R128 loudness) and the Stage applies the gain at playback: loud songs go down, quiet ones go up, nothing is re-encoded. Covers the existing library too. Toggle in ⚙ Config → Som.
+- 🤫 **No pop between songs** — the sound ramps down and up over a few milliseconds on every change, pause and stop.
+- 🗣️ **Optional voice call-ups** — announces the next singer with Brazilian neural voices from **Piper**, installed on demand from Settings.
+
+**Songs**
+- 📂 **Catalog** — the host's library is published for the singers' app to search; songs not in the library are suggested by **iTunes** (with **Deezer** as a fallback), without live versions, remixes and duplicates.
+- ⬇️ **YouTube downloads** — singers search by artist and title only. Voxly finds karaoke versions, ranks them by relevance, channel and upload date, and **the KJ picks the version** from cards showing duration, views and age. The file is renamed with the official iTunes names. 1080p by default.
+- 🎚️ **Library versions** — the same song often exists on several channels. The KJ chooses which one plays, looks for others on YouTube, deletes unwanted files, or links a file by hand (📎 Vincular).
+- 🔧 **Always-current yt-dlp** — Voxly keeps its own copy of yt-dlp and updates it by itself, checking the published SHA-256. An old yt-dlp was the #1 cause of "403 error" mid-show.
+
+**Records**
+- 📊 **Reports** — every night gets a permanent summary (participants, songs sung, who sang what and when), saved before the session is deleted. The **📊 Relatórios** button shows every night: totals, averages, most-sung songs and regulars, with a per-venue filter. Tonight shows up as "ao vivo" (live).
+
+**Infra**
+- 🎛️ **Interval themes** — editable, theme-based playlists (Rock, Pagode, MPB...). Rock venue? Only rock plays between songs.
+- 🔄 **Auto-update** — new installers are downloaded from GitHub Releases (Linux and Windows).
 - 🔌 **Offline fallback (LAN)** — even without internet the karaoke keeps going (details below).
 
 ## 🏗️ Architecture
@@ -170,16 +197,14 @@ sudo apt-get remove voxly
 
 #### **AppImage**
 ```bash
-# Navigate to the directory where the installers were generated
-cd dist
-
-# Make executable
+# Download the latest version (a Voxly-*.AppImage glob would pick up old
+# downloads still in the folder)
 VER=$(curl -s https://api.github.com/repos/disouz4-dev/voxly/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4 | tr -d v)
 [ -n "$VER" ] || { echo "Could not resolve the latest version"; exit 1; }
 wget -O Voxly-${VER}.AppImage https://github.com/disouz4-dev/voxly/releases/download/v$VER/Voxly-${VER}.AppImage
-chmod +x Voxly-${VER}.AppImage
 
-# Run
+# Make executable and run
+chmod +x Voxly-${VER}.AppImage
 ./Voxly-${VER}.AppImage
 
 # Optional: integrate with the system (creates application menu shortcut)
@@ -192,15 +217,29 @@ chmod +x Voxly-${VER}.AppImage
 
 | Screen | Window | Shows |
 |---|---|---|
-| **1 · Host (KJ)** | Console | Queue, attendance, now-playing, QR, rules and the 🎥 **Audience** toggle |
-| **2 · Stage** | Fullscreen | The karaoke video + intro/preview |
+| **1 · Host (KJ)** | Main window | Queue, attendance (with songs sung per person), now-playing, QR, rules, downloads, key and volume fader, clock, 📊 reports and the 🎥 **Audience** toggle |
+| **2 · Stage** | Fullscreen | The karaoke video, the 30 s call-up and the singer intro. It is the **only audio source** |
 | **3 · Audience** | Another monitor | Mirrors the Stage video, plus singer, avatar, who is up next and a large QR. Starts **muted** |
 
 - The host turns the audience screen on/off with the **🎥 Público** button.
 - **Show start time**: in the *Controle do Palco* panel the KJ sets the time (`🎬 Horário do Show`) and the **audience, stage and singers' app** show a live countdown until the show starts. At the right time, just hit ▶ Play.
 
 ### 🔄 Auto-update
-Installers published as *draft releases* on **GitHub Releases** are detected by `electron-updater` and installed on the next restart (macOS requires Apple signing/notarization).
+Installers published on **GitHub Releases** are detected by `electron-updater`
+and installed on the next restart. It reads `latest-linux.yml` / `latest.yml`
+from the release, which CI uploads since v1.1.9.
+
+> **macOS auto-update does not work**: it requires an app signed and notarized
+> by Apple. `latest-mac.yml` is left out of the release on purpose — download
+> the `.dmg` by hand.
+
+**yt-dlp has its own updater.** YouTube changes often and breaks old versions —
+the symptom is 403/404 mid-show. Distro packages lag months behind and
+`yt-dlp -U` refuses to update package-manager installs. So Voxly downloads and
+keeps its own copy (in `~/.config/Voxly/bin` on Linux), checks its SHA-256
+against the official release's `SHA2-256SUMS`, and only then swaps it in.
+Between its own copy and the system one, the newer wins. Status and an
+**Atualizar agora** button live in ⚙ Config → Motor de download.
 
 ### 🎛️ Interval themes
 In the host's **🎛 Temas** button you create themes (e.g. *Rock*) with your own **editable playlist**, built from the local catalog. The active theme defines what plays between songs; without one, the default animated tracks play.
@@ -218,7 +257,14 @@ npx serve public -l 3000
 cd app
 npm test             # node --test test/*.test.js
 npm run lint         # syntax validation of the main processes
+npm run fumaca       # boots the real app and checks 20 points (outside npm test)
 ```
+
+The suite mostly guards failures that give **no** visible error: songs matched
+to the wrong file, a queue that ignores the KJ's order, a variable used before
+its declaration killing a whole screen at load (`carga.test.js` reads the code,
+`carga-execucao.test.js` actually runs each screen's load in a `vm`), and the
+rules shared with the web app drifting from their copies (`copias.test.js`).
 
 ### Docker
 ```bash
@@ -239,23 +285,40 @@ make docker-build           # build the image
 - **Firebase / Firestore** — authentication, sessions, real-time queue
 - **Firebase Hosting** — public web app for singers
 - **Node.js** — LAN server, IPC, and tests
+- **yt-dlp** (own copy, self-updating) and **ffmpeg** — downloads and loudness measurement
+- **Web Audio** — pitch (rubberband), normalization, compressor, ramp and fader
 - **qrcode, electron-store, soundtouchjs / rubberband-web**
 
 ## 📁 Project layout
 
 ```
-app/                     # Electron app (host + player + LAN server)
-  src/main.js            # main process (boots the LAN server)
-  src/local-server.js    # LAN server: static + REST + SSE
-  src/screens/           # screens (host, player, profile)
-  test/                  # automated tests
-web/                     # singer web app (Firebase Hosting)
-  public/                # index, profile, signup + offline-client.js
-  firestore.rules        # Firestore security rules
+app/                       # Electron app (Host + Stage + Audience + LAN server)
+  src/main.js              # main process: windows, IPC, yt-dlp, Piper, loudness
+  src/preload.js           # the only bridge between screens and the main process
+  src/local-server.js      # LAN server: static + REST + SSE
+  src/screens/host.html    # Host (KJ)
+  src/screens/player.html  # Stage and Audience — same page, "?tela=publico" tells them apart
+  src/yt-busca.js          # karaoke version search and ranking
+  src/ytdlp.js             # own yt-dlp copy: version, URL, SHA-256
+  src/identificacao.js     # official name of a downloaded file (iTunes)
+  src/loudness.js          # loudness measurement (ffmpeg ebur128) and gain
+  src/relatorio.js         # per-night summary and totals across nights
+  src/ordem.js, prioridade.js, sessao-regras.js, trava.js, texto.js, sugestoes.js
+                           # rules shared with the singers' app; copied to
+                           # web/public by `npm run sincronizar-regras`,
+                           # copias.test.js fails if they drift
+  test/                    # automated tests (node --test)
+web/                       # singer web app (Firebase Hosting)
+  public/                  # index, profile, signup + offline-client.js + rule copies
+  firestore.rules          # Firestore security rules (includes relatorios/{sessaoId})
 Dockerfile / docker-compose.yml
 .github/workflows/ci-cd.yml   # CI/CD pipeline
 scripts/                 # deploy and health-check
 ```
+
+> `player.html` serves **both** video screens. When debugging, filter by the
+> query string: without it you are on the Stage, with `?tela=publico` on the
+> Audience.
 
 ## 🤝 Contributing
 
