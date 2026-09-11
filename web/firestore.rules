@@ -43,7 +43,11 @@ service cloud.firestore {
 
     match /sessoes/{sid} {
       allow read:   if logado();
-      allow create: if logado() && request.resource.data.donoUid == eu();
+      // Sem exigir o carimbo: a versao instalada hoje (1.1.25) ainda nao
+      // carimba, e ela precisa abrir a noite normalmente. Sessao sem dono fica
+      // como sempre foi (qualquer Gerencia administra); com dono, so a dona.
+      allow create: if logado() && (!('donoUid' in request.resource.data)
+                                    || request.resource.data.donoUid == eu());
       // A dona manda; sessao abandonada ou antiga, qualquer Gerencia resolve; e
       // o cantor so consegue mandar o pedido de tocar (campo "comando").
       allow update: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
