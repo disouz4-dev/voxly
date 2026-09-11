@@ -107,6 +107,7 @@ open /Applications/Voxly.app
 
 **Records**
 - 📋 **Singer history** — in their profile, singers see everything they sang, night by night, with venue and date. Tapping a song opens a pre-filled request with the same version and key as last time.
+- 📜 **Diary** — everything that happens in a night goes to one file per day (`logs/voxly-YYYY-MM-DD.jsonl` in the app folder, kept for 30 days): every queue and singer change saying whether it came from this machine or from outside, every Stage command, every KJ action, downloads, screen errors. In ⚙ Config: view today's diary (with a filter) or open the folder.
 - 📊 **Reports** — every night gets a permanent summary (participants, songs sung, who sang what and when), saved before the session is deleted. The **📊 Relatórios** button shows every night: totals, averages, most-sung songs and regulars, with a per-venue filter. Tonight shows up as "ao vivo" (live).
 
 **Infra**
@@ -261,6 +262,13 @@ cd app
 npm test             # node --test test/*.test.js
 npm run lint         # syntax validation of the main processes
 npm run fumaca       # boots the real app and checks 20 points (outside npm test)
+```
+
+**Automated show script** — a ~30 min night of 2000s classics on the real app. It plays the KJ (Play, drag, swap, skip) and the singers (request, confirm, decline, arrive late, duet); you only pick the YouTube versions. Every 3 s it checks the house rules and ends with a report built from the diary:
+
+```bash
+npx electron . --remote-debugging-port=9222     # one terminal
+node test/roteiro-show.mjs <report-folder>       # another, with no session open
 ```
 
 The suite mostly guards failures that give **no** visible error: songs matched

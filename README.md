@@ -109,6 +109,7 @@ open /Applications/Voxly.app
 
 **Registro**
 - 📋 **Histórico do cantor** — no perfil, o cantor vê tudo o que cantou, noite a noite, com a casa e a data. Tocar numa música abre o pedido já preenchido, com a mesma versão e o mesmo tom da última vez.
+- 📜 **Diário** — tudo o que acontece numa noite fica num arquivo por dia (`logs/voxly-AAAA-MM-DD.jsonl` na pasta do app, 30 dias guardados): cada mudança na fila e nos cantores dizendo se saiu desta máquina ou veio de fora, cada comando ao Palco, cada ação do KJ, downloads, erros das telas. Em ⚙ Config: ver o diário de hoje (com filtro) ou abrir a pasta.
 - 📊 **Relatórios** — cada noite ganha um resumo permanente (participantes, músicas cantadas, quem cantou o quê e quando), guardado antes de a sessão ser apagada. O botão **📊 Relatórios** mostra todas as noites: totais, médias, músicas mais cantadas e quem mais vem, com filtro por casa. A noite em curso aparece "ao vivo".
 
 **Infra**
@@ -277,11 +278,21 @@ npm run lint         # validação de sintaxe dos processos principais
 npm run fumaca       # abre o app de verdade e confere 20 pontos (fora do npm test)
 ```
 
+**Roteiro de show automatizado** — uma noite de ~30 min de clássicos dos anos 2000 no app de verdade. Ele faz o papel do KJ (Play, arrastar, trocar música, pular) e dos cantores (pedir, confirmar, recusar, chegar atrasado, dueto); você só escolhe as versões do YouTube. A cada 3 s confere as regras da casa (nenhum pedido some, uma música tocando, Gerência e Público na mesma ordem, café com leite só para quem não cantou) e no fim gera um relatório com o diário:
+
+```bash
+npx electron . --remote-debugging-port=9222     # num terminal
+node test/roteiro-show.mjs <pasta-do-relatorio>  # noutro, sem sessão aberta
+```
+
 A suíte cobre sobretudo as falhas que **não** dão erro visível:
 
 | Arquivo | O que trava |
 |---|---|
 | `saidas.test.js` | a prévia da monitoria nunca sai no som da casa |
+| `seguro.test.js` | nome, foto e título vindos de fora não viram código nas telas |
+| `diario.test.js` | o diário nunca quebra: linha única, erro legível, 30 dias guardados |
+| `historico.test.js`, `guia.test.js` | histórico do cantor por noite; guia do Público só com as regras ligadas |
 | `sessao.test.js` (faxina) | sessão com a Gerência aberta não é apagada por outra máquina |
 | `casamento.test.js` | título contido em outro não é a mesma música — o que fazia *Miss You Love* virar *I Miss You* no palco |
 | `versoes.test.js`, `yt-busca.test.js` | ranqueamento e versões locais |
@@ -340,6 +351,11 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/volume.js            # curva do fader do KJ
   src/relatorio.js         # resumo de cada noite e soma entre noites
   src/saidas.js            # saídas de áudio e a regra que impede a prévia de vazar na casa
+  src/diario.js            # formato do diário (logs/voxly-AAAA-MM-DD.jsonl)
+  src/guia.js              # cartões do guia do Público, conforme as regras do KJ
+  src/seguro.js            # escape de HTML e validação de endereço de imagem (copiado para web/public)
+  test/cdp.mjs             # acesso às janelas do app aberto, pelo DevTools
+  test/roteiro-show.mjs    # roteiro de show automatizado
   src/ordem.js             # ┐ regras que valem nos DOIS lados (Gerência e app
   src/prioridade.js        # │ do cantor). O web app recebe cópias em
   src/sessao-regras.js     # │ web/public: `npm run sincronizar-regras`, e o
