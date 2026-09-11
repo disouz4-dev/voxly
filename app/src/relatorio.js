@@ -77,7 +77,70 @@ function resumirSessao({ sessao, fila, presencas, historico, agora } = {}) {
   };
 }
 
-const api = { resumirSessao };
+// ── Varias noites juntas (tela de relatorios) ───────────────
+
+function dataDaNoite(r) {
+  if (!r) return null;
+  return r.inicioPlanejado ?? r.primeiraMusica ?? r.geradoEm ?? null;
+}
+
+// Grafias diferentes da mesma coisa ("Tempo Perdido" / "tempo perdido") tem
+// que somar juntas, senao a mais cantada da casa aparece partida em duas.
+const normal = t => String(t || "").trim().toLowerCase().replace(/\s+/g, " ");
+const umaCasa = n => Math.round(n * 10) / 10;
+
+function consolidarRelatorios(lista) {
+  // So conta como noite o que tem cara de resumo: o banco e compartilhado e
+  // um documento torto nao pode derrubar a tela inteira.
+  const R = (Array.isArray(lista) ? lista : [])
+    .filter(r => r && typeof r === "object" && Array.isArray(r.cantores));
+
+  const musicas = new Map();
+  const pessoas = new Map();
+  let pedidos = 0, cantadas = 0, participantes = 0;
+
+  for (const r of R) {
+    pedidos       += Number(r.pedidos) || 0;
+    cantadas      += Number(r.cantadas) || 0;
+    participantes += Number(r.participantes) || 0;
+
+    for (const x of (Array.isArray(r.musicas) ? r.musicas : [])) {
+      const k = normal(x.musica) + "|" + normal(x.artista);
+      if (!musicas.has(k)) musicas.set(k, { musica: String(x.musica || "—").trim(), artista: String(x.artista || "—").trim(), vezes: 0 });
+      musicas.get(k).vezes++;
+    }
+    // Quem aparece duas vezes na mesma noite (registro velho sem uid) conta
+    // uma noite so.
+    const vistosNaNoite = new Set();
+    for (const c of r.cantores) {
+      const k = normal(c && c.nome);
+      if (!k || k === "—") continue;
+      if (!pessoas.has(k)) pessoas.set(k, { nome: String(c.nome).trim(), noites: 0, cantou: 0 });
+      const p = pessoas.get(k);
+      if (!vistosNaNoite.has(k)) { p.noites++; vistosNaNoite.add(k); }
+      p.cantou += Number(c.cantou) || 0;
+    }
+  }
+
+  return {
+    noites: R.length,
+    pedidos,
+    cantadas,
+    participantesUnicos: pessoas.size,
+    mediaCantadas:      R.length ? umaCasa(cantadas / R.length) : 0,
+    mediaParticipantes: R.length ? umaCasa(participantes / R.length) : 0,
+    maisCantadas: [...musicas.values()]
+      .sort((a, b) => b.vezes - a.vezes || a.musica.localeCompare(b.musica, "pt-BR"))
+      .slice(0, 15),
+    cantoresFrequentes: [...pessoas.values()]
+      .sort((a, b) => b.noites - a.noites || b.cantou - a.cantou || a.nome.localeCompare(b.nome, "pt-BR"))
+      .slice(0, 15),
+    porNoite: [...R].sort((a, b) => (dataDaNoite(b) ?? 0) - (dataDaNoite(a) ?? 0)),
+    casas: [...new Set(R.map(r => r.nomeCasa).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+  };
+}
+
+const api = { resumirSessao, consolidarRelatorios, dataDaNoite };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyRelatorio = api;
 

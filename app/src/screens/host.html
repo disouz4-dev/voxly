@@ -343,6 +343,23 @@ header {
 .tag-manual { background:rgba(255,92,138,.12); color:var(--rosa); }
 .tag-online { background:rgba(103,217,164,.12); color:var(--ok); }
 
+/* ── Relatorios ── */
+.rel-numeros { display:grid; grid-template-columns:repeat(auto-fit, minmax(118px, 1fr)); gap:8px; margin:14px 0 4px; }
+.rel-numero { background:var(--palco2); border:1px solid var(--linha); border-radius:10px; padding:10px 12px; }
+.rel-numero strong { display:block; font-size:1.45rem; color:var(--texto); font-variant-numeric:tabular-nums; line-height:1.15; }
+.rel-numero span { font-family:'Space Mono', monospace; font-size:.58rem; letter-spacing:.14em; text-transform:uppercase; color:var(--mudo); }
+.rel-colunas { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media (max-width:680px) { .rel-colunas { grid-template-columns:1fr; } }
+.rel-lista { list-style:none; margin:0; padding:0; font-size:.8rem; }
+.rel-lista li { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--linha); }
+.rel-lista li small { color:var(--mudo); }
+.rel-lista li b { color:var(--ambar); white-space:nowrap; font-variant-numeric:tabular-nums; font-weight:600; }
+.rel-noite { border:1px solid var(--linha); border-radius:10px; margin-bottom:6px; background:var(--palco2); }
+.rel-noite summary { cursor:pointer; padding:10px 12px; font-size:.82rem; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; }
+.rel-noite summary .rel-resumo { color:var(--mudo); font-size:.74rem; margin-left:auto; }
+.rel-noite .rel-lista { padding:0 12px 8px; }
+.rel-vivo { font-style:normal; font-family:'Space Mono', monospace; font-size:.58rem; letter-spacing:.14em; text-transform:uppercase; color:var(--perigo); }
+
 /* ── Modais ── */
 .modal-overlay {
   display:none; position:fixed; inset:0; z-index:200;
@@ -467,6 +484,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     <button class="btn btn-ghost btn-sm" id="btnIntervalo" onclick="toggleIntervalo()" title="Música de intervalo">🎵 Intervalo</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalTemas()" title="Temas (playlists editáveis) da música de intervalo">🎛 Temas</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalYoutube()" title="Baixar músicas do YouTube">⬇ YouTube</button>
+    <button class="btn btn-ghost btn-sm" onclick="abrirModalRelatorios()" title="Participantes e músicas de todas as noites">📊 Relatórios</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
 </header>
@@ -843,6 +861,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalSessao()">Cancelar</button>
       <button class="btn btn-primary" id="btnConfirmarSessao" onclick="confirmarIniciarSessao()">Iniciar sessão</button>
+    </div>
+  </div>
+</div>
+
+<!-- Relatorios: soma das noites preservadas em relatorios/{sessaoId} -->
+<div class="modal-overlay" id="modalRelatorios">
+  <div class="modal-box" style="width:min(840px,96vw);">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <h2 style="margin:0;flex:1;">📊 Relatórios</h2>
+      <select class="modal-select" id="relatoriosCasa" onchange="desenharRelatorios()" style="width:auto;min-width:170px;"
+              aria-label="Filtrar por casa"></select>
+    </div>
+    <div id="relatoriosCorpo"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="fecharModalRelatorios()">Fechar</button>
     </div>
   </div>
 </div>
@@ -1876,6 +1909,13 @@ https://www.youtube.com/@canal/videos"></textarea>
   // preserva antes. relatorios/{sessaoId} com o mesmo id: rodar duas vezes
   // sobrescreve, nao duplica.
   async function preservarSessao(ref) {
+    const resumo = await resumoDaSessao(ref);
+    if (!resumo) return null;
+    await db.collection('relatorios').doc(ref.id).set(resumo);
+    return resumo;
+  }
+
+  async function resumoDaSessao(ref) {
     const [sessaoSnap, fila, presencas, historico] = await Promise.all([
       ref.get(),
       ref.collection('fila').get(),
@@ -1884,14 +1924,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     ]);
     if (!sessaoSnap.exists) return null;
     const dados = x => x.docs.map(d => ({ id: d.id, ...d.data() }));
-    const resumo = VoxlyRelatorio.resumirSessao({
+    return VoxlyRelatorio.resumirSessao({
       sessao:    { id: ref.id, ...sessaoSnap.data() },
       fila:      dados(fila),
       presencas: dados(presencas),
       historico: dados(historico),
     });
-    await db.collection('relatorios').doc(ref.id).set(resumo);
-    return resumo;
   }
 
   // `exigirRelatorio`: na faxina automatica, sem relatorio salvo nao apaga — a
@@ -3184,6 +3222,98 @@ https://www.youtube.com/@canal/videos"></textarea>
       organizar: document.getElementById('pref-organizar').checked,
     });
     mostrarToast('Preferências salvas');
+  }
+
+  // ── Relatorios ────────────────────────────────────────────
+  // Resumos lidos de relatorios/, mais a noite em curso calculada na hora.
+  let _relatorios = [];
+
+  async function abrirModalRelatorios() {
+    document.getElementById('modalRelatorios').classList.add('open');
+    const corpo = document.getElementById('relatoriosCorpo');
+    corpo.innerHTML = '<div class="empty">Carregando…</div>';
+    try {
+      const snap = await db.collection('relatorios').get();
+      _relatorios = snap.docs.map(d => ({ sessaoId: d.id, ...d.data() }));
+      // A noite em curso so e preservada quando a sessao e apagada. Sem isto
+      // o KJ abria os relatorios no meio do show e nao via a noite de hoje.
+      if (SESSAO_ID) {
+        const atual = await resumoDaSessao(db.collection('sessoes').doc(SESSAO_ID)).catch(() => null);
+        if (atual) {
+          _relatorios = _relatorios.filter(r => r.sessaoId !== atual.sessaoId)
+            .concat({ ...atual, aoVivo: true });
+        }
+      }
+    } catch (e) {
+      corpo.innerHTML = `<div class="empty">Não consegui ler os relatórios (${escHtml(e.message)}).</div>`;
+      return;
+    }
+    const sel = document.getElementById('relatoriosCasa');
+    const escolhida = sel.value;
+    const casas = VoxlyRelatorio.consolidarRelatorios(_relatorios).casas;
+    // Opcoes pelo DOM: nome de casa com aspas quebraria um value="..." montado a mao.
+    sel.replaceChildren(new Option('Todas as casas', ''), ...casas.map(c => new Option(c, c)));
+    sel.value = casas.includes(escolhida) ? escolhida : '';
+    sel.style.display = casas.length > 1 ? '' : 'none';
+    desenharRelatorios();
+  }
+
+  function fecharModalRelatorios() {
+    document.getElementById('modalRelatorios').classList.remove('open');
+  }
+
+  function desenharRelatorios() {
+    const corpo = document.getElementById('relatoriosCorpo');
+    const casa = document.getElementById('relatoriosCasa').value;
+    const c = VoxlyRelatorio.consolidarRelatorios(casa ? _relatorios.filter(r => r.nomeCasa === casa) : _relatorios);
+    if (!c.noites) {
+      corpo.innerHTML = '<div class="empty" style="margin-top:14px;">Nenhuma noite registrada ainda.<br>' +
+        'O relatório de cada noite é guardado quando a sessão é encerrada.</div>';
+      return;
+    }
+    const num = v => Number(v).toLocaleString('pt-BR');
+    const cartao = (v, rotulo) => `<div class="rel-numero"><strong>${num(v)}</strong><span>${rotulo}</span></div>`;
+    const dia = ms => ms ? new Date(ms).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }) : '—';
+    const hm = ms => ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    const qtd = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    const faixa = r => (r.primeiraMusica && r.ultimaMusica) ? ` · ${hm(r.primeiraMusica)}–${hm(r.ultimaMusica)}` : '';
+
+    corpo.innerHTML = `
+      <div class="rel-numeros">
+        ${cartao(c.noites, c.noites === 1 ? 'noite' : 'noites')}
+        ${cartao(c.participantesUnicos, 'cantores diferentes')}
+        ${cartao(c.cantadas, 'músicas cantadas')}
+        ${cartao(c.mediaCantadas, 'músicas por noite')}
+        ${cartao(c.mediaParticipantes, 'cantores por noite')}
+      </div>
+      <div class="rel-colunas">
+        <div>
+          <label class="modal-label">Mais cantadas</label>
+          <ol class="rel-lista">${c.maisCantadas.map(m =>
+            `<li><span>${escHtml(m.musica)} <small>— ${escHtml(m.artista)}</small></span><b>${m.vezes}×</b></li>`
+          ).join('') || '<li>—</li>'}</ol>
+        </div>
+        <div>
+          <label class="modal-label">Quem mais vem</label>
+          <ol class="rel-lista">${c.cantoresFrequentes.map(p =>
+            `<li><span>${escHtml(p.nome)}</span><b>${p.noites} ${p.noites === 1 ? 'noite' : 'noites'} · ${p.cantou} 🎤</b></li>`
+          ).join('') || '<li>—</li>'}</ol>
+        </div>
+      </div>
+      <label class="modal-label">Noite a noite</label>
+      ${c.porNoite.map(r => `
+        <details class="rel-noite">
+          <summary>
+            <strong>${dia(VoxlyRelatorio.dataDaNoite(r))}</strong>
+            <span>${escHtml(r.nomeCasa || '')}${faixa(r)}</span>
+            ${r.aoVivo ? '<em class="rel-vivo">● ao vivo</em>' : ''}
+            <span class="rel-resumo">${qtd(r.participantes, 'cantor', 'cantores')} · ${qtd(r.cantadas, 'cantada', 'cantadas')} · ${r.naoCantadas} sem tocar</span>
+          </summary>
+          <ol class="rel-lista">${(r.musicas || []).map(m =>
+            `<li><span>${hm(m.horario)} ${escHtml(m.musica)} <small>— ${escHtml(m.artista)}</small></span>` +
+            `<span>${escHtml(m.cantor)}${m.dupla ? ' & ' + escHtml(m.dupla) : ''}</span></li>`
+          ).join('') || '<li>Nenhuma música cantada.</li>'}</ol>
+        </details>`).join('')}`;
   }
 
   function openSettings() {
