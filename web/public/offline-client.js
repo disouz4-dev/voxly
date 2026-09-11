@@ -231,9 +231,24 @@
     return q;
   }
 
+  // Lote do Firestore, na medida do servidor local: as operacoes saem em
+  // sequencia, na ordem em que foram pedidas. Nao e atomico como o original,
+  // mas o pedido de musica usa lote e sem isto quebraria no modo offline.
+  function Lote() {
+    const ops = [];
+    const lote = {
+      set: (doc, dados, opts) => { ops.push(() => doc.set(dados, opts)); return lote; },
+      update: (doc, dados) => { ops.push(() => doc.update(dados)); return lote; },
+      delete: (doc) => { ops.push(() => doc.delete()); return lote; },
+      commit: async () => { for (const op of ops) await op(); },
+    };
+    return lote;
+  }
+
   // ── Raiz ──
   const db = {
     collection: (nome) => NoColecao([ nome ]),
+    batch: Lote,
   };
 
   global.VoxlyLocal = {

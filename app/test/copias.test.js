@@ -15,6 +15,7 @@ const path = require("path");
 const PARES = [
   ["src/prioridade.js", "../web/public/prioridade.js"],
   ["src/ordem.js", "../web/public/ordem.js"],
+  ["src/trava.js", "../web/public/trava.js"],
 ];
 
 for (const [origem, copia] of PARES) {

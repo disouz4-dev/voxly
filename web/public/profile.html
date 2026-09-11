@@ -393,6 +393,7 @@
   <script src="/sessao-regras.js"></script>
   <script src="/prioridade.js"></script>
   <script src="/ordem.js"></script>
+  <script src="/trava.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -705,6 +706,10 @@ function escutarFila() {
     let musicaSelecionada = null; // { musica, artista, disponivel, catalogoId, semitons }
     let semitonsEscolhido = 0;
     let itemTrocando      = null; // item sendo substituído (null = novo pedido)
+    // Uma chave por abertura do modal: o pedido vira sempre o MESMO documento,
+    // e o clique repetido reescreve em vez de duplicar (ver trava.js).
+    let chavePedido       = null;
+    const travaPedido     = VoxlyTrava.criarTrava();
 
     async function abrirModal(slot) {
       slotAtivo = slot;
@@ -718,6 +723,8 @@ function escutarFila() {
       document.getElementById('tomContainer').style.display = 'none';
       document.getElementById('naoEncontradaBox').style.display = 'none';
       document.getElementById('btnConfirmar').disabled = true;
+      document.getElementById('btnConfirmar').textContent = 'Confirmar';
+      chavePedido = VoxlyTrava.chaveDePedido(currentUser?.uid);
       musicaSelecionada = null;
       semitonsEscolhido = 0;
       document.getElementById('tomValor').textContent = '0';
@@ -996,7 +1003,11 @@ function escutarFila() {
       document.getElementById('btnConfirmar').disabled = false;
     }
 
-    async function confirmarPedido() {
+    function confirmarPedido() {
+      return travaPedido.executar(enviarPedido);
+    }
+
+    async function enviarPedido() {
       const errEl = document.getElementById('modalError');
       if (!musicaSelecionada) { errEl.textContent = 'Selecione uma música.'; return; }
       if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
@@ -1009,74 +1020,105 @@ function escutarFila() {
         if (slotAtivo === 'espera' && filhaEspera) { errEl.textContent = 'Você já tem uma música em espera.'; return; }
       }
 
-      const selDuo  = document.getElementById('selectDuo');
-      const duoUid  = selDuo?.value || '';
-      const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
-      const temDuo  = !!duoUid;
-      const musica  = musicaSelecionada.musica.replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, '').trim();
+      // Resposta visivel ja no clique: sem ela a tela parecia travada e o
+      // cantor clicava de novo.
+      const btn = document.getElementById('btnConfirmar');
+      btn.disabled = true;
+      btn.textContent = 'Enviando…';
+      errEl.textContent = '';
 
-      let ordemFila, tipo;
-      if (itemTrocando) {
-        // Troca: mantém posição e tipo do item anterior; remove o antigo
-        ordemFila = itemTrocando.ordemFila;
-        tipo      = itemTrocando.tipo || 'normal';
-        await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemTrocando.id).delete();
-      } else {
-        // Novo pedido: coloca no fim e calcula prioridade
-        const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').where('status','==','aguardando').get();
-        // Calculado depois da prioridade (abaixo): e ela que decide onde entra.
-        const presSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(currentUser.uid).get();
-        // Mesma regra da Gerencia, do mesmo arquivo. A conta daqui contava as
-        // musicas em espera como tempo de fila e promovia gente a toa.
-        tipo = VoxlyPrioridade.ehPrioridade({
-          regras: sessaoRegras,
-          jaCantou: !!(presSnap.exists && presSnap.data().primeiraMusicaCantada),
-          fila: filaSnap.docs.map(d => d.data()),
-        }) ? 'prioridade' : 'normal';
-        // MAIOR + 1, nao "quantos ha + 1": com buracos na numeracao o pedido
-        // entrava na frente de quem ja esperava.
-        ordemFila = VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()),
-          { prioridade: tipo === 'prioridade' });
-      }
+      try {
+        const selDuo  = document.getElementById('selectDuo');
+        const duoUid  = selDuo?.value || '';
+        const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
+        const temDuo  = !!duoUid;
+        const duoFoto = temDuo ? (presencasSessao.find(p => p.id === duoUid)?.photoURL || null) : null;
+        const musica  = musicaSelecionada.musica.replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, '').trim();
+        const sessaoRef = db.collection('sessoes').doc(SESSAO_ID);
+        // Tudo num lote so: uma ida a rede, e a troca nunca fica pela metade
+        // (antigo apagado sem o novo gravado).
+        const lote = db.batch();
 
-      const filaRef = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').add({
-        cantorUid:     currentUser.uid,
-        nomeArtistico: perfilData.nomeArtistico,
-        photoURL:      perfilData.photoURL || null,
-        musica,
-        artista:       musicaSelecionada.artista,
-        catalogoId:    musicaSelecionada.catalogoId || null,
-        disponivel:    musicaSelecionada.disponivel,
-        // Identidade do video: e por aqui que o host sabe o que baixar e
-        // reconhece que ja tem o arquivo.
-        videoId:       musicaSelecionada.videoId  || null,
-        videoUrl:      musicaSelecionada.videoUrl || null,
-        duoUid:        duoUid || null,
-        duoNome:       duoNome || null,
-        duoPendente:   temDuo,
-        slot:          slotAtivo,
-        status:        'aguardando',
-        tipo,
-        semitons:      musicaSelecionada.semitons || 0,
-        ordemFila,
-        createdAt:     firebase.firestore.FieldValue.serverTimestamp()
-      });
+        let ordemFila, tipo;
+        if (itemTrocando) {
+          // Troca: mantém posição e tipo do item anterior; remove o antigo
+          ordemFila = itemTrocando.ordemFila;
+          tipo      = itemTrocando.tipo || 'normal';
+          lote.delete(sessaoRef.collection('fila').doc(itemTrocando.id));
+        } else {
+          // As duas leituras sao independentes: em paralelo, uma espera em vez de duas.
+          const [filaSnap, presSnap] = await Promise.all([
+            sessaoRef.collection('fila').where('status','==','aguardando').get(),
+            sessaoRef.collection('presencas').doc(currentUser.uid).get(),
+          ]);
+          // Mesma regra da Gerencia, do mesmo arquivo. A conta daqui contava as
+          // musicas em espera como tempo de fila e promovia gente a toa.
+          tipo = VoxlyPrioridade.ehPrioridade({
+            regras: sessaoRegras,
+            jaCantou: !!(presSnap.exists && presSnap.data().primeiraMusicaCantada),
+            fila: filaSnap.docs.map(d => d.data()),
+          }) ? 'prioridade' : 'normal';
+          // A prioridade decide onde entra: intercalado com a fila principal,
+          // nunca na frente de todo mundo (ordem.js).
+          ordemFila = VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()),
+            { prioridade: tipo === 'prioridade' });
+        }
 
-      if (temDuo) {
-        await db.collection('sessoes').doc(SESSAO_ID).collection('convites').add({
-          deUid:       currentUser.uid,
-          deNome:      perfilData.nomeArtistico,
-          paraUid:     duoUid,
-          paraNome:    duoNome,
-          filaItemId:  filaRef.id,
+        const filaDoc = sessaoRef.collection('fila').doc(chavePedido);
+        lote.set(filaDoc, {
+          cantorUid:     currentUser.uid,
+          nomeArtistico: perfilData.nomeArtistico,
+          photoURL:      perfilData.photoURL || null,
           musica,
-          artista:     musicaSelecionada.artista,
-          status:      'pendente',
-          criadoEm:    firebase.firestore.FieldValue.serverTimestamp()
+          artista:       musicaSelecionada.artista,
+          catalogoId:    musicaSelecionada.catalogoId || null,
+          disponivel:    musicaSelecionada.disponivel,
+          // Identidade do video: e por aqui que o host sabe o que baixar e
+          // reconhece que ja tem o arquivo.
+          videoId:       musicaSelecionada.videoId  || null,
+          videoUrl:      musicaSelecionada.videoUrl || null,
+          duoUid:        duoUid || null,
+          duoNome:       duoNome || null,
+          duoPhotoURL:   duoFoto,
+          duoPendente:   temDuo,
+          slot:          slotAtivo,
+          status:        'aguardando',
+          tipo,
+          semitons:      musicaSelecionada.semitons || 0,
+          ordemFila,
+          createdAt:     firebase.firestore.FieldValue.serverTimestamp()
         });
-      }
 
-      fecharModal();
+        if (temDuo) {
+          // Mesma chave do pedido: o convite tambem nao duplica.
+          lote.set(sessaoRef.collection('convites').doc(chavePedido), {
+            deUid:       currentUser.uid,
+            deNome:      perfilData.nomeArtistico,
+            paraUid:     duoUid,
+            paraNome:    duoNome,
+            filaItemId:  filaDoc.id,
+            musica,
+            artista:     musicaSelecionada.artista,
+            status:      'pendente',
+            criadoEm:    firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        // O Firestore aplica a escrita na tela na hora e so depois confirma
+        // com o servidor. Esperar essa confirmacao para fechar era a demora que
+        // o cantor via; o modal fecha ja, e so uma falha real volta a avisar.
+        const gravacao = lote.commit();
+        fecharModal();
+        gravacao.catch(e => {
+          console.error('[pedido] gravacao falhou:', e);
+          mostrarToast('Não foi possível enviar seu pedido. Tente de novo.', 6000);
+        });
+      } catch (e) {
+        console.error('[pedido]', e);
+        errEl.textContent = 'Não foi possível enviar. Verifique a conexão e tente de novo.';
+        btn.disabled = false;
+        btn.textContent = 'Confirmar';
+      }
     }
 
     async function carregarHistorico() {
@@ -1129,7 +1171,9 @@ function escutarFila() {
       await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(conviteId)
         .update({ status: 'aceito' });
       await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(filaItemId)
-        .update({ duoPendente: false, duoNomeConfirmado: perfilData.nomeArtistico });
+        .update({ duoPendente: false, duoNomeConfirmado: perfilData.nomeArtistico,
+                  // Sem isto a tela do publico mostrava so as iniciais do parceiro.
+                  duoPhotoURL: perfilData.photoURL || null });
     }
 
     async function recusarConvite(conviteId, filaItemId) {

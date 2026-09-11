@@ -942,6 +942,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../chamada.js"></script>
 <script src="../relatorio.js"></script>
 <script src="../ordem.js"></script>
+<script src="../trava.js"></script>
 <script src="../volume.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
@@ -3906,6 +3907,10 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // itemId preenchido = o modal esta trocando a musica de quem ja esta na fila.
   let trocandoItemId = null;
+  // Id do pedido fixado ao abrir o modal: clique duplo reescreve o mesmo item
+  // em vez de por a musica duas vezes (ver trava.js).
+  let chaveManual = null;
+  const travaManual = VoxlyTrava.criarTrava();
 
   function trocarMusicaFila(itemId) {
     const item = filaData.find(i => i.id === itemId);
@@ -3920,6 +3925,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   function abrirModalMusica(preUid = '', preNome = '') {
     if (!SESSAO_ID) return;
     trocandoItemId = null;
+    chaveManual = VoxlyTrava.chaveDePedido('kj');
     document.getElementById('modalMusicaTitulo').textContent = '🎵 Adicionar Música';
     document.getElementById('btnConfirmarMusica').textContent = 'Adicionar à Fila';
     musicaModalSelecionada = null;
@@ -4131,7 +4137,28 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('btnConfirmarMusica').disabled = false;
   }
 
-  async function adicionarMusicaManual() {
+  function adicionarMusicaManual() {
+    return travaManual.executar(gravarMusicaManual);
+  }
+
+  // Foto vem da presenca: o item da fila e o que a tela do publico le, e sem
+  // ela o pedido feito pelo KJ aparecia so com as iniciais.
+  function fotoDaPresenca(uid) {
+    if (!uid) return null;
+    const p = presencasData.find(c => (c.id || c.uid) === uid);
+    return (p && p.photoURL) || null;
+  }
+
+  // O Firestore aplica a escrita na tela na hora; esperar o servidor
+  // confirmar era os segundos que o modal levava para fechar.
+  function gravarSemEsperar(promessa, oQue) {
+    Promise.resolve(promessa).catch(e => {
+      console.error('[kj] ' + oQue + ' falhou:', e);
+      mostrarToast('⚠️ Não foi possível ' + oQue + '. Tente de novo.');
+    });
+  }
+
+  async function gravarMusicaManual() {
     if (!musicaModalSelecionada) return;
 
     // Troca: o pedido continua do mesmo cantor, so muda a musica. Tudo que
@@ -4145,13 +4172,22 @@ https://www.youtube.com/@canal/videos"></textarea>
         statusDownload: null, candidatos: [],
         videoId: null, videoUrl: null, arquivoEscolhido: null,
       };
+      // Item antigo posto pelo KJ nao tinha foto: aproveita a troca para completar.
+      const atual = filaData.find(d => d.id === trocandoItemId);
+      if (atual && !atual.photoURL) {
+        const foto = fotoDaPresenca(atual.cantorUid);
+        if (foto) novo.photoURL = foto;
+      }
+      if (atual && atual.duoUid && !atual.duoPhotoURL) {
+        const fotoDuo = fotoDaPresenca(atual.duoUid);
+        if (fotoDuo) novo.duoPhotoURL = fotoDuo;
+      }
       if (modoOffline) {
-        const it = filaData.find(d => d.id === trocandoItemId);
-        if (it) Object.assign(it, novo);
+        if (atual) Object.assign(atual, novo);
         salvarBackupLocal(); renderQueue();
       } else {
-        await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-          .doc(trocandoItemId).update(novo).catch(() => {});
+        gravarSemEsperar(db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+          .doc(trocandoItemId).update(novo), 'trocar a música');
       }
       mostrarToast(`Música trocada para "${musicaModalSelecionada.musica}"`);
       fecharModalMusica();
@@ -4179,9 +4215,11 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     const item = {
       cantorUid: uid, nomeArtistico: nome,
+      photoURL: fotoDaPresenca(uid),
       musica: musicaModalSelecionada.musica, artista: musicaModalSelecionada.artista,
       disponivel: musicaModalSelecionada.disponivel ?? true,
       duoNome: duoNome || null, duoUid: duoUid || null,
+      duoPhotoURL: fotoDaPresenca(duoUid),
       status: 'aguardando', slot: 'ativa', tipo,
       // MAIOR + 1, nao "quantos ha + 1": com buracos na numeracao o pedido
       // novo entrava na frente de quem ja esperava.
@@ -4189,9 +4227,10 @@ https://www.youtube.com/@canal/videos"></textarea>
       adicionadoEm: modoOffline ? Date.now() : firebase.firestore.FieldValue.serverTimestamp()
     };
     if (!modoOffline) {
-      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').add(item);
+      gravarSemEsperar(db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .doc(chaveManual).set(item), 'adicionar a música');
     } else {
-      filaData.push({ ...item, id: 'local_' + Date.now() });
+      if (!filaData.some(d => d.id === chaveManual)) filaData.push({ ...item, id: chaveManual });
       salvarBackupLocal();
       renderQueue();
     }
