@@ -1492,6 +1492,10 @@ https://www.youtube.com/@canal/videos"></textarea>
       horarioInicio:   firebase.firestore.Timestamp.fromMillis(dados.inicio),
       horarioTermino:  firebase.firestore.Timestamp.fromMillis(dados.termino),
       criadaPor:       usuario ? usuario.uid : null,
+      // Carimbo de dona: e por ele que o banco sabe que esta sessao e DESTA
+      // Gerencia. So a dona manda nela; enquanto ela marcar presenca, ninguem
+      // de fora derruba a noite (firestore.rules).
+      donoUid:         usuario ? usuario.uid : null,
       status:      'ativa',
       filaAberta:  true,
       regras,
@@ -1589,7 +1593,18 @@ https://www.youtube.com/@canal/videos"></textarea>
       if (!confirm(aviso)) return;
 
       mostrarToast('Derrubando...', 4000);
-      for (const doc of snap.docs) await apagarSessao(doc.ref, { exigirRelatorio: false });
+      let recusadas = 0;
+      for (const doc of snap.docs) {
+        try {
+          await apagarSessao(doc.ref, { exigirRelatorio: false });
+        } catch (e) {
+          // O banco so deixa derrubar sessao propria ou abandonada: uma sessao
+          // viva de outra maquina fica de pe, que e o que protege o show dela.
+          if (String(e.code || e.message).includes('permission')) recusadas++;
+          else throw e;
+        }
+      }
+      if (recusadas) mostrarToast(`${recusadas} sessão(ões) em uso por outra Gerência não foram derrubadas`, 8000);
 
       SESSAO_ID = null;
       sessaoCodigo = null;

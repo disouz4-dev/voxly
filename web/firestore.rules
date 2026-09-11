@@ -2,65 +2,109 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Antes /sessoes, /catalogo, /configuracoes e /artistas eram "if true":
-    // qualquer pessoa com o id do projeto conseguia ler e apagar a base inteira
-    // sem autenticar. Agora nada e acessivel sem login.
-    function logado() { return request.auth != null; }
+    // Antes a regra era "quem estiver logado pode tudo". A Gerencia entra com
+    // login anonimo (automatico, invisivel), e login anonimo qualquer pessoa do
+    // mundo consegue fazer: na pratica, qualquer um apagava a fila e a sessao
+    // de qualquer casa. Foi o que a revisao de seguranca de 11/09/2026 mostrou.
+    //
+    // A regra agora nao pergunta QUEM e voce — nada de conta, nada de senha,
+    // nada de passo a mais no computador do KJ. Ela pergunta de quem e a
+    // SESSAO: quem abre carimba a sessao como dona (donoUid), e so a dona
+    // manda nela. O cantor mexe nos proprios pedidos. Estranho nao encosta.
+
+    function logado()  { return request.auth != null; }
+    function eu()      { return request.auth.uid; }
+
+    function dadosDaSessao(sid) {
+      return get(/databases/$(database)/documents/sessoes/$(sid)).data;
+    }
+    function souDono(sid) {
+      return logado() && dadosDaSessao(sid).donoUid == eu();
+    }
+
+    // Sessao abandonada: a Gerencia dona marca presenca a cada minuto
+    // (hostVivoEm). Dez minutos sem marcar = Voxly fechado ou caido, e dai
+    // qualquer Gerencia pode derrubar — e o caso real de "sessao presa em outra
+    // maquina". Enquanto a dona esta viva, ninguem de fora a derruba.
+    function abandonada(d) {
+      return !('hostVivoEm' in d) || d.hostVivoEm < request.time - duration.value(10, 'm');
+    }
+    // Sessao antiga, de antes do carimbo de dono: continua administravel.
+    function semDono(d) { return !('donoUid' in d); }
+
+    function soMudou(campos) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
+    }
 
     match /cantores/{uid} {
       allow read:  if logado();
-      allow write: if logado() && request.auth.uid == uid;
+      allow write: if logado() && uid == eu();
     }
 
-    match /sessoes/{sessaoId} {
-      allow read, write: if logado();
+    match /sessoes/{sid} {
+      allow read:   if logado();
+      allow create: if logado() && request.resource.data.donoUid == eu();
+      // A dona manda; sessao abandonada ou antiga, qualquer Gerencia resolve; e
+      // o cantor so consegue mandar o pedido de tocar (campo "comando").
+      allow update: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
+                                    || semDono(resource.data) || soMudou(['comando']));
+      allow delete: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
+                                    || semDono(resource.data));
 
       match /fila/{itemId} {
-        allow read, write: if logado();
+        allow read:   if logado();
+        // O cantor cria o proprio pedido; a Gerencia cria por qualquer um
+        // (cantor adicionado a mao pelo KJ nao tem conta).
+        allow create: if logado() && (souDono(sid) || request.resource.data.cantorUid == eu());
+        allow update: if logado() && (souDono(sid) || resource.data.cantorUid == eu()
+                                      || (resource.data.duoUid == eu()
+                                          && soMudou(['duoPendente', 'duoNomeConfirmado', 'duoPhotoURL', 'duoUid', 'duoNome'])));
+        allow delete: if logado() && (souDono(sid) || resource.data.cantorUid == eu());
       }
+
       match /presencas/{uid} {
-        allow read, write: if logado();
+        allow read:  if logado();
+        allow write: if logado() && (souDono(sid) || uid == eu());
       }
+
       match /convites/{id} {
-        allow read, write: if logado();
+        allow read:   if logado();
+        allow create: if logado() && (souDono(sid) || request.resource.data.deUid == eu());
+        allow update, delete: if logado() && (souDono(sid) || resource.data.paraUid == eu()
+                                              || resource.data.deUid == eu());
       }
-      match /historico/{id} {
-        allow read, write: if logado();
-      }
-      // Ponte de busca: o cantor grava o termo, o host devolve os candidatos.
-      // Sem esta regra a escrita e negada com 403 e a busca nunca sai do lugar.
+
+      // Ponte de busca: o cantor grava o termo, a Gerencia devolve os candidatos.
       match /buscas/{id} {
-        allow read, write: if logado();
+        allow read:   if logado();
+        allow create: if logado();
+        allow update, delete: if souDono(sid);
       }
-      match /meta/{doc} {
-        allow read, write: if logado();
-      }
+
+      match /historico/{id} { allow read: if logado(); allow write: if souDono(sid); }
+      match /meta/{doc}     { allow read: if logado(); allow write: if souDono(sid); }
     }
 
-    // Resumo permanente de cada noite, gravado pelo host antes de a faxina
-    // apagar a sessao. Mesmo nivel de acesso das sessoes: sem esta regra a
-    // gravacao seria negada e a preservacao, que e todo o ponto, nao aconteceria.
-    match /relatorios/{sessaoId} {
-      allow read, write: if logado();
+    // Resumo permanente de cada noite, gravado pela Gerencia dona antes de a
+    // faxina apagar a sessao (por isso a sessao ainda existe neste momento).
+    match /relatorios/{sid} {
+      allow read: if logado();
+      allow create, update: if souDono(sid);
+      allow delete: if false;
     }
 
-    // Historico pessoal do cantor. Quem grava e a Gerencia, logada com OUTRA
-    // conta: com a regra antiga (so o dono escreve) nenhuma apresentacao era
-    // gravada e o historico do perfil ficava sempre vazio. Ler e apagar
-    // continua sendo so do dono.
+    // Historico pessoal do cantor: ele le o dele; quem grava e a Gerencia dona
+    // da sessao onde a musica foi cantada.
     match /historico/{uid}/apresentacoes/{id} {
-      allow read, delete: if logado() && request.auth.uid == uid;
-      allow create, update: if logado();
+      allow read, delete: if logado() && uid == eu();
+      allow create, update: if logado() && (uid == eu() || souDono(request.resource.data.sessaoId));
     }
 
-    match /catalogo/{itemId} {
-      allow read, write: if logado();
-    }
-    match /configuracoes/{doc} {
-      allow read, write: if logado();
-    }
-    match /artistas/{slug} {
-      allow read, write: if logado();
-    }
+    // Acervo publicado pela Gerencia e cache de fotos de artista que o proprio
+    // app do cantor preenche. Sao dados que o app reescreve sozinho: estragar
+    // aqui nao derruba a noite de ninguem.
+    match /catalogo/{itemId}    { allow read, write: if logado(); }
+    match /artistas/{slug}      { allow read, write: if logado(); }
+    match /configuracoes/{doc}  { allow read: if logado(); allow write: if false; }
   }
 }
