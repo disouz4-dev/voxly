@@ -933,6 +933,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../fila.js"></script>
 <script src="../prioridade.js"></script>
 <script src="../chamada.js"></script>
+<script src="../relatorio.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
@@ -1295,7 +1296,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       for (const doc of snap.docs) {
         // Avisa quem estava dentro antes de apagar, para o app do cantor sair.
         await doc.ref.update({ status: 'encerrada', encerradaEm: Date.now() }).catch(() => {});
-        await apagarSessao(doc.ref);
+        // Sem exigir relatorio: abrir a noite nao pode ficar refem do resumo da
+        // anterior. Se ele falhar, o aviso aparece e a sessao nova abre igual.
+        await apagarSessao(doc.ref, { exigirRelatorio: false });
       }
       if (snap.size) console.log(`[SESSAO] ${snap.size} sessao(oes) anterior(es) expurgada(s)`);
     } catch (e) {
@@ -1438,7 +1441,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       if (!confirm(aviso)) return;
 
       mostrarToast('Derrubando...', 4000);
-      for (const doc of snap.docs) await apagarSessao(doc.ref);
+      for (const doc of snap.docs) await apagarSessao(doc.ref, { exigirRelatorio: false });
 
       SESSAO_ID = null;
       sessaoCodigo = null;
@@ -1817,7 +1820,40 @@ https://www.youtube.com/@canal/videos"></textarea>
   // depois do prazo — quem para de pedir e o cantor.
   const TOLERANCIA_SESSAO_MS = 5 * 60 * 1000;
 
-  async function apagarSessao(ref) {
+  // Grava o resumo permanente da noite. Chamado dentro de apagarSessao, entao
+  // TODO caminho que apaga — faxina, derrubar, expurgo ao abrir nova sessao —
+  // preserva antes. relatorios/{sessaoId} com o mesmo id: rodar duas vezes
+  // sobrescreve, nao duplica.
+  async function preservarSessao(ref) {
+    const [sessaoSnap, fila, presencas, historico] = await Promise.all([
+      ref.get(),
+      ref.collection('fila').get(),
+      ref.collection('presencas').get(),
+      ref.collection('historico').get(),
+    ]);
+    if (!sessaoSnap.exists) return null;
+    const dados = x => x.docs.map(d => ({ id: d.id, ...d.data() }));
+    const resumo = VoxlyRelatorio.resumirSessao({
+      sessao:    { id: ref.id, ...sessaoSnap.data() },
+      fila:      dados(fila),
+      presencas: dados(presencas),
+      historico: dados(historico),
+    });
+    await db.collection('relatorios').doc(ref.id).set(resumo);
+    return resumo;
+  }
+
+  // `exigirRelatorio`: na faxina automatica, sem relatorio salvo nao apaga — a
+  // sessao espera a proxima rodada. No "Derrubar" o KJ quer a noite livre, entao
+  // apaga mesmo assim e avisa.
+  async function apagarSessao(ref, { exigirRelatorio = true } = {}) {
+    try {
+      await preservarSessao(ref);
+    } catch (e) {
+      console.warn('[RELATORIO] nao consegui preservar', ref.id, e.message);
+      if (exigirRelatorio) throw new Error(`relatorio de ${ref.id} nao foi salvo: ${e.message}`);
+      mostrarToast(`⚠️ O relatório de ${ref.id} não foi salvo antes de apagar`, 8000);
+    }
     for (const sub of SUBCOLECOES_SESSAO) {
       const snap = await ref.collection(sub).get().catch(() => null);
       if (!snap) continue;
@@ -1849,8 +1885,14 @@ https://www.youtube.com/@canal/videos"></textarea>
         }
         if (!vencida) continue;
 
-        await apagarSessao(doc.ref);
-        apagadas++;
+        // Sem relatorio salvo, esta sessao espera a proxima faxina — mas as
+        // outras seguem. Antes uma falha interrompia a limpeza inteira.
+        try {
+          await apagarSessao(doc.ref);
+          apagadas++;
+        } catch (e) {
+          console.warn('[FAXINA] adiada:', e.message);
+        }
       }
 
       if (apagadas) console.log(`[FAXINA] ${apagadas} sessao(oes) vencida(s) removida(s)`);

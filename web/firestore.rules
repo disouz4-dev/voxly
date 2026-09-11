@@ -37,6 +37,13 @@ service cloud.firestore {
       }
     }
 
+    // Resumo permanente de cada noite, gravado pelo host antes de a faxina
+    // apagar a sessao. Mesmo nivel de acesso das sessoes: sem esta regra a
+    // gravacao seria negada e a preservacao, que e todo o ponto, nao aconteceria.
+    match /relatorios/{sessaoId} {
+      allow read, write: if logado();
+    }
+
     match /historico/{uid}/apresentacoes/{id} {
       allow read, write: if logado() && request.auth.uid == uid;
     }
