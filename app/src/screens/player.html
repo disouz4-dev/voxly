@@ -990,8 +990,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Promise(r => setTimeout(r, segundos * 1000 + 15));
   }
 
+  // O fader e o volume GERAL do Voxly. Abertura, intervalo, voz da chamada e a
+  // previa da musica tocam em elementos proprios, fora do grafo — sem isto
+  // o KJ abaixava o fader e o intervalo continuava no mesmo volume.
+  function comFader(base) {
+    return base * VoxlyVolume.ganhoDoFader(volumeKJ);
+  }
+
   function aplicarVolumeKJ(valor) {
     volumeKJ = VoxlyVolume.posicaoValida(valor);
+    if (!intervaloAudio.paused) intervaloAudio.volume = comFader(0.5);
+    if (!previewAudio.paused)   previewAudio.volume   = comFader(1);
     if (!audioCtx || !faderNode) return;
     // setTarget e nao atribuicao direta: pular o ganho de uma vez faz "zipper",
     // um chiado a cada passo do fader.
@@ -1134,7 +1143,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function tocarAbertura() {
     if (isAudience) return;
     aberturaAudio.currentTime = 0;
-    aberturaAudio.volume = 0.85;
+    aberturaAudio.volume = comFader(0.85);
     aberturaAudio.play().catch(() => {});
   }
 
@@ -1266,7 +1275,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       intervaloAudio.src = intervaloFaixas[idx];
     }
-    intervaloAudio.volume = 0.5;
+    intervaloAudio.volume = comFader(0.5);
     intervaloAudio.play().catch(() => {});
   }
 
@@ -1526,7 +1535,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (wav) {
         falaAudio.pause();
         falaAudio.src = toFileUrl(wav);
-        falaAudio.volume = 1;
+        falaAudio.volume = comFader(1);
         falaAudio.muted = false;
         await falaAudio.play().catch(() => {});
         // Espera o fim: sem isto a proxima repeticao entrava por cima.
@@ -1543,7 +1552,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!window.speechSynthesis) return;
     speechSynthesis.cancel();
     const fala = new SpeechSynthesisUtterance(texto);
-    fala.lang = 'pt-BR'; fala.rate = 1; fala.pitch = 1; fala.volume = 1;
+    fala.lang = 'pt-BR'; fala.rate = 1; fala.pitch = 1; fala.volume = comFader(1);
     const voz = escolherVoz();
     if (voz) fala.voice = voz;
     speechSynthesis.speak(fala);
@@ -1776,7 +1785,7 @@ intervaloDeck = [];
           // Música de fundo a partir do segundo 30 — volume moderado
           if (!isAudience && dados.filePath) {
             previewAudio.src    = toFileUrl(dados.filePath) + "#t=30";
-            previewAudio.volume = 1.0;
+            previewAudio.volume = comFader(1);
             previewAudio.play().catch(() => {});
 
             // barra de progresso da música (15s visíveis)
