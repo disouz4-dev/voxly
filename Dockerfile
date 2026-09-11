@@ -4,12 +4,14 @@
 
 # Stage 1: Install dependencies
 FROM node:22-alpine AS deps
+RUN apk upgrade --no-cache && npm install -g npm@latest
 WORKDIR /app
 COPY app/package*.json ./
 RUN npm ci --only=production && npm cache clean --force
 
 # Stage 2: Build Electron app
 FROM node:22-alpine AS builder
+RUN apk upgrade --no-cache && npm install -g npm@latest
 WORKDIR /app
 RUN apk add --no-cache python3 make g++ \
     && npm install -g electron-builder
@@ -20,6 +22,7 @@ RUN npm run build:win
 
 # Stage 3: Production image (for serving web app)
 FROM node:22-alpine AS runner
+RUN apk upgrade --no-cache && npm install -g npm@latest
 WORKDIR /app
 ENV NODE_ENV=production
 
