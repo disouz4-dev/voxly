@@ -189,6 +189,14 @@
     .fila-slot.ativa { border-color:var(--accent2); }
     .hist-duo { color:var(--accent2); }
     .badge-cantada { background:rgba(103,217,164,.14); }
+    /* Historico agrupado por noite; cada musica e um botao de pedir de novo. */
+    .hist-noite + .hist-noite { margin-top: 18px; }
+    .hist-noite-titulo { font-family:'Space Mono', monospace; font-size:.68rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); padding-bottom:6px; border-bottom:1px solid #ffffff14; display:flex; justify-content:space-between; gap:8px; }
+    .hist-noite-titulo span { color:var(--muted); letter-spacing:.06em; }
+    button.hist-item { width:100%; background:none; border:none; border-bottom:1px solid #ffffff08; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+    button.hist-item:hover .hist-pedir, button.hist-item:focus-visible .hist-pedir { background:var(--accent2); color:#fff; }
+    button.hist-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .hist-pedir { font-size:.7rem; font-weight:700; padding:5px 10px; border-radius:8px; border:1px solid var(--accent2); color:var(--accent2); align-self:center; flex-shrink:0; white-space:nowrap; }
     .badge-pulada  { background:rgba(255,107,107,.16); }
     .bottom-nav { background:rgba(18,20,27,.9); backdrop-filter:blur(10px); border-top:1px solid var(--linha,#262b37); }
     .nav-btn.active { color:var(--accent); }
@@ -396,6 +404,7 @@
   <script src="/trava.js"></script>
   <script src="/texto.js"></script>
   <script src="/sugestoes.js"></script>
+  <script src="/historico.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -464,6 +473,8 @@
       if (!u) { window.location.href = '/index.html'; return; }
       currentUser = u;
       await carregarPerfil();
+      // O historico e do cantor, nao da sessao: aparece mesmo sem sessao aberta.
+      carregarHistorico();
 
       const temSessao = await resolverSessao();
       if (temSessao) {
@@ -1110,25 +1121,76 @@ function escutarFila() {
       }
     }
 
+    // Historico pessoal: o que o cantor cantou, noite a noite, gravado pela
+    // Gerencia quando a musica termina. Tocar numa musica abre o pedido ja
+    // preenchido, com a mesma versao e o mesmo tom da ultima vez.
+    let _historico = new Map();   // id -> entrada
+
     async function carregarHistorico() {
-      const snap = await db.collection('historico').doc(currentUser.uid).collection('apresentacoes').orderBy('data','desc').limit(20).get();
       const el = document.getElementById('historicoList');
-      if (snap.empty) { el.innerHTML='<div class="empty">Nenhuma apresentação ainda.</div>'; return; }
-      el.innerHTML = snap.docs.map(doc => {
-        const d = doc.data();
-        const data = d.data?.toDate ? d.data.toDate() : new Date();
-        const dia  = data.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
-        const hora = data.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-        return `<div class="hist-item">
-          <div class="hist-date">${dia}<br><span style="font-size:0.65rem">${hora}</span></div>
-          <div class="hist-info">
-            <div class="hist-musica">${escHtml(d.musica)}</div>
-            <div class="hist-artista">${escHtml(d.artista)}</div>
-            ${d.duoCom?`<div class="hist-duo">🎵 Duo: ${escHtml(d.duoCom.nomeArtistico)}</div>`:''}
-          </div>
-          <span class="hist-badge ${d.status==='cantada'?'badge-cantada':'badge-pulada'}">${d.status==='cantada'?'✓ Cantada':'✗ Pulada'}</span>
-        </div>`;
-      }).join('');
+      if (!el || !currentUser) return;
+      if (modoOffline) { el.innerHTML = '<div class="empty">O histórico aparece quando houver internet.</div>'; return; }
+      let snap;
+      try {
+        snap = await db.collection('historico').doc(currentUser.uid).collection('apresentacoes')
+          .orderBy('data', 'desc').limit(150).get();
+      } catch (e) {
+        console.warn('[HISTORICO]', e);
+        el.innerHTML = '<div class="empty">Não foi possível carregar o histórico agora.</div>';
+        return;
+      }
+      const entradas = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.status !== 'pulada');
+      _historico = new Map(entradas.map(e => [e.id, e]));
+      if (!entradas.length) {
+        el.innerHTML = '<div class="empty">Nenhuma apresentação ainda.<br>As músicas que você cantar aparecem aqui.</div>';
+        return;
+      }
+      const dia  = ms => ms ? new Date(ms).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+      const hora = ms => ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      // Id vai em data-*, sem aspas nem caracteres que quebrem o atributo.
+      const idSeguro = id => String(id).replace(/[^\w:.-]/g, '');
+      el.innerHTML = VoxlyHistorico.agruparPorNoite(entradas).map(g => `
+        <div class="hist-noite">
+          <div class="hist-noite-titulo">${escHtml(g.nomeCasa || 'Sessão')}<span>${dia(g.data)}</span></div>
+          ${g.musicas.map(m => `
+            <button class="hist-item" data-hist="${idSeguro(m.id)}" title="Pedir esta música de novo">
+              <div class="hist-date">${hora(m._t)}</div>
+              <div class="hist-info">
+                <div class="hist-musica">${escHtml(m.musica || '—')}</div>
+                <div class="hist-artista">${escHtml(m.artista || '')}${m.semitons ? ` · tom ${m.semitons > 0 ? '+' : ''}${m.semitons}` : ''}</div>
+                ${m.duoCom ? `<div class="hist-duo">🎵 Duo: ${escHtml(m.duoCom.nomeArtistico)}</div>` : ''}
+              </div>
+              <span class="hist-pedir">↩ Pedir de novo</span>
+            </button>`).join('')}
+        </div>`).join('');
+      el.onclick = e => {
+        const b = e.target.closest('[data-hist]');
+        if (b) pedirDoHistorico(b.dataset.hist);
+      };
+    }
+
+    async function pedirDoHistorico(id) {
+      const e = _historico.get(id);
+      if (!e) return;
+      if (!SESSAO_ID || !sessaoAtiva) { mostrarToast('Entre numa sessão para pedir esta música de novo.', 4000); return; }
+      if (!filaAberta) { mostrarAvisoFilaFechada(); return; }
+      if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
+        mostrarToast('A sessão desta casa já encerrou — não dá mais para colocar música.', 4000);
+        return;
+      }
+      const slot = VoxlyHistorico.slotParaPedido({ ativa: filhaAtiva, espera: filhaEspera });
+      if (!slot) { mostrarToast('Você já tem uma música na fila e outra em espera.', 4000); return; }
+
+      itemTrocando = null;
+      await abrirModal(slot);
+      // Disponivel = ja esta no acervo da casa; senao a Gerencia baixa pelo
+      // video guardado, a mesma versao que tocou da outra vez.
+      const acervo = (await garantirCatalogo().catch(() => null)) || [];
+      const alvo = VoxlyTexto.normalizar(e.artista) + '|' + VoxlyTexto.normalizar(e.musica);
+      const disponivel = acervo.some(c => VoxlyTexto.normalizar(c.artista) + '|' + VoxlyTexto.normalizar(c.musica) === alvo);
+      selecionarMusica(e.catalogoId || null, e.musica, e.artista, disponivel);
+      Object.assign(musicaSelecionada, { videoId: e.videoId || null, videoUrl: e.videoUrl || null });
+      if (e.semitons) mudarTom(e.semitons);
     }
 
     function escutarConvites() {
@@ -1498,6 +1560,8 @@ function escutarFila() {
     function escHtml(t) { const d=document.createElement('div');d.textContent=t;return d.innerHTML; }
 
     document.getElementById('modalOverlay').addEventListener('click', e => {
+      // Durante o envio o modal nao fecha por fora: o pedido entraria mesmo assim.
+      if (travaPedido.ocupada) return;
       if (e.target===document.getElementById('modalOverlay')) fecharModal();
     });
 

@@ -44,8 +44,13 @@ service cloud.firestore {
       allow read, write: if logado();
     }
 
+    // Historico pessoal do cantor. Quem grava e a Gerencia, logada com OUTRA
+    // conta: com a regra antiga (so o dono escreve) nenhuma apresentacao era
+    // gravada e o historico do perfil ficava sempre vazio. Ler e apagar
+    // continua sendo so do dono.
     match /historico/{uid}/apresentacoes/{id} {
-      allow read, write: if logado() && request.auth.uid == uid;
+      allow read, delete: if logado() && request.auth.uid == uid;
+      allow create, update: if logado();
     }
 
     match /catalogo/{itemId} {

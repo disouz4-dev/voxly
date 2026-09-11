@@ -988,6 +988,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../relatorio.js"></script>
 <script src="../ordem.js"></script>
 <script src="../trava.js"></script>
+<script src="../historico.js"></script>
 <script src="../sessao-regras.js"></script>
 <script src="../texto.js"></script>
 <script src="../sugestoes.js"></script>
@@ -2597,15 +2598,23 @@ https://www.youtube.com/@canal/videos"></textarea>
             duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
             status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
           }),
-          db.collection('historico').doc(item.cantorUid).collection('apresentacoes').add({
-            sessaoId: SESSAO_ID, musica: item.musica, artista: item.artista,
-            duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
-            status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
-          }),
           db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
             .update({ primeiraMusicaCantada: true,
                       musicasCantadas: firebase.firestore.FieldValue.increment(1) }),
         ]).catch(e => console.error('[HOST] Erro histórico:', e));
+
+        // Historico pessoal, que o cantor ve no perfil e de onde pede de novo.
+        // Id fixo por sessao+pedido: se o fim da musica for tratado duas vezes,
+        // reescreve em vez de duplicar. Cada gravacao com o proprio catch — uma
+        // recusa nao pode esconder a outra.
+        const sessaoDesc = { id: SESSAO_ID, nomeCasa: dadosSessaoAtual && dadosSessaoAtual.nomeCasa, codigo: sessaoCodigo };
+        const gravarHistorico = (uid, quem) =>
+          db.collection('historico').doc(uid).collection('apresentacoes').doc(`${SESSAO_ID}_${itemId}`)
+            .set({ ...VoxlyHistorico.entradaDoHistorico(item, sessaoDesc, { quem }),
+                   data: firebase.firestore.FieldValue.serverTimestamp() })
+            .catch(e => console.warn('[HOST] historico pessoal:', e.message));
+        gravarHistorico(item.cantorUid, 'cantor');
+        if (item.duoUid && item.duoUid !== item.cantorUid && !item.duoPendente) gravarHistorico(item.duoUid, 'duo');
 
         // O parceiro de duo tambem cantou, e o contador e para o KJ enxergar
         // isso. So o contador: a regra do cafe com leite (primeiraMusicaCantada)
