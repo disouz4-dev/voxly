@@ -1622,10 +1622,7 @@ function identificarPorMetadados(meta) {
 // feio, mas achavel; um download pendurado nao e nem uma coisa nem outra.
 const MINUTOS_EDICAO_MANUAL = 3;
 
-// Substituiu o Ollama. Rodar um modelo local so para extrair "artista" e
-// "musica" de um titulo consome CPU e RAM da mesma maquina que esta tocando o
-// show — e ainda dependia de o modelo certo estar baixado, que foi como isso
-// virou "erro de IA" no Linux. O iTunes ja e a fonte oficial dos nomes no app.
+// Substituiu o Ollama (o porque esta no cabecalho de identificacao.js).
 const buscaItunes = criarBuscaItunes({});
 
 // Reserva do iTunes. O iTunes recusa consultas quando a cota do IP estoura e

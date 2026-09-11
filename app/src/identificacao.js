@@ -77,12 +77,6 @@ function escolherDoItunes(resultados, termo) {
   return melhor ? { artista: melhor.artista, musica: melhor.musica } : null;
 }
 
-// O iTunes limita requisicoes por IP, e estourar devolve 403 para tudo que vier
-// depois — inclusive o autocomplete do app do cantor, que e a parte que o
-// publico ve. Duas defesas: cache (a mesma casa repete as mesmas musicas a
-// noite toda) e um teto por minuto que, ao ser atingido, simplesmente desiste
-// da consulta em vez de insistir. Falhar aqui custa um nome feio no arquivo;
-// insistir custa o autocomplete de todo mundo.
 // O nome do canal viaja junto no titulo e polui a consulta: buscar "Periphery
 // Satellites JustusVidyo" no iTunes nao devolve nada. O canal e conhecido no
 // momento do download, entao sai antes — de graca, sem consulta extra.
@@ -116,6 +110,12 @@ function semCanal(titulo, canal) {
 
 const LIMITE_PADRAO_POR_MINUTO = 15;
 
+// O iTunes limita requisicoes por IP, e estourar devolve 403 para tudo que vier
+// depois — inclusive o autocomplete do app do cantor, que e a parte que o
+// publico ve. Duas defesas: cache (a mesma casa repete as mesmas musicas a
+// noite toda) e um teto por minuto que, ao ser atingido, simplesmente desiste
+// da consulta em vez de insistir. Falhar aqui custa um nome feio no arquivo;
+// insistir custa o autocomplete de todo mundo.
 function criarBuscaItunes({ buscar, agora, limitePorMinuto } = {}) {
   const rede  = buscar || ((url, opcoes) => fetch(url, opcoes));
   const clock = agora  || (() => Date.now());
