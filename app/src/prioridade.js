@@ -24,10 +24,19 @@ function minutosDeFila(fila) {
   return contam.length * MINUTOS_POR_MUSICA;
 }
 
-function ehPrioridade({ regras, jaCantou, fila } = {}) {
+// Estados em que o pedido ainda vai tocar nesta noite.
+const PENDENTE = new Set(["aguardando", "confirmando", "confirmado", "pronto", "tocando"]);
+
+// `slot` e `cantorUid` existem porque o cafe com leite e para UMA musica: a da
+// espera nunca e, e quem ja tem um pendente nao ganha outro — o KJ pondo duas
+// musicas a mao, ou a espera promovida, davam cafe em dobro.
+function ehPrioridade({ regras, jaCantou, fila, slot, cantorUid } = {}) {
   const r = regras || {};
   if (r.prioridadeAtiva === false) return false;
   if (jaCantou) return false;
+  if (slot === "espera") return false;
+  if (cantorUid && (Array.isArray(fila) ? fila : []).some(i =>
+    i && i.cantorUid === cantorUid && i.tipo === "prioridade" && PENDENTE.has(i.status))) return false;
 
   // "??" e nao "||": limite zero e uma escolha do KJ (promover sempre), e o
   // "||" a transformava nos 40 do padrao.

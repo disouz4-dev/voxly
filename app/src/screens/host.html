@@ -1982,9 +1982,13 @@ https://www.youtube.com/@canal/videos"></textarea>
   // maquina de apagar a sessao em uso (ver podeApagarNaFaxina).
   function baterPontoDaSessao() {
     if (!SESSAO_ID || modoOffline) return;
-    db.collection('sessoes').doc(SESSAO_ID).update({ hostVivoEm: Date.now() }).catch(() => {});
+    db.collection('sessoes').doc(SESSAO_ID)
+      .update({ hostVivoEm: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
   }
   setInterval(baterPontoDaSessao, 60 * 1000);
+
+  // Batimentos que esta maquina ja viu, por sessao (ver batimentoParado).
+  const _batimentosVistos = new Map();
 
   async function limparSessoesVencidas() {
     const agora = Date.now();
@@ -2000,7 +2004,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         // batimento, outra maquina com o Voxly aberto apagava a sessao (e a
         // fila) que o KJ estava usando.
         if (!VoxlySessao.podeApagarNaFaxina({
-          termino: d.horarioTermino, criadaEm: d.iniciadaEm, hostVivoEm: d.hostVivoEm, agora,
+          termino: d.horarioTermino, criadaEm: d.iniciadaEm, agora,
+          batimentoParado: VoxlySessao.batimentoParado(_batimentosVistos, doc.id, d.hostVivoEm, agora),
         })) continue;
 
         // Sem relatorio salvo, esta sessao espera a proxima faxina — mas as
@@ -2685,8 +2690,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       if (!doc) return;
       const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
         .where('status', '==', 'aguardando').get();
+      // Promovida depois de o cantor cantar: ja nao e cafe com leite, mesmo
+      // que tenha sido pedida assim. Sem zerar o tipo, ela seguia com o ☕ e
+      // contava na alternancia das duas filas.
       await doc.ref.update({
-        slot: 'ativa',
+        slot: 'ativa', tipo: 'normal',
         ordemFila: VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()), { prioridade: false }),
       });
       console.log('[HOST] Música em espera promovida para fila principal.');
@@ -2855,13 +2863,18 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Regras / Config ───────────────────────────────────────
+  function minutosDoCampo(id, padrao) {
+    const n = parseInt(document.getElementById(id).value, 10);
+    return Number.isFinite(n) && n >= 0 ? n : padrao;
+  }
   async function salvarRegras() {
     regras = {
       musicasPorCiclo:     1,
       maxFila:             parseInt(document.getElementById('max-queue').value) || 20,
       segundosConfirmacao: 15,
       prioridadeAtiva:     document.getElementById('prioridade-ativa').checked,
-      prioridadeMinutos:   parseInt(document.getElementById('prioridade-minutos').value) || 40,
+      // 0 e uma escolha valida (cafe com leite sempre); "|| 40" a apagava.
+      prioridadeMinutos:   minutosDoCampo('prioridade-minutos', 40),
       permitirDuo:         document.getElementById('permitir-duo').checked,
       maxParticipacoesDuo: document.getElementById('duo-ilimitado').checked ? 0 : (parseInt(document.getElementById('max-participacoes-duo').value) || 1),
     };
@@ -4583,7 +4596,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     const tipo = VoxlyPrioridade.ehPrioridade({
       regras,
       jaCantou: !!(cantor && cantor.primeiraMusicaCantada),
-      fila: filaData,
+      fila: filaData, slot: 'ativa', cantorUid: uid,
     }) ? 'prioridade' : 'normal';
 
     const item = {

@@ -27,26 +27,41 @@
     return (agora == null ? Date.now() : agora) <= fim + TOLERANCIA_MS;
   }
 
-  // A Gerencia que usa a sessao grava hostVivoEm a cada minuto. Dez minutos
-  // sem batimento = Gerencia fechada ou caida.
+  // A Gerencia que usa a sessao grava hostVivoEm (hora do SERVIDOR) a cada
+  // minuto. Dez minutos sem mudar = Gerencia fechada ou caida.
   const BATIMENTO_MS = 10 * 60 * 1000;
   const HORAS_SEM_TERMINO = 24;   // sessoes antigas, criadas antes do campo existir
+
+  // "Parado" sem comparar relogios de maquinas diferentes: a faxina guarda o
+  // ultimo batimento que viu e so o da como parado se ele nao mudou por
+  // BATIMENTO_MS no relogio DELA. Comparar com o proprio Date.now() fazia uma
+  // maquina com o relogio adiantado apagar a sessao viva de outra.
+  // `memoria`: Map sessaoId -> { valor, vistoEm }, guardado entre passadas.
+  function batimentoParado(memoria, sessaoId, batimento, agoraLocal) {
+    const valor = emMs(batimento);
+    if (valor == null) return true;   // Gerencia antiga, sem batimento: vale o prazo
+    const visto = memoria.get(sessaoId);
+    if (!visto || visto.valor !== valor) {
+      memoria.set(sessaoId, { valor, vistoEm: agoraLocal });
+      return false;
+    }
+    return agoraLocal - visto.vistoEm >= BATIMENTO_MS;
+  }
 
   // A faxina roda em TODA Gerencia aberta: uma segunda maquina com o Voxly
   // aberto apagava a sessao que a primeira estava usando, com a fila, so
   // porque o termino tinha passado. Sessao com Gerencia viva nao se apaga —
   // o fim dela e decisao do KJ (Finalizar, Derrubar, abrir outra).
-  function podeApagarNaFaxina({ termino, criadaEm, hostVivoEm, agora } = {}) {
+  function podeApagarNaFaxina({ termino, criadaEm, batimentoParado: parado, agora } = {}) {
+    if (parado === false) return false;
     const t = agora == null ? Date.now() : agora;
-    const vivo = emMs(hostVivoEm);
-    if (vivo != null && t - vivo < BATIMENTO_MS) return false;
     const fim = emMs(termino);
     if (fim != null) return !podePedirMusica(fim, t);
     const criada = emMs(criadaEm);
     return criada != null && t - criada > HORAS_SEM_TERMINO * 3600e3;
   }
 
-  const api = { TOLERANCIA_MS, BATIMENTO_MS, podePedirMusica, podeApagarNaFaxina };
+  const api = { TOLERANCIA_MS, BATIMENTO_MS, podePedirMusica, podeApagarNaFaxina, batimentoParado };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else raiz.VoxlySessao = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

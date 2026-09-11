@@ -1049,6 +1049,7 @@ function escutarFila() {
             regras: sessaoRegras,
             jaCantou: !!(presSnap.exists && presSnap.data().primeiraMusicaCantada),
             fila: filaSnap.docs.map(d => d.data()),
+            slot, cantorUid: currentUser.uid,
           }) ? 'prioridade' : 'normal';
           // A prioridade decide onde entra: intercalado com a fila principal,
           // nunca na frente de todo mundo (ordem.js).

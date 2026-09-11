@@ -57,3 +57,22 @@ test("sem regras definidas, usa o padrao de 40 minutos", () => {
   assert.strictEqual(ehPrioridade({ jaCantou: false, fila: ativos(10) }), false, "40 min nao passa de 40");
   assert.strictEqual(ehPrioridade({ jaCantou: false, fila: ativos(11) }), true);
 });
+
+// O cafe com leite e para UMA musica: "possam cantar uma musica como
+// prioridade antes de enfrentar a fila extensa". A revisao achou dois
+// caminhos que davam cafe para duas musicas do mesmo cantor.
+test("pedido para a vaga de espera nunca é café com leite", () => {
+  assert.strictEqual(ehPrioridade({ regras: REGRAS, jaCantou: false, fila: ativos(30), slot: "espera" }), false);
+});
+
+test("quem já tem um café com leite na fila não ganha outro", () => {
+  const fila = [...ativos(30), { cantorUid: "novo", tipo: "prioridade", status: "aguardando", slot: "ativa" }];
+  assert.strictEqual(ehPrioridade({ regras: REGRAS, jaCantou: false, fila, cantorUid: "novo" }), false);
+  assert.strictEqual(ehPrioridade({ regras: REGRAS, jaCantou: false, fila, cantorUid: "outro" }), true,
+    "outra pessoa que chegou agora continua tendo direito");
+});
+
+test("café com leite já cantado ou cancelado não bloqueia", () => {
+  const fila = [...ativos(30), { cantorUid: "novo", tipo: "prioridade", status: "cancelada", slot: "ativa" }];
+  assert.strictEqual(ehPrioridade({ regras: REGRAS, jaCantou: false, fila, cantorUid: "novo" }), true);
+});
