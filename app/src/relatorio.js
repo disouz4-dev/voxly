@@ -26,7 +26,7 @@ function chaveDe(x) {
   return (x && (x.cantorUid || x.uid)) || ("nome:" + String((x && x.nomeArtistico) || "").trim().toLowerCase());
 }
 
-const NAO_CANTADA = new Set(["aguardando", "confirmando", "pronto", "cancelada", "tocando"]);
+const NAO_CANTADA = new Set(["aguardando", "confirmando", "confirmado", "pronto", "cancelada", "tocando"]);
 
 function resumirSessao({ sessao, fila, presencas, historico, agora } = {}) {
   const s = sessao || {};

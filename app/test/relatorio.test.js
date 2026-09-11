@@ -115,3 +115,12 @@ test("música pulada não conta como cantada", () => {
   assert.ok(!r.musicas.some(m => m.musica === "Zombie"));
   assert.strictEqual(r.cantores.find(c => c.nome === "Tuca").cantou, 0);
 });
+
+// Tudo o que ainda ia tocar quando a noite acabou conta como nao cantada —
+// inclusive o chamado que confirmou e nao chegou a subir.
+test("não cantadas: todo estado pendente conta, cantada e pulada não", () => {
+  const fila = ["aguardando", "confirmando", "confirmado", "pronto", "tocando", "cancelada", "cantada", "pulada"]
+    .map((status, i) => ({ cantorUid: "u" + i, nomeArtistico: "C" + i, musica: "M" + i, status }));
+  const r = resumirSessao({ sessao: SESSAO, fila, presencas: [], historico: [] });
+  assert.strictEqual(r.naoCantadas, 6);
+});

@@ -1391,33 +1391,7 @@ ipcMain.handle("fetch-image", async (_, url) => {
   }
 });
 
-// ── IPC: SoundTouch source para AudioWorklet ───────────────
-ipcMain.handle("get-soundtouch-src", () => {
-  try {
-    const p = require.resolve("soundtouchjs/dist/soundtouch.js");
-    // Remove export {} para funcionar em contexto não-módulo do AudioWorklet
-    return fs.readFileSync(p, "utf8").replace(/^export\s*\{[^}]*\};\s*$/m, "");
-  } catch(e) {
-    console.error("[MAIN] soundtouchjs não encontrado:", e.message);
-    return "";
-  }
-});
-
-// ── IPC: IP local da máquina ───────────────────────────────
-ipcMain.handle("get-local-ip", () => {
-  const { networkInterfaces } = require("os");
-  const nets = networkInterfaces();
-  for (const ifaces of Object.values(nets)) {
-    for (const iface of ifaces) {
-      if (iface.family === "IPv4" && !iface.internal) return iface.address;
-    }
-  }
-  return "127.0.0.1";
-});
-
 // ── IPC: QR Code ───────────────────────────────────────────
-ipcMain.handle("get-webapp-url", () => store.get("webAppUrl", "https://voxly-karaoke.web.app"));
-ipcMain.handle("set-webapp-url", (_, url) => store.set("webAppUrl", url));
 ipcMain.handle("get-local-webapp-url", () => servidorLocal ? servidorLocal.urlWeb() : null);
 
 // ── IPC: YouTube Download ───────────────────────────────────

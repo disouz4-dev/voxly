@@ -25,12 +25,11 @@ test("todos os canais IPC do main.js estao expostos no preload.js", () => {
 
   assert.ok(canais.length > 10, "esperava pelo menos 10 canais IPC");
 
-  for (const canal of canais) {
-    assert.ok(
-      preload.includes(canal) || preload.includes("invoke"),
-      `canal IPC '${canal}' nao exposto no preload.js`
-    );
-  }
+  // O nome entre aspas: numa funcao exposta ou na lista de canais permitidos.
+  // O "|| preload.includes('invoke')" que havia aqui era sempre verdadeiro —
+  // um canal esquecido no preload passava.
+  const esquecidos = canais.filter(c => !preload.includes(`"${c}"`));
+  assert.deepStrictEqual(esquecidos, [], `canais IPC sem porta no preload.js: ${esquecidos.join(", ")}`);
 });
 
 test("main.js nao expoe invocacao generica de IPC sem sanitizacao", () => {

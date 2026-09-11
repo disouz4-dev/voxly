@@ -119,3 +119,8 @@ test("aceita o Timestamp do servidor como batimento", () => {
   batimentoParado(mem, "s1", ts(1000), 0);
   assert.strictEqual(batimentoParado(mem, "s1", ts(1000), BATIMENTO_MS), true);
 });
+
+test("sem saber do batimento, a faxina decide pelo prazo (como antes do batimento existir)", () => {
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, agora: FIM + 60 * MIN }), true);
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, agora: FIM - MIN }), false);
+});

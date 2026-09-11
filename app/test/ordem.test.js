@@ -146,3 +146,18 @@ test("pedido sem ordemFila vai para o fim, nao para o comeco", () => {
   const fila = [esp("com", 1), { id: "sem", status: "aguardando", slot: "ativa" }];
   assert.deepStrictEqual(ordenarFila(fila).map(i => i.id), ["com", "sem"]);
 });
+
+// Pedido na vaga de espera nao toca neste ciclo: nao pode servir de ancora
+// para a alternancia. Sem fixture com "espera", tirar o filtro de ordem.js
+// deixava a suite verde.
+test("pedido em espera não conta na alternância do café com leite", () => {
+  const fila = [
+    esp("a", 1),
+    esp("x", 1.5, { tipo: "prioridade", slot: "espera" }),   // café na ESPERA: ignorado
+    esp("b", 2),
+  ];
+  // Com o de espera ignorado, o primeiro café real entra logo depois de "a".
+  assert.strictEqual(ordemParaNovo(fila, { prioridade: true }), 1.5);
+  // E um normal vai para o fim, depois de tudo — inclusive do número do de espera.
+  assert.strictEqual(ordemParaNovo(fila, { prioridade: false }), 3);
+});

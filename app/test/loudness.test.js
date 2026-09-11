@@ -110,3 +110,15 @@ test("cache corrompido no disco não derruba nada", () => {
   const c2 = criarCacheMedidas({ "/m/a.mp4": "lixo" });
   assert.strictEqual(c2.obter("/m/a.mp4", { size: 1, mtimeMs: 1 }), null);
 });
+
+// Com framelog ligado (ou um ffmpeg que imprima por quadro), as linhas antes do
+// "Summary:" tambem trazem "I:". So o resumo vale: a loudness integrada da
+// musica inteira, nao a do primeiro quadro.
+test("ignora as linhas por quadro que vêm antes do resumo", () => {
+  const comQuadros = [
+    "[Parsed_ebur128_0 @ 0x1] t: 0.4    TARGET:-23 LUFS    M: -30.2 S:-120.7     I: -35.0 LUFS       LRA:   0.0 LU",
+    "[Parsed_ebur128_0 @ 0x1] t: 0.5    TARGET:-23 LUFS    M: -28.1 S:-120.7     I: -33.1 LUFS       LRA:   0.0 LU",
+    SAIDA_REAL,
+  ].join("\n");
+  assert.deepStrictEqual(lerMedida(comQuadros), { lufs: -21.8, pico: -20.7 });
+});
