@@ -70,6 +70,18 @@ for (const [metodo, nivel] of [["log", "info"], ["info", "info"], ["warn", "avis
 const NIVEL_CONSOLE = ["debug", "info", "aviso", "erro"];
 function vigiarJanela(janela, origem) {
   const wc = janela.webContents;
+  // Uma tela do Voxly nunca abre janela nem navega para fora: se algo tentar
+  // (um dado de fora que virou HTML, um link), e sinal de problema. Bloqueia e
+  // registra no diario, em vez de abrir o navegador do KJ no meio do show.
+  wc.setWindowOpenHandler(({ url }) => {
+    registrar(origem, "janela.tentou-abrir", { url }, "aviso");
+    return { action: "deny" };
+  });
+  wc.on("will-navigate", (e, url) => {
+    if (url === wc.getURL()) return;
+    e.preventDefault();
+    registrar(origem, "janela.tentou-navegar", { url }, "aviso");
+  });
   wc.on("console-message", (_e, nivel, msg, linha, fonte) => {
     registrar(origem, "console", { msg, linha, fonte: fonte ? path.basename(fonte) : null }, NIVEL_CONSOLE[nivel] || "info");
   });

@@ -2,6 +2,22 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
+  <!-- Ver a explicacao em host.html. O Palco so precisa dos proprios arquivos,
+       das fotos ja resolvidas e do servidor local.
+       'unsafe-eval' aqui e por causa do processador de tom (rubberband, que vem
+       pronto de fora e usa eval): sem ele o controle de Tom morre e a musica
+       toca sem ajuste. O resto da politica continua valendo, e a Gerencia — a
+       tela que alcanca apagar arquivos e rodar o yt-dlp — segue sem eval. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://www.gstatic.com;
+    style-src 'self' 'unsafe-inline';
+    font-src 'self' data:;
+    img-src 'self' data: blob: https: http://127.0.0.1:*;
+    media-src 'self' file: blob: data: http://127.0.0.1:*;
+    connect-src 'self' data: blob: https://*.googleapis.com http://127.0.0.1:*;
+    frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';
+  " />
   <style>
 /* =============================================================
    Voxly — design system "Noite de Palco"

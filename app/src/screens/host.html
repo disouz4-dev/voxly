@@ -3,6 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Politica de conteudo: limita o estrago de um dado de fora que vire HTML.
+       Sem ela, um XSS alcancava qualquer endereco da internet. Os enderecos
+       abaixo sao os que a Gerencia realmente usa: Firebase, iTunes e o
+       servidor local do proprio Voxly. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self' 'unsafe-inline' https://www.gstatic.com;
+    style-src 'self' 'unsafe-inline';
+    font-src 'self' data:;
+    img-src 'self' data: blob: https: http://127.0.0.1:*;
+    media-src 'self' file: blob: http://127.0.0.1:*;
+    connect-src 'self' data: https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com
+                https://firebaseinstallations.googleapis.com https://identitytoolkit.googleapis.com
+                https://securetoken.googleapis.com https://itunes.apple.com http://127.0.0.1:*;
+    frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';
+  " />
   <title>Voxly - Gerência</title>
   <style>
 /* =============================================================
