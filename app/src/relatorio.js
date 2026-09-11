@@ -32,7 +32,9 @@ function resumirSessao({ sessao, fila, presencas, historico, agora } = {}) {
   const s = sessao || {};
   const F = Array.isArray(fila) ? fila : [];
   const P = Array.isArray(presencas) ? presencas : [];
+  // O historico da sessao guarda as puladas tambem: so as cantadas contam.
   const H = (Array.isArray(historico) ? historico : [])
+    .filter(h => h && h.status !== "pulada")
     .map(h => ({ ...h, _t: emMs(h.horario) }))
     .sort((a, b) => (a._t ?? Infinity) - (b._t ?? Infinity));
 

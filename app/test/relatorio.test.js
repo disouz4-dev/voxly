@@ -103,3 +103,15 @@ test("cantor sem uid ainda e contado pelo nome", () => {
   assert.strictEqual(r.participantes, 1);
   assert.strictEqual(r.cantores[0].cantou, 1);
 });
+
+// O historico da sessao guarda tambem as puladas (pularMusica grava
+// status 'pulada'). Contadas como cantadas, elas inflavam "cantadas" e
+// entravam em "mais cantadas" — musica que ninguem cantou.
+test("música pulada não conta como cantada", () => {
+  const comPulada = [...HISTORICO,
+    { cantorUid: "c", nomeArtistico: "Tuca", musica: "Zombie", artista: "The Cranberries", horario: T("21:30"), status: "pulada" }];
+  const r = resumirSessao({ sessao: SESSAO, fila: FILA, presencas: PRESENCAS, historico: comPulada });
+  assert.strictEqual(r.cantadas, 2);
+  assert.ok(!r.musicas.some(m => m.musica === "Zombie"));
+  assert.strictEqual(r.cantores.find(c => c.nome === "Tuca").cantou, 0);
+});

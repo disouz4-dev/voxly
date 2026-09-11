@@ -2248,7 +2248,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     const vistos = new Map();
     let primeira = true;
     const parar = ref.onSnapshot(snap => {
-      const origem = snap.metadata.hasPendingWrites ? 'esta-maquina' : 'fora';
+      // Origem por DOCUMENTO: a do snapshot inteiro marcava como "esta maquina"
+      // uma mudanca de fora que chegasse junto de uma escrita local. Remocao
+      // nao traz documento pendente, entao ela usa a do snapshot.
+      const origemDoLote = snap.metadata.hasPendingWrites ? 'esta-maquina' : 'fora';
       if (primeira) {
         primeira = false;
         snap.docs.forEach(d => vistos.set(d.id, d.data()));
@@ -2257,6 +2260,8 @@ https://www.youtube.com/@canal/videos"></textarea>
       }
       for (const ch of snap.docChanges()) {
         const id = ch.doc.id, dados = ch.doc.data();
+        const origem = ch.type === 'removed' ? origemDoLote
+          : (ch.doc.metadata.hasPendingWrites ? 'esta-maquina' : 'fora');
         if (ch.type === 'added') {
           diario(nome + '.entrou', { ...resumo(id, dados), origem });
         } else if (ch.type === 'removed') {
@@ -2502,21 +2507,31 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function tocarMusica(itemId) {
+    const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) { mostrarToast('Esse pedido não está mais na fila'); return; }
+    const item = itemSnap.data();
+    // O arquivo ANTES de mexer em qualquer status. Antes o pedido virava
+    // "tocando" e so depois se descobria que nao havia arquivo: a fila ficava
+    // presa numa musica que nao tocava, e um alert() travava a Gerencia ate
+    // alguem clicar.
+    const filePath = window.electronAPI ? await arquivoDoItem(item) : null;
+    if (window.electronAPI && !filePath) {
+      diario('kj.tocar-sem-arquivo', { id: itemId, musica: item.musica }, 'aviso');
+      mostrarToast(`"${item.musica}" ainda não tem arquivo — use 🔎 Procurar versões ou 📎 Vincular`, 7000);
+      return;
+    }
+
     // Aposenta qualquer chamada em montagem: a musica vai comecar agora.
     _controleChamada.cancelar();
     clearTimeout(timerConfirmacao);
     marcarShowComecou();
-    const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
     const batch = db.batch();
     const tocandoSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
       .where('status', 'in', ['tocando', 'pronto']).get();
-    tocandoSnap.forEach(d => batch.update(d.ref, { status: 'aguardando' }));
+    tocandoSnap.forEach(d => { if (d.id !== itemId) batch.update(d.ref, { status: 'aguardando' }); });
     batch.update(itemRef, { status: 'tocando' });
     await batch.commit();
-
-    const itemSnap = await itemRef.get();
-    const item = itemSnap.data();
-    const filePath = await arquivoDoItem(item);
     currentSong = { id: itemId, ...item, filePath, iniciadoEm: Date.now() };
 
     _jaGerenciouMusica = true;
@@ -2529,16 +2544,12 @@ https://www.youtube.com/@canal/videos"></textarea>
       : (semitons > 0 ? `+${semitons}` : `${semitons}`) + ' st';
 
     if (window.electronAPI) {
-      if (filePath) {
-        window.electronAPI.playerCommand(JSON.stringify({
-          cmd: 'play-confirmed', filePath, semitons,
-          musica: item.musica, artista: item.artista,
-          cantor: item.nomeArtistico, duo: item.duoNome || null,
-          photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
-        }));
-      } else {
-        alert(`Arquivo não encontrado: ${item.musica}\n\nUse "🔎 Procurar versões" para baixar, ou "📎 Vincular" para apontar um arquivo que já está no disco.`);
-      }
+      window.electronAPI.playerCommand(JSON.stringify({
+        cmd: 'play-confirmed', filePath, semitons,
+        musica: item.musica, artista: item.artista,
+        cantor: item.nomeArtistico, duo: item.duoNome || null,
+        photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
+      }));
     }
   }
 
