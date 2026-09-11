@@ -31,10 +31,20 @@ test("restricao de idade aparece como tal", () => {
   assert.match(motivoFalha(1, err), /idade/i);
 });
 
+// Este teste usava um 403 — que e caso CONHECIDO (yt-dlp desatualizado) e
+// passava pelo outro caminho. O caminho do desconhecido nunca era exercitado.
 test("erro desconhecido devolve a mensagem crua do yt-dlp, nao um generico", () => {
+  const err = "ERROR: [youtube] abc: Falha totalmente nova que ninguem viu ainda";
+  const m = motivoFalha(1, err);
+  assert.strictEqual(m, err, "o KJ precisa do texto real para pesquisar ou reportar");
+  assert.doesNotMatch(m, /desatualizado/i, "nao pode chutar a causa que nao conhece");
+});
+
+test("403 explica a causa provavel E mantem o texto original", () => {
   const err = "ERROR: unable to download video data: HTTP Error 403: Forbidden";
   const m = motivoFalha(1, err);
-  assert.match(m, /403/, "o KJ precisa do texto real para pesquisar ou reportar");
+  assert.match(m, /desatualizado/i);
+  assert.match(m, /HTTP Error 403/);
 });
 
 test("falha sem stderr ainda diz o codigo de saida", () => {

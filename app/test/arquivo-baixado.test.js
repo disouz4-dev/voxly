@@ -113,10 +113,25 @@ test("sem merge, vale o Destination", () => {
     "/m/So Audio [abc].m4a");
 });
 
-test("nome com aspas e espacos sobrevive", () => {
+test("nome com apóstrofo e espaços sobrevive", () => {
   assert.strictEqual(
     arquivoDaSaida('[Merger] Merging formats into "/m/Don\'t Stop - Sing King [x].mp4"'),
     "/m/Don't Stop - Sing King [x].mp4");
+});
+
+// O teste acima se chamava "com aspas" e so tinha apostrofo. Aspas duplas sao
+// o caso dificil: o yt-dlp poe o caminho entre aspas duplas. No nome do arquivo
+// ele troca " por ＂, mas a PASTA do KJ pode ter aspas de verdade.
+test("pasta com aspas duplas no caminho sobrevive", () => {
+  assert.strictEqual(
+    arquivoDaSaida('[Merger] Merging formats into "/Volumes/HD/Karaoke "Rock"/Creep [x].mp4"'),
+    '/Volumes/HD/Karaoke "Rock"/Creep [x].mp4');
+});
+
+test("linha com fim do Windows (\\r) nao carrega o \\r no caminho", () => {
+  assert.strictEqual(
+    arquivoDaSaida('[Merger] Merging formats into "C:\\m\\Creep [x].mp4"\r\n[download] 100%'),
+    "C:\\m\\Creep [x].mp4");
 });
 
 test("saida sem nenhuma das duas linhas devolve null", () => {

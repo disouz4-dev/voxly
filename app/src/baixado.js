@@ -52,7 +52,9 @@ function idDaUrl(url) {
 // aparece so em "[Merger] Merging formats into". Lendo apenas a primeira linha,
 // o app terminava apontando para um arquivo que ja nao existia e caia no
 // caminho de adivinhacao — que foi onde nasceu o download trocado.
-const RE_MERGER = /\[Merger\] Merging formats into "([^"]+)"/g;
+// Ate a ULTIMA aspa da linha, nao a primeira: a pasta do KJ pode ter aspas
+// ("Karaoke "Rock"") e o caminho era cortado no meio.
+const RE_MERGER = /\[Merger\] Merging formats into "(.+)"[ \t\r]*$/gm;
 const RE_DESTINO = /\[download\] Destination: (.+)/g;
 
 function ultimoDe(texto, re) {
