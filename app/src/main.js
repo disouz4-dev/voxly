@@ -136,6 +136,14 @@ const _medindoAgora = new Map();   // arquivo -> Promise da medicao em curso
 let _filaMedicao = new Set();      // acervo esperando medicao, em ordem
 let _filaMedicaoRodando = false;
 let _timerAcervo = null;
+let _ultimoSinalPalco = 0;         // ultima vez que o Palco disse "tocando"
+const _falhouMedir = new Set();    // nao insiste no mesmo arquivo nesta execucao
+
+// O Palco avisa a cada meio segundo enquanto toca. Dois segundos sem aviso =
+// parado, pausado ou fechado.
+function palcoTocando() {
+  return Date.now() - _ultimoSinalPalco < 2000;
+}
 
 function medidas() {
   if (!_medidas) {
@@ -166,7 +174,7 @@ function rodarMedicao(arquivo, { fundo = false } = {}) {
   return new Promise(resolve => {
     let saida = "";
     const child = spawn(ffmpeg, [
-      "-hide_banner", "-nostats", "-threads", "1", "-i", arquivo,
+      "-nostdin", "-hide_banner", "-nostats", "-threads", "1", "-i", arquivo,
       "-vn", "-sn", "-dn", "-af", "ebur128=framelog=quiet:peak=sample", "-f", "null", "-",
     ], { windowsHide: true });
     // O acervo inteiro medido em segundo plano nao pode disputar CPU com o
@@ -194,6 +202,7 @@ function medidaDe(arquivo, opcoes) {
   const p = rodarMedicao(arquivo, opcoes).then(m => {
     _medindoAgora.delete(arquivo);
     if (m) { medidas().guardar(arquivo, st, m); salvarMedidasDepois(); }
+    else _falhouMedir.add(arquivo);
     return m;
   });
   _medindoAgora.set(arquivo, p);
@@ -212,10 +221,17 @@ async function processarFilaMedicao() {
   _filaMedicaoRodando = true;
   try {
     while (_filaMedicao.size) {
+      // Com musica tocando, espera: o ffmpeg le o arquivo inteiro do mesmo HD
+      // de onde sai o video, e prioridade de CPU nao alivia o disco. O acervo
+      // e medido nos intervalos e antes do show.
+      while (palcoTocando()) await new Promise(r => setTimeout(r, 5000));
       const arquivo = _filaMedicao.values().next().value;
       _filaMedicao.delete(arquivo);
-      const st = statDeArquivo(arquivo);
-      if (!st || medidas().obter(arquivo, st)) continue;
+      if (_falhouMedir.has(arquivo)) continue;
+      // stat assincrono: milhares de statSync seguidos, num HD externo,
+      // travavam o processo principal (e com ele toda a interface).
+      const st = await fs.promises.stat(arquivo).catch(() => null);
+      if (!st || !st.isFile() || medidas().obter(arquivo, st)) continue;
       await medidaDe(arquivo, { fundo: true });
       // Folga entre uma e outra: mesmo em prioridade minima, medir o acervo
       // de uma vez so ocuparia um nucleo por minutos seguidos.
@@ -1145,6 +1161,9 @@ ipcMain.on("pedir-estado", () => {
 // Acerto de relogio do painel: so o numero, sem tocar no src. Reenviar
 // "play-video" para corrigir deriva recarregaria o arquivo e daria engasgo.
 ipcMain.on("ajustar-tempo-publico", (_e, tempo) => {
+  // O mesmo aviso diz se ha musica tocando: e por ele que a medicao do acervo
+  // sabe quando sair do caminho do video (ver palcoTocando).
+  _ultimoSinalPalco = (tempo && !tempo.parado && !tempo.pausado) ? Date.now() : 0;
   if (!audienceWindow || audienceWindow.isDestroyed()) return;
   audienceWindow.webContents.send("ajustar-tempo", tempo);
 });
@@ -2011,28 +2030,35 @@ async function baixarUrl(opts) {
   };
 }
 
-// Quantos downloads este PROCESSO esta fazendo. A tela recarregada perde a
-// propria memoria do que baixava; e aqui que ela descobre que ainda ha um.
-let ytDownloadsEmCurso = 0;
-ipcMain.handle("yt-em-andamento", () => ytDownloadsEmCurso > 0);
+// Quais itens da fila este PROCESSO esta baixando. A tela recarregada perde
+// a propria memoria do que baixava; e aqui que ela descobre. Por item, e nao
+// um sim/nao: com um download manual rodando, um sim/nao segurava por 20 min
+// os pedidos presos de verdade.
+const ytItensEmCurso = new Map();   // itemId -> quantos downloads
+ipcMain.handle("yt-em-andamento", () => [...ytItensEmCurso.keys()]);
 
 ipcMain.handle("yt-download", async (_, opts) => {
   ytCancelado = false;
-  ytDownloadsEmCurso++;
+  const itemId = (opts && opts.itemId) || null;
+  if (itemId) ytItensEmCurso.set(itemId, (ytItensEmCurso.get(itemId) || 0) + 1);
+  // O itemId vai junto no aviso de fim: se a Gerencia foi recarregada no meio,
+  // quem esperava a resposta morreu, e a tela nova grava o "pronto" por ele.
+  const avisar = (r) => {
+    if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("yt-done", { ...r, itemId });
+  };
   try {
     const resultado = await baixarUrl(opts);
-    if (hostWindow && !hostWindow.isDestroyed()) {
-      hostWindow.webContents.send("yt-done", resultado);
-    }
+    avisar(resultado);
     return resultado;
   } catch (e) {
     console.error("[YT] Erro:", e);
-    if (hostWindow && !hostWindow.isDestroyed()) {
-      hostWindow.webContents.send("yt-done", { sucesso: false, erro: e.message });
-    }
+    avisar({ sucesso: false, erro: e.message });
     return { sucesso: false, erro: e.message };
   } finally {
-    ytDownloadsEmCurso--;
+    if (itemId) {
+      const n = (ytItensEmCurso.get(itemId) || 1) - 1;
+      if (n > 0) ytItensEmCurso.set(itemId, n); else ytItensEmCurso.delete(itemId);
+    }
   }
 });
 

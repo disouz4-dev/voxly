@@ -815,6 +815,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Áudio: compressor + pitch shift ──────────────────────
   let audioCtx   = null;
   let normNode   = null;   // normalizacao de volume: um ganho por musica
+  // Iniciar musica e parar ganham um numero. Quem retoma depois de um await
+  // confere se ainda e a ordem mais recente: sem isto um Pular dado enquanto a
+  // musica esperava o ganho era desfeito — o video voltava a tocar escondido,
+  // junto com o intervalo. Pausa e play tem contador proprio: um Play nao pode
+  // cancelar a musica que esta carregando.
+  let ordemTransporte = 0;
+  let ordemPausa = 0;
   let rampaNode  = null;   // entradas e saidas sem estalo (vai a 0 na troca)
   let faderNode  = null;   // volume do KJ — independente da rampa
   let volumeKJ   = VoxlyVolume.PADRAO;
@@ -1637,6 +1644,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function iniciarVideo(filePath, semitons) {
+    const minhaOrdem = ++ordemTransporte;
+    const vencida = () => minhaOrdem !== ordemTransporte;
     idleAtivo = false;
     pararIntervalo();
     esconderPronto();
@@ -1647,14 +1656,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const ganhoPedido = isAudience ? Promise.resolve(1) : ganhoDoArquivo(filePath);
     // Silencia ANTES de cortar: o corte seco da forma de onda era o estalo.
     await rampar(0, 0.06);
+    if (vencida()) return;
     video.pause();
     video.removeAttribute("src");
     video.load();
     await initAudio();
+    if (vencida()) return;
     resetarPitchNode();
     setSemitons(semitons !== undefined ? semitons : currentSemitons);
     // Com a rampa em zero, trocar o ganho de uma vez nao faz barulho nenhum.
     const ganho = await ganhoPedido;
+    if (vencida()) return;
     if (normNode) normNode.gain.value = ganho;
     video.src = toFileUrl(filePath);
     video.load();
@@ -1907,8 +1919,13 @@ intervaloDeck = [];
       return;
     }
 
-    if (cmd === "play")  { video.play().then(() => rampar(1, 0.12)).catch(() => {}); }
-    if (cmd === "pause") { await rampar(0, 0.05); video.pause(); }
+    if (cmd === "play")  { ordemPausa++; video.play().then(() => rampar(1, 0.12)).catch(() => {}); }
+    if (cmd === "pause") {
+      const minhaOrdem = ++ordemPausa;
+      await rampar(0, 0.05);
+      // Play dado durante a rampa vence: pausar agora desfaria o que o KJ pediu por ultimo.
+      if (minhaOrdem === ordemPausa) video.pause();
+    }
     if (cmd === "restart")          { video.currentTime = 0; video.play().catch(()=>{}); }
     if (cmd === "stop-preview")     { pararLoopChamada(); pararPreview(); mostrarIdleScreen(); }
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
@@ -1930,10 +1947,13 @@ intervaloDeck = [];
         video.load();
         return;
       }
+      // Antes de qualquer await: cancela o iniciarVideo em curso e a intro,
+      // senao eles retomam depois da rampa e poem a musica de volta.
+      ordemTransporte++;
+      clearTimeout(introTimeout);
       await rampar(0, 0.06);   // o Pular tambem estalava ao cortar
       clearTimeout(idleFallbackTimer);
       pararPreview();
-      clearTimeout(introTimeout);
       clearInterval(particleTimer);
       pararSyncPublico();
       pararAbertura();

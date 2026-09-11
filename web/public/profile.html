@@ -480,6 +480,10 @@
     let showHorarioWeb       = null;
     let showContagemWebTimer = null;
     let presencasSessao = []; // cantores ativos na sessão (para o seletor de duo)
+    // Posicao de cada pedido na fila, na ordem que a Gerencia ve. O slot do
+    // cantor mostrava ordemFila, que nao e posicao: e fracionario para o cafe
+    // com leite ("#1.5") e continua crescendo depois que os de cima cantam.
+    let posicaoNaFila = new Map();
 
     async function resolverSessao() {
       const params = new URLSearchParams(window.location.search);
@@ -663,7 +667,7 @@ function escutarFila() {
                 <div class="fila-artista">${escHtml(item.artista)}</div>
                 ${item.duoNome ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px;">🎵 Duo: ${escHtml(item.duoNome)}</div>` : ''}
               </div>
-              ${item.ordemFila ? `<div class="fila-pos" style="flex-shrink:0;">#${item.ordemFila}</div>` : ''}
+              ${posicaoNaFila.get(item.id) ? `<div class="fila-pos" style="flex-shrink:0;">#${posicaoNaFila.get(item.id)}</div>` : ''}
             </div>
             <div style="display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap;">
               ${podeTrocar ? `<button onclick="iniciarTroca('${item.id}','${slot}')" style="background:none;border:1px solid var(--accent2);color:var(--accent2);font-size:0.75rem;font-weight:700;cursor:pointer;padding:4px 10px;border-radius:6px;white-space:nowrap;">✏️ Trocar</button>` : ''}
@@ -976,22 +980,32 @@ function escutarFila() {
 
     async function enviarPedido() {
       const errEl = document.getElementById('modalError');
-      if (!musicaSelecionada) { errEl.textContent = 'Selecione uma música.'; return; }
+      // Copia do estado do modal ANTES de qualquer espera. Lido depois do
+      // await, um modal reaberto no meio do envio misturava os dois pedidos
+      // (musica de um, artista e video do outro).
+      const chave     = chavePedido;
+      const escolhida = musicaSelecionada;
+      const slot      = slotAtivo;
+      const trocando  = itemTrocando;
+      if (!escolhida) { errEl.textContent = 'Selecione uma música.'; return; }
       if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
         errEl.textContent = 'A sessão desta casa já encerrou — não dá mais para colocar música.';
         return;
       }
       // Bloqueia ocupação de slot somente quando não é troca
-      if (!itemTrocando) {
-        if (slotAtivo === 'ativa'  && filhaAtiva)  { errEl.textContent = 'Você já tem uma música na fila principal.'; return; }
-        if (slotAtivo === 'espera' && filhaEspera) { errEl.textContent = 'Você já tem uma música em espera.'; return; }
+      if (!trocando) {
+        if (slot === 'ativa'  && filhaAtiva)  { errEl.textContent = 'Você já tem uma música na fila principal.'; return; }
+        if (slot === 'espera' && filhaEspera) { errEl.textContent = 'Você já tem uma música em espera.'; return; }
       }
 
       // Resposta visivel ja no clique: sem ela a tela parecia travada e o
-      // cantor clicava de novo.
+      // cantor clicava de novo. Cancelar tambem trava: cancelar no meio do
+      // envio fechava o modal, mas o pedido entrava mesmo assim.
       const btn = document.getElementById('btnConfirmar');
+      const btnCancelar = document.querySelector('#modalOverlay .btn-cancelar');
       btn.disabled = true;
       btn.textContent = 'Enviando…';
+      if (btnCancelar) btnCancelar.disabled = true;
       errEl.textContent = '';
 
       try {
@@ -1000,18 +1014,18 @@ function escutarFila() {
         const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
         const temDuo  = !!duoUid;
         const duoFoto = temDuo ? (presencasSessao.find(p => p.id === duoUid)?.photoURL || null) : null;
-        const musica  = musicaSelecionada.musica.replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, '').trim();
+        const musica  = escolhida.musica.replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, '').trim();
         const sessaoRef = db.collection('sessoes').doc(SESSAO_ID);
         // Tudo num lote so: uma ida a rede, e a troca nunca fica pela metade
         // (antigo apagado sem o novo gravado).
         const lote = db.batch();
 
         let ordemFila, tipo;
-        if (itemTrocando) {
-          // Troca: mantém posição e tipo do item anterior; remove o antigo
-          ordemFila = itemTrocando.ordemFila;
-          tipo      = itemTrocando.tipo || 'normal';
-          lote.delete(sessaoRef.collection('fila').doc(itemTrocando.id));
+        if (trocando) {
+          // Troca: mantém posição e tipo do item anterior; o antigo sai depois
+          // que o novo estiver no lote (ver abaixo).
+          ordemFila = trocando.ordemFila;
+          tipo      = trocando.tipo || 'normal';
         } else {
           // As duas leituras sao independentes: em paralelo, uma espera em vez de duas.
           const [filaSnap, presSnap] = await Promise.all([
@@ -1030,42 +1044,48 @@ function escutarFila() {
           ordemFila = VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()),
             { prioridade: tipo === 'prioridade' });
         }
+        if (chave !== chavePedido) return;   // modal reaberto no meio: este envio perdeu a vez
 
-        const filaDoc = sessaoRef.collection('fila').doc(chavePedido);
+        const filaDoc = sessaoRef.collection('fila').doc(chave);
         lote.set(filaDoc, {
           cantorUid:     currentUser.uid,
           nomeArtistico: perfilData.nomeArtistico,
           photoURL:      perfilData.photoURL || null,
           musica,
-          artista:       musicaSelecionada.artista,
-          catalogoId:    musicaSelecionada.catalogoId || null,
-          disponivel:    musicaSelecionada.disponivel,
+          artista:       escolhida.artista,
+          catalogoId:    escolhida.catalogoId || null,
+          disponivel:    escolhida.disponivel,
           // Identidade do video: e por aqui que o host sabe o que baixar e
           // reconhece que ja tem o arquivo.
-          videoId:       musicaSelecionada.videoId  || null,
-          videoUrl:      musicaSelecionada.videoUrl || null,
+          videoId:       escolhida.videoId  || null,
+          videoUrl:      escolhida.videoUrl || null,
           duoUid:        duoUid || null,
           duoNome:       duoNome || null,
           duoPhotoURL:   duoFoto,
           duoPendente:   temDuo,
-          slot:          slotAtivo,
+          slot:          slot,
           status:        'aguardando',
           tipo,
-          semitons:      musicaSelecionada.semitons || 0,
+          semitons:      escolhida.semitons || 0,
           ordemFila,
           createdAt:     firebase.firestore.FieldValue.serverTimestamp()
         });
 
+        // O antigo sai DEPOIS do novo: no Firestore o lote e atomico e a ordem
+        // nao importa, mas no modo offline ele roda em sequencia, e uma falha
+        // entre os dois deixava o cantor sem pedido nenhum.
+        if (trocando) lote.delete(sessaoRef.collection('fila').doc(trocando.id));
+
         if (temDuo) {
           // Mesma chave do pedido: o convite tambem nao duplica.
-          lote.set(sessaoRef.collection('convites').doc(chavePedido), {
+          lote.set(sessaoRef.collection('convites').doc(chave), {
             deUid:       currentUser.uid,
             deNome:      perfilData.nomeArtistico,
             paraUid:     duoUid,
             paraNome:    duoNome,
             filaItemId:  filaDoc.id,
             musica,
-            artista:     musicaSelecionada.artista,
+            artista:     escolhida.artista,
             status:      'pendente',
             criadoEm:    firebase.firestore.FieldValue.serverTimestamp()
           });
@@ -1085,6 +1105,8 @@ function escutarFila() {
         errEl.textContent = 'Não foi possível enviar. Verifique a conexão e tente de novo.';
         btn.disabled = false;
         btn.textContent = 'Confirmar';
+      } finally {
+        if (btnCancelar) btnCancelar.disabled = false;
       }
     }
 
@@ -1147,7 +1169,7 @@ function escutarFila() {
       await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(conviteId)
         .update({ status: 'recusado' });
       await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(filaItemId)
-        .update({ duoPendente: false, duoUid: null, duoNome: null });
+        .update({ duoPendente: false, duoUid: null, duoNome: null, duoPhotoURL: null });
     }
 
     function escutarFilaEvento() {
@@ -1160,6 +1182,8 @@ function escutarFila() {
           const items = VoxlyOrdem.ordenarFila(snap.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
             .filter(d => d.slot !== 'espera'));
+          posicaoNaFila = new Map(items.map((d, i) => [d.id, i + 1]));
+          renderFila();
           if (items.length === 0) { el.innerHTML = '<div class="empty">Fila vazia.</div>'; return; }
           el.innerHTML = items.map((d, i) => {
             const isMinha   = d.cantorUid === currentUser.uid;

@@ -1627,6 +1627,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     try {
       const r = await window.electronAPI.ytDownload({
+        itemId,
         urls: [c.url], pasta: pastaMusicasAtual || undefined,
         artista: item.artista, musica: item.musica,
         qualidade: document.getElementById('candidatosQualidade').value,
@@ -2124,6 +2125,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       // Sem qualidade/renomear/organizar explicitos: valem as preferencias que
       // o KJ definiu em Ajustes.
       const r = await window.electronAPI.ytDownload({
+        itemId: item.id,
         urls: [item.videoUrl],
         pasta: pastaMusicasAtual || undefined,
         artista: item.artista, musica: item.musica,
@@ -2619,7 +2621,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         // O parceiro de duo tambem cantou, e o contador e para o KJ enxergar
         // isso. So o contador: a regra do cafe com leite (primeiraMusicaCantada)
         // continua olhando apenas o dono do pedido, como sempre olhou.
-        if (item.duoUid && item.duoUid !== item.cantorUid) {
+        // Convite ainda pendente = o parceiro nao aceitou, nao cantou junto.
+        if (item.duoUid && item.duoUid !== item.cantorUid && !item.duoPendente) {
           db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.duoUid)
             .update({ musicasCantadas: firebase.firestore.FieldValue.increment(1) })
             .catch(e => console.warn('[HOST] contador do duo:', e.message));
@@ -2732,18 +2735,20 @@ https://www.youtube.com/@canal/videos"></textarea>
   let _primeiraFaxinaDownloads = true;
   async function destravarDownloadsOrfaos() {
     if (!SESSAO_ID || !filaData.length) return;
-    // "Recem aberto" era a primeira passada desta TELA. Recarregar a janela no
-    // meio de um download deixava o processo principal baixando enquanto a
-    // tela liberava o item como orfao — e o KJ baixava a mesma musica de novo.
-    // Aberto de verdade e so quando o processo nao tem download nenhum.
-    let recemAberto = _primeiraFaxinaDownloads;
+    // A memoria desta TELA nao basta: recarregada no meio de um download, ela
+    // esquecia o que o processo principal continuava baixando, liberava o item
+    // como orfao e o KJ baixava a mesma musica de novo. O processo diz quais
+    // itens ainda estao baixando; o resto em "baixando" esta preso de verdade.
+    const recemAberto = _primeiraFaxinaDownloads;
     _primeiraFaxinaDownloads = false;
-    if (recemAberto && window.electronAPI && window.electronAPI.ytEmAndamento) {
-      recemAberto = !(await window.electronAPI.ytEmAndamento().catch(() => false));
+    let doProcesso = [];
+    if (window.electronAPI && window.electronAPI.ytEmAndamento) {
+      doProcesso = await window.electronAPI.ytEmAndamento().catch(() => []);
+      if (!Array.isArray(doProcesso)) doProcesso = [];
     }
     const presos = VoxlyOrfaos.downloadsOrfaos(filaData, {
       agora: Date.now(),
-      emAndamento: _baixando,
+      emAndamento: new Set([..._baixando, ...doProcesso]),
       recemAberto,
     });
     if (!presos.length) return;
@@ -3445,6 +3450,13 @@ https://www.youtube.com/@canal/videos"></textarea>
       mostrarDownload(info);
     });
     window.electronAPI.onYtDone(info => {
+      // Download de um item da fila que esta tela nao comecou: ela foi
+      // recarregada no meio, e quem gravaria o resultado morreu junto.
+      if (info && info.itemId && !_baixando.has(info.itemId) && SESSAO_ID && !modoOffline) {
+        db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(info.itemId)
+          .update({ disponivel: !!info.sucesso, statusDownload: info.sucesso ? 'pronto' : 'erro' })
+          .catch(() => {});
+      }
       document.getElementById('yt-btn-baixar').style.display = '';
       document.getElementById('yt-btn-parar').style.display = 'none';
       if (info && info.sucesso) {
@@ -3820,6 +3832,9 @@ https://www.youtube.com/@canal/videos"></textarea>
     });
   }
   mostrarFaderSalvo();
+  // O Palco costuma pedir o estado antes de esta tela terminar de carregar (ela
+  // ainda baixa o Firebase), e o pedido se perde: manda o volume por conta.
+  playerCmd(JSON.stringify({ cmd: 'volume', valor: volumeSalvo() }));
 
   if (window.electronAPI && window.electronAPI.onAudienceState) {
     window.electronAPI.onAudienceState(ativa => {
