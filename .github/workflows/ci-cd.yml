@@ -53,6 +53,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=
+            # SHA longo: e por ele que o security-scan procura a imagem.
+            type=sha,prefix=,format=long
             type=ref,event=branch
             type=semver,pattern={{version}}
       - uses: docker/build-push-action@v5
