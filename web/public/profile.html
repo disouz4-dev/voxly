@@ -1348,6 +1348,11 @@ function escutarFila() {
 
     async function pedirVoltarFila() {
       if (!itemConfirmando) return;
+      // So recusa quem ainda esta sendo chamado. O botao fica na tela ate a
+      // contagem acabar: um toque depois do auto-confirmar (ou do Play do KJ)
+      // devolvia para a fila um pedido que ja estava pronto ou tocando.
+      const agora = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemConfirmando.id).get();
+      if (!agora.exists || agora.data().status !== 'confirmando') { esconderConfirmacao(); return; }
       const novasRecusas = (itemConfirmando.confirmacoesRecusadas || 0) + 1;
 
       if (novasRecusas >= 2) {
