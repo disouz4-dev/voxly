@@ -41,3 +41,44 @@ test("aceita Timestamp do Firestore, nao so milissegundos", () => {
   assert.strictEqual(podePedirMusica(comoFirestore, FIM + 1 * MIN), true);
   assert.strictEqual(podePedirMusica(comoFirestore, FIM + 6 * MIN), false);
 });
+
+// ── Faxina ──────────────────────────────────────────────────
+// A faxina de sessoes vencidas roda em TODA Gerencia aberta. Uma segunda
+// maquina com o Voxly aberto (o Linux, por exemplo) apagava a sessao que a
+// primeira estava usando — fila primeiro — so porque o horario de termino
+// tinha passado. Sessao com Gerencia viva nao se apaga.
+const { podeApagarNaFaxina, BATIMENTO_MS } = require("../src/sessao-regras.js");
+
+test("sessão vencida e sem Gerência viva: pode apagar", () => {
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, agora: FIM + TOLERANCIA_MS + 1 }), true);
+});
+
+test("sessão vencida, mas com a Gerência batendo o ponto: NÃO apaga", () => {
+  const agora = FIM + 3 * 60 * MIN;
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, hostVivoEm: agora - 2 * MIN, agora }), false);
+});
+
+test("Gerência que parou de bater o ponto há muito tempo: a sessão volta a poder ser apagada", () => {
+  const agora = FIM + 3 * 60 * MIN;
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, hostVivoEm: agora - BATIMENTO_MS - 1, agora }), true);
+});
+
+test("sessão ainda no prazo nunca é apagada", () => {
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, agora: FIM - MIN }), false);
+  assert.strictEqual(podeApagarNaFaxina({ termino: FIM, agora: FIM + TOLERANCIA_MS }), false);
+});
+
+test("sessão antiga sem término: 24 h depois de criada", () => {
+  const criada = FIM;
+  assert.strictEqual(podeApagarNaFaxina({ criadaEm: criada, agora: criada + 23 * 60 * MIN }), false);
+  assert.strictEqual(podeApagarNaFaxina({ criadaEm: criada, agora: criada + 25 * 60 * MIN }), true);
+});
+
+test("sem término nem data de criação: não apaga às cegas", () => {
+  assert.strictEqual(podeApagarNaFaxina({ agora: FIM }), false);
+});
+
+test("aceita Timestamp do Firestore", () => {
+  const ts = ms => ({ toDate: () => new Date(ms) });
+  assert.strictEqual(podeApagarNaFaxina({ termino: ts(FIM), agora: FIM + 60 * MIN }), true);
+});

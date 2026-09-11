@@ -79,13 +79,8 @@ header {
 }
 .header-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
 
-/* Relogio do KJ: hora grande, e abaixo o quanto falta na sessao. A cor so muda
-   quando ha algo a fazer: ambar na tolerancia, vermelho com pedidos fechados. */
-.relogio-kj { display:flex; flex-direction:column; align-items:flex-end; line-height:1.1; margin-right:4px; font-family:'Space Mono', monospace; }
-.relogio-kj strong { font-size:1.05rem; color:var(--texto); letter-spacing:.04em; }
-.relogio-kj span { font-size:.62rem; color:var(--mudo); letter-spacing:.06em; }
-.relogio-kj[data-fase="tolerancia"] span { color:var(--warn); }
-.relogio-kj[data-fase="encerrada"] span { color:var(--danger); }
+/* Relogio do KJ: so a hora, grande o bastante para ler de longe da mesa. */
+.relogio-kj { font-family:'Space Mono', monospace; font-size:1.05rem; font-weight:700; color:var(--texto); letter-spacing:.04em; margin-right:4px; font-variant-numeric:tabular-nums; }
 .session-badge {
   font-family:'Space Mono', monospace; font-size:.7rem; letter-spacing:.22em;
   text-transform:uppercase; padding:7px 12px; border-radius:999px;
@@ -468,10 +463,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     <h1>Voxly</h1>
   </div>
   <div class="header-controls">
-    <span class="relogio-kj" id="relogioKJ" aria-live="off">
-      <strong id="relogioHora">--:--</strong>
-      <span id="relogioSessao"></span>
-    </span>
+    <span class="relogio-kj" id="relogioHora" aria-live="off" title="Hora atual">--:--</span>
     <span class="session-badge inativa" id="sessionBadge" onclick="editarSessaoAtiva()"
           title="Clique para editar nome, data e horário sem derrubar a sessão">● Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
@@ -997,7 +989,6 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../ordem.js"></script>
 <script src="../trava.js"></script>
 <script src="../sessao-regras.js"></script>
-<script src="../relogio.js"></script>
 <script src="../texto.js"></script>
 <script src="../sugestoes.js"></script>
 <script src="../volume.js"></script>
@@ -1245,25 +1236,17 @@ https://www.youtube.com/@canal/videos"></textarea>
     return Number.isFinite(ms) ? ms : null;
   }
 
-  // Relogio do KJ. Le dadosSessaoAtual a cada tique em vez de ser avisado:
-  // assim acompanha sozinho a edicao da sessao, o fim e a abertura de outra.
+  // Relogio do KJ: um relogio comum, so a hora.
   function atualizarRelogio() {
-    const hora = document.getElementById('relogioHora');
-    if (!hora) return;
-    const agora = Date.now();
-    hora.textContent = new Date(agora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const caixa = document.getElementById('relogioKJ');
-    const linha = document.getElementById('relogioSessao');
-    const t = SESSAO_ID && dadosSessaoAtual
-      ? VoxlyRelogio.tempoDaSessao({ inicio: dadosSessaoAtual.inicio, termino: dadosSessaoAtual.termino, agora })
-      : null;
-    linha.textContent = t ? t.texto : '';
-    caixa.dataset.fase = t ? t.fase : '';
+    const el = document.getElementById('relogioHora');
+    if (!el) return;
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (el.textContent !== hora) el.textContent = hora;
   }
   atualizarRelogio();
-  // Tique de 15 s: o relogio mostra minutos, e 15 s de atraso no maximo nao
-  // se nota; um tique por segundo seria trabalho a toa a noite inteira.
-  setInterval(atualizarRelogio, 15000);
+  // Tique de 1 s com escrita so quando o minuto muda: o relogio vira na hora
+  // certa, sem trabalho a toa.
+  setInterval(atualizarRelogio, 1000);
 
   // O badge mostrava so o codigo, que nao diz nada ao KJ no meio da noite.
   // Nome da casa e faixa de horario sao o que ele precisa conferir de relance.
@@ -1473,6 +1456,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   function ativarInterfaceSessao() {
+    baterPontoDaSessao();
     const appBase = appUrlLocal || APP_URL;
     atualizarBadgeSessao();
     atualizarQrHost();
@@ -1902,7 +1886,6 @@ https://www.youtube.com/@canal/videos"></textarea>
   // o horario de termino declarado pelo KJ, a sessao e apagada com suas
   // subcolecoes.
   const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas'];
-  const HORAS_LIMITE_SEM_TERMINO = 24; // sessoes antigas, criadas antes do campo existir
   // A sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila
   // mesmo depois do prazo — quem para de pedir e o cantor.
 
@@ -1953,6 +1936,14 @@ https://www.youtube.com/@canal/videos"></textarea>
     await ref.delete();
   }
 
+  // Batimento da Gerencia dona da sessao: e o que impede a faxina de outra
+  // maquina de apagar a sessao em uso (ver podeApagarNaFaxina).
+  function baterPontoDaSessao() {
+    if (!SESSAO_ID || modoOffline) return;
+    db.collection('sessoes').doc(SESSAO_ID).update({ hostVivoEm: Date.now() }).catch(() => {});
+  }
+  setInterval(baterPontoDaSessao, 60 * 1000);
+
   async function limparSessoesVencidas() {
     const agora = Date.now();
     try {
@@ -1963,19 +1954,12 @@ https://www.youtube.com/@canal/videos"></textarea>
         if (doc.id === SESSAO_ID) continue; // nunca a sessao em uso
         const d = doc.data() || {};
 
-        const termino = d.horarioTermino && d.horarioTermino.toDate
-          ? d.horarioTermino.toDate().getTime() : null;
-
-        let vencida;
-        if (termino) {
-          // Vencida = passou do ponto em que o cantor ainda pode pedir.
-          vencida = !VoxlySessao.podePedirMusica(termino, agora);
-        } else {
-          // Sem termino declarado, usa a criacao como referencia.
-          const criada = d.iniciadaEm && d.iniciadaEm.toDate ? d.iniciadaEm.toDate().getTime() : null;
-          vencida = criada ? (agora - criada) > HORAS_LIMITE_SEM_TERMINO * 3600e3 : false;
-        }
-        if (!vencida) continue;
+        // Regra em sessao-regras.js: vencida E sem Gerencia viva. Sem o
+        // batimento, outra maquina com o Voxly aberto apagava a sessao (e a
+        // fila) que o KJ estava usando.
+        if (!VoxlySessao.podeApagarNaFaxina({
+          termino: d.horarioTermino, criadaEm: d.iniciadaEm, hostVivoEm: d.hostVivoEm, agora,
+        })) continue;
 
         // Sem relatorio salvo, esta sessao espera a proxima faxina — mas as
         // outras seguem. Antes uma falha interrompia a limpeza inteira.
@@ -2175,6 +2159,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         if (!currentSong && sendoChamado) mostrarNoPainel(sendoChamado, true);
 
         renderQueue();
+        renderUsers();   // o ☕ dos cantores depende do tipo dos pedidos
         salvarBackupLocal();
       });
   }
@@ -2306,8 +2291,12 @@ https://www.youtube.com/@canal/videos"></textarea>
       el.innerHTML = '<div class="empty">Nenhum cantor conectado.</div>';
       return;
     }
+    // Cafe com leite so para quem ENTROU como tal: pedido marcado prioridade,
+    // que so acontece quando a espera passou do limite do host. Antes o ☕
+    // aparecia em todo mundo que ainda nao tinha cantado, com fila curta ou nao.
+    const comPrioridade = new Set(filaData.filter(d => d.tipo === 'prioridade').map(d => d.cantorUid));
     el.innerHTML = presencasData.map((u, i) => {
-      const prioridade = !u.primeiraMusicaCantada;
+      const prioridade = comPrioridade.has(u.id || u.uid);
       // Sessoes abertas antes do contador so tem o sim/nao: vale como 1.
       const cantadas = u.musicasCantadas || (u.primeiraMusicaCantada ? 1 : 0);
       const rotuloCantadas = cantadas === 0 ? 'ainda não cantou'
