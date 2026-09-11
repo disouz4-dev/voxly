@@ -1,13 +1,16 @@
 "use strict";
 
 // Relogio da Gerencia: quanto falta na sessao, dito do jeito que o KJ usa.
-// A tolerancia (5 min, a mesma de web/public/sessao-regras.js) aparece como
-// "pedidos fecham em", porque e isso que ela e: o prazo para o cantor ainda
-// por musica. O KJ continua podendo dar play depois dela.
+// A tolerancia aparece como "pedidos fecham em", porque e isso que ela e: o
+// prazo para o cantor ainda por musica. O KJ continua podendo dar play depois.
 
 (function (raiz) {
 
-const TOLERANCIA_MS = 5 * 60 * 1000;
+// A tolerancia vem da regra, nunca de uma copia do numero: se ela mudar, o
+// relogio tem que mudar junto com o que o app do cantor aceita.
+const regras = (typeof module !== "undefined" && module.exports)
+  ? require("./sessao-regras") : raiz.VoxlySessao;
+const TOLERANCIA_MS = regras.TOLERANCIA_MS;
 
 function emMs(t) {
   if (t == null) return null;

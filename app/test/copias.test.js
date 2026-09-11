@@ -16,6 +16,7 @@ const PARES = [
   ["src/prioridade.js", "../web/public/prioridade.js"],
   ["src/ordem.js", "../web/public/ordem.js"],
   ["src/trava.js", "../web/public/trava.js"],
+  ["src/sessao-regras.js", "../web/public/sessao-regras.js"],
 ];
 
 for (const [origem, copia] of PARES) {

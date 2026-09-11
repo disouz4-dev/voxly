@@ -996,6 +996,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../relatorio.js"></script>
 <script src="../ordem.js"></script>
 <script src="../trava.js"></script>
+<script src="../sessao-regras.js"></script>
 <script src="../relogio.js"></script>
 <script src="../volume.js"></script>
 <script src="../limite.js"></script>
@@ -1899,10 +1900,8 @@ https://www.youtube.com/@canal/videos"></textarea>
   // subcolecoes.
   const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas'];
   const HORAS_LIMITE_SEM_TERMINO = 24; // sessoes antigas, criadas antes do campo existir
-  // Mesma tolerancia de web/public/sessao-regras.js, onde ela e testada. A
-  // sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila mesmo
-  // depois do prazo — quem para de pedir e o cantor.
-  const TOLERANCIA_SESSAO_MS = 5 * 60 * 1000;
+  // A sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila
+  // mesmo depois do prazo — quem para de pedir e o cantor.
 
   // Grava o resumo permanente da noite. Chamado dentro de apagarSessao, entao
   // TODO caminho que apaga — faxina, derrubar, expurgo ao abrir nova sessao —
@@ -1966,7 +1965,8 @@ https://www.youtube.com/@canal/videos"></textarea>
 
         let vencida;
         if (termino) {
-          vencida = (termino + TOLERANCIA_SESSAO_MS) < agora;
+          // Vencida = passou do ponto em que o cantor ainda pode pedir.
+          vencida = !VoxlySessao.podePedirMusica(termino, agora);
         } else {
           // Sem termino declarado, usa a criacao como referencia.
           const criada = d.iniciadaEm && d.iniciadaEm.toDate ? d.iniciadaEm.toDate().getTime() : null;

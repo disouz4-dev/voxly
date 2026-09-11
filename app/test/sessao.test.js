@@ -6,7 +6,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { TOLERANCIA_MS, podePedirMusica } = require("../../web/public/sessao-regras.js");
+const { TOLERANCIA_MS, podePedirMusica } = require("../src/sessao-regras.js");
 
 const MIN = 60 * 1000;
 const FIM = Date.parse("2026-09-10T23:00:00Z");
