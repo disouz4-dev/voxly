@@ -2529,10 +2529,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function tocarMusica(itemId) {
-    const itemRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
-    const itemSnap = await itemRef.get();
-    if (!itemSnap.exists) { mostrarToast('Esse pedido não está mais na fila'); return; }
-    const item = itemSnap.data();
+    // Tudo o que decide a musica sai da fila que ja esta na memoria: sem
+    // internet, uma consulta ao banco segurava o Play e o show parava.
+    const item = filaData.find(d => d.id === itemId);
+    if (!item) { mostrarToast('Esse pedido não está mais na fila'); return; }
+
     // O arquivo ANTES de mexer em qualquer status. Antes o pedido virava
     // "tocando" e so depois se descobria que nao havia arquivo: a fila ficava
     // presa numa musica que nao tocava, e um alert() travava a Gerencia ate
@@ -2547,28 +2548,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     // Aposenta qualquer chamada em montagem: a musica vai comecar agora.
     _controleChamada.cancelar();
     clearTimeout(timerConfirmacao);
-    marcarShowComecou();
-    const batch = db.batch();
-    // Quem estava sendo chamado volta para a fila tambem. Sem "confirmando" e
-    // "confirmado" aqui, o chamado ficava preso sem saida — e, se confirmasse
-    // depois, o Palco escondia o video que estava tocando.
-    const tocandoSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-      .where('status', 'in', ['tocando', 'pronto', 'confirmando', 'confirmado']).get();
-    tocandoSnap.forEach(d => { if (d.id !== itemId) batch.update(d.ref, { status: 'aguardando' }); });
     proximaConfirmando = null;
-    batch.update(itemRef, { status: 'tocando' });
-    await batch.commit();
-    currentSong = { id: itemId, ...item, filePath, iniciadoEm: Date.now() };
+    marcarShowComecou();
 
+    const semitons = item.semitons || 0;
+    currentSong = { ...item, id: itemId, filePath, iniciadoEm: Date.now() };
     _jaGerenciouMusica = true;
     mostrarNoPainel(item);
-    // Aplica tom salvo no pedido do cantor, depois reseta o display para o host
-    const semitons = item.semitons || 0;
     tomAtual = semitons;
     const td = document.getElementById('tom-display');
     if (td) td.textContent = semitons === 0 ? 'Original'
       : (semitons > 0 ? `+${semitons}` : `${semitons}`) + ' st';
 
+    // O Palco toca PRIMEIRO. A fila no banco e arrumada em seguida, sem
+    // segurar o show: se a internet estiver ruim, a musica comeca do mesmo
+    // jeito e o banco acerta quando puder.
     if (window.electronAPI) {
       window.electronAPI.playerCommand(JSON.stringify({
         cmd: 'play-confirmed', filePath, semitons,
@@ -2577,6 +2571,26 @@ https://www.youtube.com/@canal/videos"></textarea>
         photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
       }));
     }
+
+    if (modoOffline) {
+      item.status = 'tocando';
+      salvarBackupLocal(); renderQueue();
+      return;
+    }
+    const fila = db.collection('sessoes').doc(SESSAO_ID).collection('fila');
+    const batch = db.batch();
+    // Quem estava tocando, pronto ou sendo chamado volta para a fila. Sem
+    // "confirmando" e "confirmado" aqui, o chamado ficava preso sem saida.
+    for (const d of filaData) {
+      if (d.id !== itemId && ['tocando', 'pronto', 'confirmando', 'confirmado'].includes(d.status)) {
+        batch.update(fila.doc(d.id), { status: 'aguardando' });
+      }
+    }
+    batch.update(fila.doc(itemId), { status: 'tocando' });
+    batch.commit().catch(e => {
+      diario('kj.tocar-nao-gravou', { id: itemId, erro: e.message }, 'erro');
+      mostrarToast('⚠️ A música está tocando, mas a fila não foi gravada no servidor', 6000);
+    });
   }
 
   async function reiniciarMusica() {
@@ -2926,12 +2940,16 @@ https://www.youtube.com/@canal/videos"></textarea>
     proximaConfirmando = proxima;
     clearTimeout(timerConfirmacao);
     timerConfirmacao = setTimeout(async () => {
-      const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id).get();
-      const statusAtual = snap.exists ? snap.data().status : 'removido';
+      // Da fila em memoria: uma consulta ao banco aqui travava o fim da
+      // chamada quando a internet oscilava, e o Palco ficava em "Proximo: X".
+      const atual = filaData.find(d => d.id === proxima.id);
+      const statusAtual = atual ? atual.status : 'removido';
       if (statusAtual === 'confirmando') {
-        // Auto-confirma: cantor não respondeu, sobe mesmo assim
-        await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
-          .update({ status: 'confirmado' });
+        // Auto-confirma: cantor não respondeu, sobe mesmo assim. Sem esperar a
+        // gravacao: o Palco tem que sair do preview na hora.
+        db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(proxima.id)
+          .update({ status: 'confirmado' })
+          .catch(e => diario('kj.auto-confirmar-nao-gravou', { id: proxima.id, erro: e.message }, 'erro'));
         if (window.electronAPI) window.electronAPI.playerCommand('stop-preview');
       } else if (['aguardando', 'cancelada', 'removido'].includes(statusAtual) && !currentSong) {
         // Recusou (voltou para a fila), recusou pela 2a vez (cancelada) ou foi
