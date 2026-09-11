@@ -503,6 +503,13 @@ footer strong { color:var(--ambar); font-weight:700; }
           <span id="tom-display" style="font-size:.85rem;font-weight:700;color:var(--accent);min-width:60px;text-align:center;">Original</span>
           <button class="btn btn-ghost btn-sm" onclick="ajustarTom(+1)" style="padding:2px 10px;font-size:1rem;">+</button>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <label for="fader-volume" style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Volume:</label>
+          <input type="range" id="fader-volume" min="0" max="100" step="1"
+                 oninput="mudarVolume(this.value)" style="flex:1;accent-color:var(--accent);"
+                 aria-label="Volume geral do Voxly">
+          <span id="fader-volume-valor" style="font-size:.8rem;font-weight:700;color:var(--accent);min-width:36px;text-align:right;font-variant-numeric:tabular-nums;">85%</span>
+        </div>
       </div>
 
       <div class="player-controls">
@@ -935,6 +942,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../chamada.js"></script>
 <script src="../relatorio.js"></script>
 <script src="../ordem.js"></script>
+<script src="../volume.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
@@ -3380,6 +3388,31 @@ https://www.youtube.com/@canal/videos"></textarea>
   // ── Player controls ───────────────────────────────────────
   function playerCmd(cmd) { if (window.electronAPI) window.electronAPI.playerCommand(cmd); }
 
+  // Fader do KJ, para nao depender do tecnico da mesa. Guardado nesta maquina:
+  // e o ajuste da casa, e tem que sobreviver a um reinicio no meio da noite.
+  const CHAVE_VOLUME = 'voxly_volume_kj';
+
+  function volumeSalvo() {
+    try { return VoxlyVolume.posicaoValida(localStorage.getItem(CHAVE_VOLUME) ?? VoxlyVolume.PADRAO); }
+    catch (_) { return VoxlyVolume.PADRAO; }
+  }
+
+  function mudarVolume(valor) {
+    const v = VoxlyVolume.posicaoValida(valor);
+    const rotulo = document.getElementById('fader-volume-valor');
+    if (rotulo) rotulo.textContent = v + '%';
+    try { localStorage.setItem(CHAVE_VOLUME, String(v)); } catch (_) {}
+    playerCmd(JSON.stringify({ cmd: 'volume', valor: v }));
+  }
+
+  function mostrarFaderSalvo() {
+    const v = volumeSalvo();
+    const el = document.getElementById('fader-volume');
+    if (el) el.value = v;
+    const rotulo = document.getElementById('fader-volume-valor');
+    if (rotulo) rotulo.textContent = v + '%';
+  }
+
   // "play" cru so retoma um video ja carregado, entao o botao nao servia para
   // nada enquanto ninguem tivesse confirmado. Aqui ele e a decisao do KJ:
   // corta a contagem e poe o proximo da fila para tocar na hora.
@@ -3580,8 +3613,15 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Tela recarregada pede o estado de volta: sem isto ela some com o QR, o nome
   // da casa e os horarios, e fica no aviso de espera ate a sessao ser reaberta.
   if (window.electronAPI && window.electronAPI.onPedirEstado) {
-    window.electronAPI.onPedirEstado(() => reenviarEstadoAoPublico());
+    window.electronAPI.onPedirEstado(() => {
+      // Fora do reenvio de estado de proposito: aquele sai cedo quando nao ha
+      // sessao aberta, e o volume vale com ou sem sessao. Sem isto o Palco
+      // recarregado voltava ao volume padrao, ignorando o fader.
+      playerCmd(JSON.stringify({ cmd: 'volume', valor: volumeSalvo() }));
+      reenviarEstadoAoPublico();
+    });
   }
+  mostrarFaderSalvo();
 
   if (window.electronAPI && window.electronAPI.onAudienceState) {
     window.electronAPI.onAudienceState(ativa => {

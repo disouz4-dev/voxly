@@ -661,6 +661,7 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
   </footer>
 
 <script src="../painel-sync.js"></script>
+<script src="../volume.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   // Declarado aqui de proposito: o bloco do modo publico logo abaixo usa
@@ -813,6 +814,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Áudio: compressor + pitch shift ──────────────────────
   let audioCtx   = null;
+  let rampaNode  = null;   // entradas e saidas sem estalo (vai a 0 na troca)
+  let faderNode  = null;   // volume do KJ — independente da rampa
+  let volumeKJ   = VoxlyVolume.PADRAO;
   let syncTimer  = null;   // Palco -> painel: acerto periodico de relogio
 
   let syncCaoTimer = null; // painel: vigia se o Palco parou de dar noticia
@@ -937,13 +941,43 @@ document.addEventListener("DOMContentLoaded", () => {
     compNode.ratio.value     = 8;
     compNode.attack.value    = 0.005;
     compNode.release.value   = 0.1;
-    compNode.connect(audioCtx.destination);
+
+    // Dois ganhos no fim da cadeia, com funcoes separadas. A rampa leva o som
+    // a zero e de volta em milissegundos a cada troca: cortar a forma de onda
+    // no meio do ciclo era o "bump" que se ouvia entre as musicas. O fader e o
+    // volume que o KJ escolhe — separado para a rampa nao desfazer o ajuste.
+    rampaNode = audioCtx.createGain();
+    rampaNode.gain.value = 0;          // toda musica entra subindo, nunca de uma vez
+    faderNode = audioCtx.createGain();
+    faderNode.gain.value = VoxlyVolume.ganhoDoFader(volumeKJ);
+    compNode.connect(rampaNode);
+    rampaNode.connect(faderNode);
+    faderNode.connect(audioCtx.destination);
 
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
     srcNode = audioCtx.createMediaElementSource(video);
     pitchNode = criarRubberbandNode();
     srcNode.connect(pitchNode);
     pitchNode.connect(compNode);
+  }
+
+  // Leva a rampa a `alvo` em `segundos` e espera terminar. Sem grafo ainda (a
+  // primeira musica da noite), nao ha o que rampar e ela resolve na hora.
+  function rampar(alvo, segundos) {
+    if (!audioCtx || !rampaNode) return Promise.resolve();
+    const g = rampaNode.gain, t = audioCtx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(alvo, t + segundos);
+    return new Promise(r => setTimeout(r, segundos * 1000 + 15));
+  }
+
+  function aplicarVolumeKJ(valor) {
+    volumeKJ = VoxlyVolume.posicaoValida(valor);
+    if (!audioCtx || !faderNode) return;
+    // setTarget e nao atribuicao direta: pular o ganho de uma vez faz "zipper",
+    // um chiado a cada passo do fader.
+    faderNode.gain.setTargetAtTime(VoxlyVolume.ganhoDoFader(volumeKJ), audioCtx.currentTime, 0.03);
   }
 
   function criarRubberbandNode() {
@@ -1581,6 +1615,8 @@ document.addEventListener("DOMContentLoaded", () => {
     esconderPronto();
     idle.style.display  = "none";
     video.style.display = "block";
+    // Silencia ANTES de cortar: o corte seco da forma de onda era o estalo.
+    await rampar(0, 0.06);
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -1589,7 +1625,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setSemitons(semitons !== undefined ? semitons : currentSemitons);
     video.src = toFileUrl(filePath);
     video.load();
-    video.play().catch(e => console.error("[PLAYER] Erro:", e));
+    video.play()
+      .then(() => rampar(1, 0.15))
+      .catch(e => console.error("[PLAYER] Erro:", e));
 
     // O painel do publico espelha a imagem do Palco. Ele nao pode tocar sozinho
     // ao receber "play-confirmed": ali o Palco ainda esta na intro, e as duas
@@ -1640,6 +1678,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // toda vez.
         if (dados.cmd === "painel-atual") {
           if (isAudience) atualizarPainelPublico(dados);
+          return;
+        }
+
+        if (dados.cmd === "volume") {
+          if (!isAudience) aplicarVolumeKJ(dados.valor);
           return;
         }
 
@@ -1831,8 +1874,8 @@ intervaloDeck = [];
       return;
     }
 
-    if (cmd === "play")             video.play();
-    if (cmd === "pause")            video.pause();
+    if (cmd === "play")  { video.play().then(() => rampar(1, 0.12)).catch(() => {}); }
+    if (cmd === "pause") { await rampar(0, 0.05); video.pause(); }
     if (cmd === "restart")          { video.currentTime = 0; video.play().catch(()=>{}); }
     if (cmd === "stop-preview")     { pararLoopChamada(); pararPreview(); mostrarIdleScreen(); }
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
@@ -1854,6 +1897,7 @@ intervaloDeck = [];
         video.load();
         return;
       }
+      await rampar(0, 0.06);   // o Pular tambem estalava ao cortar
       clearTimeout(idleFallbackTimer);
       pararPreview();
       clearTimeout(introTimeout);
@@ -1917,6 +1961,11 @@ intervaloDeck = [];
     agendarIdleFallback();   // segurança: reseta info se preview não chegar em 8s
     window.electronAPI.songEnded();
   }
+
+  // Rede de seguranca da rampa: ela nasce em zero para toda musica entrar
+  // subindo, e um caminho que tocasse sem passar por iniciarVideo deixaria o
+  // show mudo. Qualquer reproducao que comece no Palco termina audivel.
+  if (!isAudience) video.addEventListener("playing", () => rampar(1, 0.15));
 
   video.addEventListener("ended",     () => { if (video.style.display !== "none") aoTerminarMusica(); });
   video.addEventListener("timeupdate", () => {
