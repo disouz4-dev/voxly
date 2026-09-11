@@ -2604,28 +2604,28 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Expulsar cantor da sessão ────────────────────────────
-  let expulsarCantorIdx = null;
+  let expulsarCantorId = null;
 
   function abrirModalExpulsarCantor(i) {
     const u = presencasData[i];
     if (!u) return;
-    expulsarCantorIdx = i;
+    expulsarCantorId = u.id || u.uid;   // o ID, pelo mesmo motivo do expulsar da fila
     document.getElementById('expulsarCantorNome').textContent = u.nomeArtistico;
     document.getElementById('modalExpulsarCantor').classList.add('open');
   }
 
   function fecharModalExpulsarCantor() {
     document.getElementById('modalExpulsarCantor').classList.remove('open');
-    expulsarCantorIdx = null;
+    expulsarCantorId = null;
   }
 
   async function confirmarExpulsaoCantor() {
-    const u = presencasData[expulsarCantorIdx];
+    const u = presencasData.find(p => (p.id || p.uid) === expulsarCantorId);
     fecharModalExpulsarCantor();
     if (!u) return;
     const uid = u.id || u.uid;
     if (modoOffline) {
-      presencasData.splice(expulsarCantorIdx, 1);
+      presencasData.splice(presencasData.indexOf(u), 1);
       filaData = filaData.filter(d => d.cantorUid !== uid);
       renderUsers(); renderQueue(); salvarBackupLocal();
     } else {
@@ -2645,27 +2645,30 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Expulsar da fila ─────────────────────────────────────
-  let expulsarIdx = null;
+  let expulsarId = null;
 
+  // Guarda o ID, nao a posicao: com o modal aberto a fila continua mudando (um
+  // cafe com leite entra acima, alguem termina de cantar) e a posicao passava
+  // a apontar para OUTRA pessoa — que era quem saia.
   function abrirModalExpulsar(i) {
     const item = filaData[i];
     if (!item) return;
-    expulsarIdx = i;
+    expulsarId = item.id;
     document.getElementById('expulsarNome').textContent = item.nomeArtistico;
     document.getElementById('modalExpulsar').classList.add('open');
   }
 
   function fecharModalExpulsar() {
     document.getElementById('modalExpulsar').classList.remove('open');
-    expulsarIdx = null;
+    expulsarId = null;
   }
 
   async function confirmarExpulsao() {
-    const item = filaData[expulsarIdx];
+    const item = filaData.find(d => d.id === expulsarId);
     fecharModalExpulsar();
     if (!item) return;
     if (modoOffline) {
-      filaData.splice(expulsarIdx, 1);
+      filaData.splice(filaData.indexOf(item), 1);
       renderQueue(); salvarBackupLocal();
     } else {
       await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id).delete();
@@ -2753,7 +2756,16 @@ https://www.youtube.com/@canal/videos"></textarea>
       const itemSnap = await itemRef.get();
       if (!itemSnap.exists) return;
       const item = itemSnap.data();
-      await itemRef.update({ status: 'cantada' });
+      // "Cantada" e "ja cantou" no MESMO lote: gravados em sequencia, um pedido
+      // novo feito nesse intervalo ainda via o cantor como quem nunca cantou e
+      // ganhava cafe com leite. Sem presenca (cantor removido), marca so o item.
+      const lote = db.batch();
+      lote.update(itemRef, { status: 'cantada' });
+      if (item && item.cantorUid) {
+        lote.update(db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid),
+          { primeiraMusicaCantada: true, musicasCantadas: firebase.firestore.FieldValue.increment(1) });
+      }
+      await lote.commit().catch(() => itemRef.update({ status: 'cantada' }));
 
       if (item?.cantorUid) {
         // Histórico — fire and forget, não bloqueia promoção de espera
@@ -2764,9 +2776,6 @@ https://www.youtube.com/@canal/videos"></textarea>
             duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
             status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
           }),
-          db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
-            .update({ primeiraMusicaCantada: true,
-                      musicasCantadas: firebase.firestore.FieldValue.increment(1) }),
         ]).catch(e => console.error('[HOST] Erro histórico:', e));
 
         // Historico pessoal, que o cantor ve no perfil e de onde pede de novo.
@@ -4533,12 +4542,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     musicaModalSelecionada = null;
   }
 
-  let duoFilaItemIdx = null;
+  let duoFilaItemId = null;
 
   function abrirModalDuoFila(i) {
     const item = filaData[i];
     if (!item) return;
-    duoFilaItemIdx = i;
+    duoFilaItemId = item.id;   // o ID: a fila muda com o modal aberto
     document.getElementById('duoFilaCantorNome').textContent = item.nomeArtistico;
     const sel = document.getElementById('selectDuoFila');
     sel.innerHTML = '<option value="">— Selecionar cantor —</option>';
@@ -4555,11 +4564,11 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   function fecharModalDuoFila() {
     document.getElementById('modalDuoFila').classList.remove('open');
-    duoFilaItemIdx = null;
+    duoFilaItemId = null;
   }
 
   async function confirmarDuoFila() {
-    const item = filaData[duoFilaItemIdx];
+    const item = filaData.find(d => d.id === duoFilaItemId);
     if (!item) return;
     const sel     = document.getElementById('selectDuoFila');
     const duoUid  = sel.value;

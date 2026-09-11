@@ -608,7 +608,9 @@
         nomeArtistico: perfilData.nomeArtistico,
         photoURL: perfilData.photoURL || null,
         status: 'aqui',
-        primeiraMusicaCantada: false,
+        // Sem primeiraMusicaCantada: false aqui. Com o merge, reabrir o app
+        // apagava o "ja cantou" de quem ja cantou, e ele virava cafe com leite
+        // de novo. Ausente vale como "ainda nao cantou".
         chegadaAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
     }
