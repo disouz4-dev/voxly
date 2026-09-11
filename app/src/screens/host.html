@@ -2433,7 +2433,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       </div>`;
 
       const dragAttrs = isDraggable
-        ? `draggable="true" ondragstart="onDragStart(event,${i})" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,${i})" ondragend="onDragEnd()"`
+        ? `draggable="true" ondragstart="onDragStart(event,'${item.id}')" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${item.id}')" ondragend="onDragEnd()"`
         : '';
 
       return `<div class="${cls}" ${dragAttrs}>
@@ -2698,10 +2698,13 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Drag-and-drop para reordenar fila ────────────────────
-  let dragSrcIdx = null;
+  // Id do pedido arrastado. Era a posicao na lista: se uma musica terminava ou
+  // um cafe com leite entrava durante o arraste, a tela era redesenhada e
+  // quem subia era outra pessoa.
+  let arrastando = null;
 
-  function onDragStart(e, i) {
-    dragSrcIdx = i;
+  function onDragStart(e, id) {
+    arrastando = id;
     e.currentTarget.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
   }
@@ -2720,17 +2723,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.querySelectorAll('.queue-item').forEach(el => {
       el.classList.remove('dragging', 'drag-over');
     });
-    dragSrcIdx = null;
+    arrastando = null;
   }
 
-  async function onDrop(e, destIdx) {
+  async function onDrop(e, destinoId) {
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
-    if (dragSrcIdx === null || dragSrcIdx === destIdx) return;
+    // As posicoes saem da fila DE AGORA, pelos ids.
+    const de = filaData.findIndex(d => d.id === arrastando);
+    const para = filaData.findIndex(d => d.id === destinoId);
+    arrastando = null;
+    if (de < 0 || para < 0 || de === para) return;
 
     // Reordena localmente
-    const moved = filaData.splice(dragSrcIdx, 1)[0];
-    filaData.splice(destIdx, 0, moved);
+    const moved = filaData.splice(de, 1)[0];
+    filaData.splice(para, 0, moved);
 
     // Atualiza ordemFila apenas nos itens aguardando
     const aguardando = filaData.filter(d => d.status === 'aguardando');

@@ -258,11 +258,11 @@ const ROTEIRO = [
   } },
   { aos: 7 * 60, feito: false, faz: async (e) => {
       // KJ arrasta: a Nina, que está mais para o fim, sobe para a 2ª posição dos que esperam.
-      const idxs = await g(`(() => { const esp = filaData.map((d, i) => ({ d, i })).filter(x => x.d.status === 'aguardando');
-        const nina = esp.find(x => x.d.cantorUid === 'rot_nina'); return nina && esp.length > 2 ? [nina.i, esp[1].i] : null; })()`);
-      if (!idxs) return;
+      const ids = await g(`(() => { const esp = filaData.filter(d => d.status === 'aguardando');
+        const nina = esp.find(d => d.cantorUid === 'rot_nina'); return nina && esp.length > 2 ? [nina.id, esp[1].id] : null; })()`);
+      if (!ids) return;
       ordemManual = true;
-      await g(`(async () => { dragSrcIdx = ${idxs[0]}; await onDrop({ preventDefault() {}, currentTarget: { classList: { remove() {} } } }, ${idxs[1]}); })()`);
+      await g(`(async () => { arrastando = ${JSON.stringify(ids[0])}; await onDrop({ preventDefault() {}, currentTarget: { classList: { remove() {} } } }, ${JSON.stringify(ids[1])}); })()`);
       await acao("KJ arrastou Nina Drop para a 2ª posição da fila");
   } },
   { aos: 9 * 60, feito: false, faz: async (e) => {
