@@ -392,6 +392,7 @@
   <script src="/offline-client.js"></script>
   <script src="/sessao-regras.js"></script>
   <script src="/prioridade.js"></script>
+  <script src="/ordem.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -1023,7 +1024,7 @@ function escutarFila() {
       } else {
         // Novo pedido: coloca no fim e calcula prioridade
         const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').where('status','==','aguardando').get();
-        ordemFila = filaSnap.size + 1;
+        // Calculado depois da prioridade (abaixo): e ela que decide onde entra.
         const presSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(currentUser.uid).get();
         // Mesma regra da Gerencia, do mesmo arquivo. A conta daqui contava as
         // musicas em espera como tempo de fila e promovia gente a toa.
@@ -1032,6 +1033,10 @@ function escutarFila() {
           jaCantou: !!(presSnap.exists && presSnap.data().primeiraMusicaCantada),
           fila: filaSnap.docs.map(d => d.data()),
         }) ? 'prioridade' : 'normal';
+        // MAIOR + 1, nao "quantos ha + 1": com buracos na numeracao o pedido
+        // entrava na frente de quem ja esperava.
+        ordemFila = VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()),
+          { prioridade: tipo === 'prioridade' });
       }
 
       const filaRef = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').add({
@@ -1139,16 +1144,11 @@ function escutarFila() {
         .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])
         .onSnapshot(snap => {
           const el = document.getElementById('filaEventoList');
-          const items = snap.docs
+          // Mesma ordem da Gerencia (ordem.js). A daqui punha toda prioridade na
+          // frente e o cantor via uma posicao diferente da que o KJ via.
+          const items = VoxlyOrdem.ordenarFila(snap.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(d => d.slot !== 'espera')
-            .sort((a, b) => {
-              if (a.status === 'tocando') return -1;
-              if (b.status === 'tocando') return 1;
-              if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
-              if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
-              return (a.ordemFila || 0) - (b.ordemFila || 0);
-            });
+            .filter(d => d.slot !== 'espera'));
           if (items.length === 0) { el.innerHTML = '<div class="empty">Fila vazia.</div>'; return; }
           el.innerHTML = items.map((d, i) => {
             const isMinha   = d.cantorUid === currentUser.uid;
@@ -1255,7 +1255,7 @@ function escutarFila() {
       // 1ª recusa: volta para o fim da fila
       const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
         .where('status', '==', 'aguardando').get();
-      const novaOrdem = filaSnap.size + 1;
+      const novaOrdem = VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()), { prioridade: false });
       await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemConfirmando.id)
         .update({ status: 'aguardando', ordemFila: novaOrdem, tipo: 'normal', confirmacoesRecusadas: novasRecusas });
       esconderConfirmacao();

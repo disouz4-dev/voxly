@@ -934,6 +934,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../prioridade.js"></script>
 <script src="../chamada.js"></script>
 <script src="../relatorio.js"></script>
+<script src="../ordem.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
@@ -2056,18 +2057,10 @@ https://www.youtube.com/@canal/videos"></textarea>
         // Pedido novo com videoId: garante o arquivo antes da vez chegar.
         snap.docs.forEach(d => garantirArquivoDaFila({ id: d.id, ...d.data() }));
 
-        filaData = snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(d => d.slot !== 'espera')
-          .sort((a, b) => {
-            if (a.status === 'tocando') return -1;
-            if (b.status === 'tocando') return 1;
-            if (a.status === 'pronto')  return -1;
-            if (b.status === 'pronto')  return 1;
-            if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
-            if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
-            return (a.ordemFila || 0) - (b.ordemFila || 0);
-          });
+        // Regra unica de ordem (src/ordem.js). A antiga punha toda prioridade
+        // na frente a cada atualizacao e desfazia o arrastar do KJ.
+        filaData = VoxlyOrdem.ordenarFila(
+          snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'));
 
         // Restaura currentSong depois de o app reiniciar no meio de uma
         // musica. So enquanto ESTE host ainda nao mexeu na fila: o write de
@@ -2546,7 +2539,10 @@ https://www.youtube.com/@canal/videos"></textarea>
       if (!doc) return;
       const filaSnap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
         .where('status', '==', 'aguardando').get();
-      await doc.ref.update({ slot: 'ativa', ordemFila: filaSnap.size + 1 });
+      await doc.ref.update({
+        slot: 'ativa',
+        ordemFila: VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()), { prioridade: false }),
+      });
       console.log('[HOST] Música em espera promovida para fila principal.');
     } catch(e) {
       console.error('[HOST] Erro ao promover espera:', e);
@@ -2564,13 +2560,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     const _tokenChamada = _controleChamada.nova();
 
     // Usa filaData em memória (já sincronizada) — elimina o round-trip do Firestore
-    const items = filaData
-      .filter(d => d.slot !== 'espera' && d.status === 'aguardando')
-      .sort((a, b) => {
-        if (a.tipo === 'prioridade' && b.tipo !== 'prioridade') return -1;
-        if (b.tipo === 'prioridade' && a.tipo !== 'prioridade') return 1;
-        return (a.ordemFila || 0) - (b.ordemFila || 0);
-      });
+    // O proximo chamado segue a MESMA ordem que o KJ ve na tela. Com a regra
+    // antiga ele escolhia pela prioridade e ignorava o arrastar.
+    const items = VoxlyOrdem.ordenarFila(filaData)
+      .filter(d => d.slot !== 'espera' && d.status === 'aguardando');
 
     if (items.length === 0) { avancarCicloSeVazio(); return; }
     const proxima = items[0];
@@ -4150,7 +4143,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       disponivel: musicaModalSelecionada.disponivel ?? true,
       duoNome: duoNome || null, duoUid: duoUid || null,
       status: 'aguardando', slot: 'ativa', tipo,
-      ordemFila: filaData.length + 1,
+      // MAIOR + 1, nao "quantos ha + 1": com buracos na numeracao o pedido
+      // novo entrava na frente de quem ja esperava.
+      ordemFila: VoxlyOrdem.ordemParaNovo(filaData, { prioridade: tipo === 'prioridade' }),
       adicionadoEm: modoOffline ? Date.now() : firebase.firestore.FieldValue.serverTimestamp()
     };
     if (!modoOffline) {
