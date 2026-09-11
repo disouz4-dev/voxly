@@ -355,6 +355,17 @@ header {
 .rel-noite .rel-lista { padding:0 12px 8px; }
 .rel-vivo { font-style:normal; font-family:'Space Mono', monospace; font-size:.58rem; letter-spacing:.14em; text-transform:uppercase; color:var(--perigo); }
 
+/* ── Saidas de audio e monitoria ── */
+.saida-linha { display:grid; grid-template-columns:118px 1fr auto; gap:8px; align-items:center; margin-bottom:8px; }
+.saida-linha label { font-size:.8rem; }
+.saida-linha .modal-select { margin:0; }
+.monitor-barra { display:none; align-items:center; gap:8px; margin:0 0 10px; padding:8px 10px; border:1px solid var(--azul); border-radius:10px; background:var(--palco2); font-size:.75rem; }
+.monitor-barra.ativa { display:flex; }
+.monitor-barra .titulo { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--azul); }
+.monitor-barra input[type=range] { width:120px; }
+.btn-previa { background:none; border:1px solid var(--azul); color:var(--azul); border-radius:8px; padding:3px 8px; font-size:.72rem; cursor:pointer; white-space:nowrap; }
+.btn-previa:hover, .btn-previa:focus-visible { background:var(--azul); color:var(--noite); }
+
 /* ── Modais ── */
 .modal-overlay {
   display:none; position:fixed; inset:0; z-index:200;
@@ -820,6 +831,14 @@ https://www.youtube.com/@canal/videos"></textarea>
     </select>
     </div>
     <div style="height:10px;"></div>
+    <div class="monitor-barra" id="monitorBarra" role="region" aria-label="Prévia na monitoria">
+      <span aria-hidden="true">🎧</span>
+      <span class="titulo" id="monitorTitulo">—</span>
+      <button class="btn btn-ghost btn-sm" id="monitorPlay" onclick="alternarPrevia()" aria-label="Pausar ou continuar a prévia">⏸</button>
+      <input type="range" id="monitorPosicao" min="0" max="100" step="1" value="0" oninput="buscarNaPrevia(this.value)" aria-label="Posição na prévia">
+      <button class="btn btn-ghost btn-sm" onclick="pararPrevia()" aria-label="Parar a prévia">✕</button>
+    </div>
+    <audio id="monitorAudio" preload="none"></audio>
     <div id="candidatosLista" style="max-height:320px;overflow-y:auto;"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalCandidatos()">Cancelar</button>
@@ -920,6 +939,23 @@ https://www.youtube.com/@canal/videos"></textarea>
       Cada arquivo é medido uma vez (precisa do ffmpeg). Música alta desce, música baixa sobe, sem regravar nada.
     </div>
 
+    <div class="saida-linha">
+      <label for="saida-principal">🔊 Som da casa</label>
+      <select class="modal-select" id="saida-principal" onchange="escolherSaida('principal', this.value)"></select>
+      <button class="btn btn-ghost btn-sm" onclick="testarSaida('principal')" title="Toca um bipe curto nesta saída">Testar</button>
+    </div>
+    <div class="saida-linha">
+      <label for="saida-monitor">🎧 Monitoria</label>
+      <select class="modal-select" id="saida-monitor" onchange="escolherSaida('monitor', this.value)"></select>
+      <button class="btn btn-ghost btn-sm" onclick="testarSaida('monitor')" title="Toca um bipe curto nesta saída">Testar</button>
+    </div>
+    <div style="font-size:.7rem;color:var(--mudo);margin:4px 0 12px;line-height:1.45;">
+      O som da casa é o que o Palco toca: karaokê, intervalo e chamada. A monitoria é só sua — fone Bluetooth ou
+      interface — para ouvir a prévia de uma versão antes de baixar (🎧 na escolha de versão). Ela precisa ser um
+      aparelho diferente do som da casa, senão a prévia não toca. A voz do sistema (sem o Piper) sai sempre pela saída
+      padrão do computador.
+    </div>
+
     <label class="modal-label">Chamada por voz</label>
     <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;cursor:pointer;margin-bottom:8px;">
       <input type="checkbox" id="pref-chamada-voz" onchange="salvarPrefsDownload()">
@@ -989,6 +1025,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../ordem.js"></script>
 <script src="../trava.js"></script>
 <script src="../historico.js"></script>
+<script src="../saidas.js"></script>
 <script src="../sessao-regras.js"></script>
 <script src="../texto.js"></script>
 <script src="../sugestoes.js"></script>
@@ -1780,7 +1817,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('candidatosLista').innerHTML = item.candidatos.map((c, i) => {
       const mm = Math.floor(c.duracao / 60) + ':' + String(c.duracao % 60).padStart(2, '0');
       return `<div class="modal-result-item" onclick="baixarEscolhido('${itemId}', ${i})">
-        <div style="font-weight:600;margin-bottom:2px;">${escHtml(c.titulo)}</div>
+        <div style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;">
+          <div style="font-weight:600;margin-bottom:2px;">${escHtml(c.titulo)}</div>
+          <button class="btn-previa" onclick="event.stopPropagation(); ouvirPrevia('${itemId}', ${i})" title="Ouvir no fone de monitoria antes de baixar">🎧 Ouvir</button>
+        </div>
         <div style="font-size:.7rem;color:var(--mudo);">${escHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views${idadeVideo(c.postadoEm) ? ' · <span style="color:var(--azul);">' + idadeVideo(c.postadoEm) + '</span>' : ''}</div>
       </div>`;
     }).join('');
@@ -1837,6 +1877,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   function fecharModalCandidatos() {
+    pararPrevia();
     document.getElementById('modalCandidatos').classList.remove('open');
   }
 
@@ -3331,6 +3372,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   function openSettings() {
     document.getElementById('modalAjustes').classList.add('open');
+    preencherSaidas();
     carregarPrefsDownload();
   }
   function fecharModalAjustes() { document.getElementById('modalAjustes').classList.remove('open'); }
@@ -3613,6 +3655,149 @@ https://www.youtube.com/@canal/videos"></textarea>
     playerCmd(JSON.stringify({ cmd: 'volume', valor: v }));
   }
 
+  // ── Saidas de audio e monitoria ──────────────────────────
+  // Guardadas nesta maquina, como o volume: sao o equipamento da casa.
+  const CHAVE_SAIDA = { principal: 'voxly_saida_principal', monitor: 'voxly_saida_monitor' };
+  function saidaSalva(qual) {
+    try { return localStorage.getItem(CHAVE_SAIDA[qual]) || ''; } catch (_) { return ''; }
+  }
+
+  async function dispositivosDeAudio() {
+    try { return await navigator.mediaDevices.enumerateDevices(); } catch (_) { return []; }
+  }
+
+  async function preencherSaidas() {
+    const saidas = VoxlySaidas.saidasDeAudio(await dispositivosDeAudio());
+    for (const qual of ['principal', 'monitor']) {
+      const sel = document.getElementById('saida-' + qual);
+      if (!sel) continue;
+      const atual = saidaSalva(qual);
+      const vazio = qual === 'principal' ? 'Padrão do sistema' : '— Escolha um fone —';
+      const opcoes = [new Option(vazio, ''), ...saidas.map(s => new Option(s.nome, s.id))];
+      // Aparelho escolhido mas desligado agora continua visivel, marcado.
+      if (atual && !saidas.some(s => s.id === atual)) opcoes.push(new Option('(desconectado)', atual));
+      sel.replaceChildren(...opcoes);
+      sel.value = atual;
+    }
+  }
+
+  function enviarSaidaAoPalco() {
+    playerCmd(JSON.stringify({ cmd: 'saida', id: saidaSalva('principal') }));
+  }
+
+  function escolherSaida(qual, id) {
+    try { localStorage.setItem(CHAVE_SAIDA[qual], id || ''); } catch (_) {}
+    if (qual === 'principal') enviarSaidaAoPalco();
+    // Qualquer troca pode ter posto a monitoria no som da casa: confere de novo.
+    vigiarMonitoria();
+    mostrarToast(qual === 'principal' ? 'Saída do som da casa trocada' : 'Saída de monitoria trocada');
+  }
+
+  // Bipe curto na saida escolhida, para o KJ saber qual aparelho e qual.
+  async function testarSaida(qual) {
+    const id = saidaSalva(qual);
+    if (qual === 'monitor' && !id) { mostrarToast('Escolha primeiro a saída de monitoria'); return; }
+    try {
+      const ctx = new AudioContext(id ? { sinkId: id } : {});
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.frequency.value = qual === 'monitor' ? 880 : 440;
+      g.gain.setValueAtTime(0, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+      g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.45);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.5);
+      setTimeout(() => ctx.close().catch(() => {}), 900);
+    } catch (e) {
+      mostrarToast('⚠️ Não consegui tocar nesta saída: ' + e.message);
+    }
+  }
+
+  // Previa de uma versao do YouTube, SO na monitoria. A regra (saidas.js)
+  // recusa quando nao ha fone escolhido, quando ele esta desconectado ou quando
+  // e o mesmo aparelho do som da casa.
+  const monitorAudio = () => document.getElementById('monitorAudio');
+
+  async function ouvirPrevia(itemId, indice) {
+    const item = filaData.find(i => i.id === itemId);
+    const c = item && item.candidatos && item.candidatos[indice];
+    if (!c || !window.electronAPI || !window.electronAPI.ytPrevia) return;
+    const seguro = VoxlySaidas.monitoriaSegura({
+      monitorId: saidaSalva('monitor'), principalId: saidaSalva('principal'),
+      dispositivos: await dispositivosDeAudio(),
+    });
+    if (!seguro.ok) { mostrarToast('🎧 ' + seguro.motivo, 6000); return; }
+
+    const audio = monitorAudio();
+    pararPrevia();
+    document.getElementById('monitorTitulo').textContent = 'Carregando prévia… ' + c.titulo;
+    document.getElementById('monitorBarra').classList.add('ativa');
+    const r = await window.electronAPI.ytPrevia(c.url);
+    if (!r || !r.url) {
+      document.getElementById('monitorBarra').classList.remove('ativa');
+      mostrarToast('❌ ' + ((r && r.erro) || 'Não consegui a prévia desta versão'), 6000);
+      return;
+    }
+    // A saida e fixada ANTES de o audio existir. Se o setSinkId falhar, nao
+    // toca: tocar sem ele seria tocar no padrao do sistema — a casa.
+    try { await audio.setSinkId(saidaSalva('monitor')); }
+    catch (e) {
+      document.getElementById('monitorBarra').classList.remove('ativa');
+      mostrarToast('🎧 Não consegui usar a saída de monitoria: ' + e.message, 6000);
+      return;
+    }
+    audio.src = r.url;
+    audio.onloadedmetadata = () => {
+      // Comeca depois da introducao, onde da para julgar a qualidade.
+      if (isFinite(audio.duration) && audio.duration > 60) audio.currentTime = Math.min(40, audio.duration * 0.2);
+    };
+    audio.ontimeupdate = () => {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        document.getElementById('monitorPosicao').value = Math.round(audio.currentTime / audio.duration * 100);
+      }
+    };
+    audio.onended = () => pararPrevia();
+    document.getElementById('monitorTitulo').textContent = c.titulo;
+    document.getElementById('monitorPlay').textContent = '⏸';
+    audio.play().catch(e => mostrarToast('❌ Prévia: ' + e.message));
+  }
+
+  function alternarPrevia() {
+    const audio = monitorAudio();
+    if (!audio.src) return;
+    if (audio.paused) { audio.play().catch(() => {}); document.getElementById('monitorPlay').textContent = '⏸'; }
+    else { audio.pause(); document.getElementById('monitorPlay').textContent = '▶'; }
+  }
+
+  function buscarNaPrevia(pct) {
+    const audio = monitorAudio();
+    if (isFinite(audio.duration) && audio.duration > 0) audio.currentTime = audio.duration * pct / 100;
+  }
+
+  function pararPrevia() {
+    const audio = monitorAudio();
+    if (!audio) return;
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    const barra = document.getElementById('monitorBarra');
+    if (barra) barra.classList.remove('ativa');
+  }
+
+  // Fone Bluetooth que desconecta no meio da previa: o navegador passaria o
+  // som para o padrao do sistema, que pode ser a casa. Para antes disso.
+  async function vigiarMonitoria() {
+    const audio = monitorAudio();
+    if (audio && audio.src) {
+      const seguro = VoxlySaidas.monitoriaSegura({
+        monitorId: saidaSalva('monitor'), principalId: saidaSalva('principal'),
+        dispositivos: await dispositivosDeAudio(),
+      });
+      if (!seguro.ok) { pararPrevia(); mostrarToast('🎧 Prévia parada: ' + seguro.motivo, 6000); }
+    }
+    preencherSaidas();
+  }
+  if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechange', vigiarMonitoria);
+
   function mostrarFaderSalvo() {
     const v = volumeSalvo();
     const el = document.getElementById('fader-volume');
@@ -3826,6 +4011,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       // sessao aberta, e o volume vale com ou sem sessao. Sem isto o Palco
       // recarregado voltava ao volume padrao, ignorando o fader.
       playerCmd(JSON.stringify({ cmd: 'volume', valor: volumeSalvo() }));
+      enviarSaidaAoPalco();
       reenviarEstadoAoPublico();
     });
   }
@@ -3833,6 +4019,8 @@ https://www.youtube.com/@canal/videos"></textarea>
   // O Palco costuma pedir o estado antes de esta tela terminar de carregar (ela
   // ainda baixa o Firebase), e o pedido se perde: manda o volume por conta.
   playerCmd(JSON.stringify({ cmd: 'volume', valor: volumeSalvo() }));
+  enviarSaidaAoPalco();
+  preencherSaidas();
 
   if (window.electronAPI && window.electronAPI.onAudienceState) {
     window.electronAPI.onAudienceState(ativa => {

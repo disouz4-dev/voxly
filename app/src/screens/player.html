@@ -822,6 +822,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // cancelar a musica que esta carregando.
   let ordemTransporte = 0;
   let ordemPausa = 0;
+  // Saida de audio escolhida pelo KJ (a Scarlett, por exemplo). Vazio = o
+  // padrao do sistema. Vale para o karaoke e para todo som do Palco.
+  let saidaPrincipal = "";
   let rampaNode  = null;   // entradas e saidas sem estalo (vai a 0 na troca)
   let faderNode  = null;   // volume do KJ — independente da rampa
   let volumeKJ   = VoxlyVolume.PADRAO;
@@ -967,6 +970,10 @@ document.addEventListener("DOMContentLoaded", () => {
     normNode = audioCtx.createGain();
     normNode.connect(compNode);
 
+    if (saidaPrincipal && audioCtx.setSinkId) {
+      audioCtx.setSinkId(saidaPrincipal).catch(e => console.warn("[AUDIO] saida escolhida indisponivel:", e.message));
+    }
+
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
     srcNode = audioCtx.createMediaElementSource(video);
     pitchNode = criarRubberbandNode();
@@ -1002,6 +1009,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // o KJ abaixava o fader e o intervalo continuava no mesmo volume.
   function comFader(base) {
     return base * VoxlyVolume.ganhoDoFader(volumeKJ);
+  }
+
+  // Troca a saida de tudo que o Palco toca. Se o aparelho sumir (cabo solto),
+  // o Chromium volta ao padrao do sistema — no som da casa, perder a interface
+  // e melhor que ficar mudo.
+  async function aplicarSaida(id) {
+    saidaPrincipal = id || "";
+    if (audioCtx && audioCtx.setSinkId) {
+      await audioCtx.setSinkId(saidaPrincipal).catch(e => console.warn("[AUDIO] setSinkId:", e.message));
+    }
+    for (const el of [intervaloAudio, aberturaAudio, falaAudio, previewAudio]) {
+      if (el && el.setSinkId) await el.setSinkId(saidaPrincipal).catch(() => {});
+    }
   }
 
   function aplicarVolumeKJ(valor) {
@@ -1728,6 +1748,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (dados.cmd === "volume") {
           if (!isAudience) aplicarVolumeKJ(dados.valor);
+          return;
+        }
+
+        if (dados.cmd === "saida") {
+          if (!isAudience) aplicarSaida(dados.id);
           return;
         }
 

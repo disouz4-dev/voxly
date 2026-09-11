@@ -2062,6 +2062,33 @@ ipcMain.handle("yt-download", async (_, opts) => {
   }
 });
 
+// Previa na monitoria: o endereco direto do audio de uma versao do YouTube,
+// para o KJ ouvir no fone antes de decidir o download. Nada vai para o disco.
+// So aceita id de video do YouTube: o endereco vem da tela, e texto livre ali
+// viraria argumento do yt-dlp.
+const _previas = new Map();   // id -> { url, em }
+const VALIDADE_PREVIA_MS = 3 * 3600e3;   // o YouTube expira esses enderecos em ~6 h
+ipcMain.handle("yt-previa", async (_, urlVideo) => {
+  const id = idDaUrl(urlVideo);
+  if (!id) return { erro: "Endereço de vídeo inválido." };
+  const guardada = _previas.get(id);
+  if (guardada && Date.now() - guardada.em < VALIDADE_PREVIA_MS) return { url: guardada.url };
+  const ytDlp = resolverBinario("yt-dlp");
+  if (!ytDlp) return { erro: "yt-dlp não encontrado." };
+  try {
+    const { stdout } = await execFile(ytDlp, [
+      "-f", "bestaudio[ext=m4a]/bestaudio/best", "-g", "--no-playlist", "--no-warnings",
+      `https://www.youtube.com/watch?v=${id}`,
+    ], { timeout: 45000 });
+    const url = String(stdout).trim().split("\n")[0];
+    if (!/^https?:\/\//.test(url)) return { erro: "O YouTube não devolveu o áudio desta versão." };
+    _previas.set(id, { url, em: Date.now() });
+    return { url };
+  } catch (e) {
+    return { erro: motivoFalha(1, String(e.stderr || e.message)) || "Não consegui a prévia desta versão." };
+  }
+});
+
 // ── IPC: procura candidatos de karaoke no YouTube ──────────
 ipcMain.handle("yt-cancel", () => {
   ytCancelado = true;
