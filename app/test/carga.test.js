@@ -120,10 +120,10 @@ function usosAntesDaDeclaracao(html) {
 //
 // LIMITE CONHECIDO: este detector nao pegou o caso real do guiaTimer, em que
 // espelhar() (arrow dentro de um if de topo) chamava iniciarGuiaPublico(), que
-// lia um `let` declarado adiante. As duas iscas abaixo passam e o caso real
-// nao, entao ha um buraco na analise que ainda nao isolei. Enquanto isso, a
-// regra pratica continua valendo: TODA declaracao usada por codigo que roda na
-// CARGA fica no topo do script, junto de isAudience e video.
+// lia um `let` declarado adiante. Quem cobre esse buraco e carga-execucao.test.js,
+// que RODA a carga de cada tela em vez de ler o codigo — e pega o guiaTimer
+// reintroduzido no player.html de verdade. Este fica como segunda rede, com
+// mensagens que apontam a linha.
 // O detector acima ignora corpo de funcao, e isso deixou passar o caso do
 // guiaTimer: espelhar() roda na carga da tela do publico e chama
 // iniciarGuiaPublico(), que le um `let` declarado 150 linhas abaixo. A tela
