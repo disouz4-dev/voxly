@@ -229,8 +229,20 @@ jobs:
     needs: build
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # A imagem fica no registro privado do repositorio: sem login, o Trivy nao
+    # conseguia baixa-la e o job falhava sempre — marcando todo run como
+    # vermelho e escondendo falha de verdade.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
+      - name: Entrar no registro
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Scan imagem Docker
         uses: aquasecurity/trivy-action@master
         with:
