@@ -476,7 +476,7 @@ footer strong { color:var(--ambar); font-weight:700; }
   <div class="header-controls">
     <span class="relogio-kj" id="relogioHora" aria-live="off" title="Hora atual">--:--</span>
     <span class="session-badge inativa" id="sessionBadge" onclick="editarSessaoAtiva()"
-          title="Clique para editar nome, data e horário sem derrubar a sessão">● Sem Sessão</span>
+          title="Clique para editar nome, data e horário sem derrubar a sessão">Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="abrirModalSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-danger btn-sm" id="btnDerrubarSessao" onclick="derrubarSessoes()" title="Apaga do servidor qualquer sessão em aberto, inclusive as presas de outra máquina">💥 Derrubar sessão</button>
@@ -572,7 +572,7 @@ footer strong { color:var(--ambar); font-weight:700; }
         <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px;">☕ Prioridade (Café com Leite)</div>
         <div class="rule-row">
           <label>Ativar prioridade:</label>
-          <label class="rule-toggle"><input type="checkbox" id="prioridade-ativa" onchange="togglePrioridade()"><span></span></label>
+          <label class="rule-toggle"><input type="checkbox" id="prioridade-ativa" onchange="togglePrioridade()"><span class="rule-slider"></span></label>
         </div>
         <div class="rule-row" id="row-prioridade-min">
           <label>Espera mínima (min):</label>
@@ -582,11 +582,11 @@ footer strong { color:var(--ambar); font-weight:700; }
         <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px;">🎤 Duo / Participações</div>
         <div class="rule-row">
           <label>Permitir duo:</label>
-          <label class="rule-toggle"><input type="checkbox" id="permitir-duo" onchange="toggleDuo()"><span></span></label>
+          <label class="rule-toggle"><input type="checkbox" id="permitir-duo" onchange="toggleDuo()"><span class="rule-slider"></span></label>
         </div>
         <div class="rule-row" id="row-max-duo">
           <label>Ilimitado:</label>
-          <label class="rule-toggle"><input type="checkbox" id="duo-ilimitado" onchange="toggleDuoIlimitado()"><span></span></label>
+          <label class="rule-toggle"><input type="checkbox" id="duo-ilimitado" onchange="toggleDuoIlimitado()"><span class="rule-slider"></span></label>
         </div>
         <div class="rule-row" id="row-max-duo-num">
           <label>Máx. participações por sessão:</label>
@@ -1297,7 +1297,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       return ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null;
     };
     const faixa = (hm(d.inicio) && hm(d.termino)) ? ` · ${hm(d.inicio)}–${hm(d.termino)}` : '';
-    el.textContent = `● ${d.nomeCasa || 'Sessão ' + (sessaoCodigo || '')}${faixa}`;
+    el.textContent = `${d.nomeCasa || 'Sessão ' + (sessaoCodigo || '')}${faixa}`;
     el.title = `Sessão ${sessaoCodigo || ''} — clique para editar sem derrubar`;
     el.style.cursor = 'pointer';
   }
@@ -1616,7 +1616,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     const inpShow = document.getElementById('inicio-show');
     if (inpShow) inpShow.value = '';
 
-    document.getElementById('sessionBadge').textContent = '● Sem Sessão';
+    // Sem "●": a bolinha ja vem do CSS do badge, e aparecia duas vezes.
+    document.getElementById('sessionBadge').textContent = 'Sem Sessão';
     document.getElementById('sessionBadge').className   = 'session-badge inativa';
     document.getElementById('sessionBadge').title        = '';
     document.getElementById('sessionBadge').style.cursor = 'default';
@@ -2879,6 +2880,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       maxParticipacoesDuo: document.getElementById('duo-ilimitado').checked ? 0 : (parseInt(document.getElementById('max-participacoes-duo').value) || 1),
     };
     localStorage.setItem('voxly_regras', JSON.stringify(regras));
+    enviarRegrasAoPublico();
     if (SESSAO_ID) await db.collection('sessoes').doc(SESSAO_ID).update({ regras });
     mostrarToast('Regras salvas!');
   }
@@ -3938,7 +3940,17 @@ https://www.youtube.com/@canal/videos"></textarea>
       : 0;
   }
 
+  // O guia do Publico so mostra as regras que o KJ ligou (guia.js).
+  function enviarRegrasAoPublico() {
+    playerCmd(JSON.stringify({ cmd: 'regras-publico', regras: {
+      prioridadeAtiva: !!(regras && regras.prioridadeAtiva),
+      prioridadeMinutos: regras && regras.prioridadeMinutos,
+      permitirDuo: !!(regras && regras.permitirDuo),
+    } }));
+  }
+
   function reenviarEstadoAoPublico() {
+    enviarRegrasAoPublico();
     if (!window.electronAPI || !SESSAO_ID) return;
     // Pequeno atraso: a janela precisa ter carregado para receber o comando.
     setTimeout(() => {
