@@ -111,3 +111,52 @@ test("usa a mais nova das duas", () => {
   assert.strictEqual(maisNova("2026.06.09", null), "2026.06.09");
   assert.strictEqual(maisNova(null, null), null);
 });
+
+// ── Integridade ─────────────────────────────────────────────
+// Antes so se conferia o tamanho e se "--version" rodava. O yt-dlp publica o
+// SHA-256 de cada arquivo; um binario que nao bate nao substitui o que funciona.
+
+const { somaEsperada, urlDasSomas, nomeNoRelease } = require("../src/ytdlp");
+
+// Trecho real de https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS
+const SOMAS = [
+  "1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6  yt-dlp",
+  "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a  yt-dlp.exe",
+  "072aad4f2a7604e92155f61a275a4752dc64046c8f6d90df3710525d94cd37c1  yt-dlp.tar.gz",
+  "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  yt-dlp_linux",
+  "b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc  yt-dlp_linux_aarch64",
+].join("\n");
+
+test("acha a soma do arquivo pelo nome exato", () => {
+  assert.strictEqual(somaEsperada(SOMAS, "yt-dlp"),
+    "1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6");
+  assert.strictEqual(somaEsperada(SOMAS, "yt-dlp_linux"),
+    "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a");
+});
+
+test("nome parecido não serve: yt-dlp não casa com yt-dlp.tar.gz", () => {
+  const soYtDlpTar = "072aad4f2a7604e92155f61a275a4752dc64046c8f6d90df3710525d94cd37c1  yt-dlp.tar.gz";
+  assert.strictEqual(somaEsperada(soYtDlpTar, "yt-dlp"), null);
+});
+
+test("arquivo fora da lista, lista vazia ou torta: sem soma", () => {
+  assert.strictEqual(somaEsperada(SOMAS, "yt-dlp_macos"), null);
+  assert.strictEqual(somaEsperada("", "yt-dlp"), null);
+  assert.strictEqual(somaEsperada("<html>rate limit</html>", "yt-dlp"), null);
+  assert.strictEqual(somaEsperada(null, "yt-dlp"), null);
+});
+
+test("aceita o formato binário do sha256sum (asterisco) e fim de linha do Windows", () => {
+  const h = "a".repeat(64);
+  assert.strictEqual(somaEsperada(`${h} *yt-dlp\r\n`, "yt-dlp"), h);
+});
+
+test("a lista de somas vem do mesmo release que o binário", () => {
+  assert.strictEqual(urlDasSomas(), "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS");
+});
+
+test("nome do arquivo no release sai da URL baixada", () => {
+  assert.strictEqual(nomeNoRelease(urlDoBinario("darwin", { temPython: true })), "yt-dlp");
+  assert.strictEqual(nomeNoRelease(urlDoBinario("linux", { temPython: false })), "yt-dlp_linux");
+  assert.strictEqual(nomeNoRelease(urlDoBinario("win32", { temPython: false })), "yt-dlp.exe");
+});

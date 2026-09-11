@@ -1418,11 +1418,24 @@ async function baixarYtDlp() {
   const temporario = `${destino}.${process.pid}.${Date.now()}.parcial`;
 
   try {
-    const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(300000) });
+    const [res, somas] = await Promise.all([
+      fetch(url, { redirect: "follow", signal: AbortSignal.timeout(300000) }),
+      fetch(ytdlp.urlDasSomas(), { redirect: "follow", signal: AbortSignal.timeout(30000) })
+        .then(r => (r.ok ? r.text() : null)).catch(() => null),
+    ]);
     if (!res.ok) throw new Error(`GitHub respondeu ${res.status}`);
     const bytes = Buffer.from(await res.arrayBuffer());
     // Truncado nao serve: o binario passa de 30 MB.
     if (bytes.length < 1024 * 1024) throw new Error(`download incompleto (${bytes.length} bytes)`);
+
+    // Sem soma conferida nao troca. O custo de recusar e baixo — o yt-dlp que
+    // ja existe continua valendo e a proxima abertura tenta de novo —, o de
+    // aceitar um binario adulterado nao e.
+    const esperada = ytdlp.somaEsperada(somas, ytdlp.nomeNoRelease(url));
+    if (!esperada) throw new Error("nao consegui a soma SHA-256 do release para conferir");
+    const obtida = require("crypto").createHash("sha256").update(bytes).digest("hex");
+    if (obtida !== esperada) throw new Error("o arquivo baixado nao confere com a soma SHA-256 publicada");
+
     fs.writeFileSync(temporario, bytes);
     fs.chmodSync(temporario, 0o755);
 
@@ -1430,6 +1443,13 @@ async function baixarYtDlp() {
     if (!versao) throw new Error("o yt-dlp baixado nao executou nesta maquina");
 
     _versaoYtDlp.delete(destino);
+    // No Windows um .exe em uso nao pode ser sobrescrito (EPERM), mas pode
+    // ser renomeado: o antigo sai do caminho e e apagado na proxima vez.
+    if (process.platform === "win32" && fs.existsSync(destino)) {
+      const velho = destino + ".old";
+      try { fs.unlinkSync(velho); } catch (_) {}
+      fs.renameSync(destino, velho);
+    }
     fs.renameSync(temporario, destino);
     _versaoYtDlp.set(destino, versao);
     console.log(`[YTDLP] atualizado para ${versao}`);

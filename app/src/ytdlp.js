@@ -67,4 +67,27 @@ function nomeDoBinario(plataforma) {
   return plataforma === "win32" ? "yt-dlp.exe" : "yt-dlp";
 }
 
-module.exports = { idadeEmDias, precisaAtualizar, urlDoBinario, nomeDoBinario, maisNova, API_ULTIMA };
+// Integridade: o release traz SHA2-256SUMS ("<hash>  <arquivo>" por linha).
+// Antes so se conferia tamanho e se "--version" rodava — um binario adulterado
+// no caminho passaria pelos dois.
+function urlDasSomas() {
+  return BASE_OFICIAL + "SHA2-256SUMS";
+}
+
+function nomeNoRelease(url) {
+  return String(url || "").split("/").pop();
+}
+
+function somaEsperada(conteudo, arquivo) {
+  for (const linha of String(conteudo || "").split(/\r?\n/)) {
+    // "*" antes do nome e o modo binario do sha256sum.
+    const m = linha.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/i);
+    if (m && m[2] === arquivo) return m[1].toLowerCase();
+  }
+  return null;
+}
+
+module.exports = {
+  idadeEmDias, precisaAtualizar, urlDoBinario, nomeDoBinario, maisNova, API_ULTIMA,
+  urlDasSomas, nomeNoRelease, somaEsperada,
+};
