@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ytCancel:           () => ipcRenderer.invoke("yt-cancel"),
   ytEmAndamento:      () => ipcRenderer.invoke("yt-em-andamento"),
   ytPrevia:           (url) => ipcRenderer.invoke("yt-previa", url),
+  // Diario: send, nao invoke — registrar nunca pode fazer a tela esperar.
+  diario:             (evento, dados, nivel) => ipcRenderer.send("diario", { evento, dados, nivel }),
+  abrirDiario:        () => ipcRenderer.invoke("abrir-diario"),
+  lerDiario:          (quantas) => ipcRenderer.invoke("ler-diario", quantas),
   onYtProgress:       (cb) => ipcRenderer.on("yt-progress", (_e, info) => cb(info)),
   onYtDone:           (cb) => ipcRenderer.on("yt-done", (_e, info) => cb(info)),
   onYtEditRequest:    (cb) => ipcRenderer.on("yt-edit-request", (_e, info) => cb(info)),

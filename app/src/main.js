@@ -17,6 +17,100 @@ const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const ytdlp = require("./ytdlp");
 const loudness = require("./loudness");
 const { autoUpdater } = require("electron-updater");
+const diario = require("./diario");
+
+// ── Diario ─────────────────────────────────────────────────
+// Tudo que acontece, num arquivo por dia (logs/voxly-AAAA-MM-DD.jsonl na pasta
+// do app): o console deste processo e das tres janelas, os comandos ao Palco,
+// downloads, previas, ganho de volume e o que as telas mandam por "diario".
+// Nasceu do "as musicas sumiram" de 11/09, que ninguem conseguiu explicar
+// depois. Grava em lote a cada 250 ms: o show nao pode esperar o disco.
+const PASTA_DIARIO = path.join(app.getPath("userData"), "logs");
+const DIAS_DE_DIARIO = 30;
+let _linhasDiario = [];
+let _timerDiario = null;
+
+function registrar(origem, evento, dados, nivel = "info") {
+  try {
+    _linhasDiario.push(diario.linhaDoDiario({ t: Date.now(), origem, evento, dados, nivel }));
+    if (!_timerDiario) _timerDiario = setTimeout(gravarDiario, 250);
+  } catch (_) { /* o diario nunca derruba o app */ }
+}
+
+function gravarDiario() {
+  _timerDiario = null;
+  if (!_linhasDiario.length) return;
+  const lote = _linhasDiario.join("\n") + "\n";
+  _linhasDiario = [];
+  try {
+    fs.mkdirSync(PASTA_DIARIO, { recursive: true });
+    fs.appendFileSync(path.join(PASTA_DIARIO, diario.nomeDoArquivo()), lote);
+  } catch (_) { /* disco cheio ou sem permissao: segue sem diario */ }
+}
+
+function limparDiariosVelhos() {
+  try {
+    for (const nome of diario.arquivosVencidos(fs.readdirSync(PASTA_DIARIO), new Date(), DIAS_DE_DIARIO)) {
+      fs.unlinkSync(path.join(PASTA_DIARIO, nome));
+    }
+  } catch (_) { /* pasta ainda nao existe */ }
+}
+
+// O console deste processo vai inteiro para o diario: e nele que ja saem os
+// comandos ao Palco, os downloads, as atualizacoes e a resolucao de arquivos.
+for (const [metodo, nivel] of [["log", "info"], ["info", "info"], ["warn", "aviso"], ["error", "erro"]]) {
+  const original = console[metodo].bind(console);
+  console[metodo] = (...args) => {
+    original(...args);
+    registrar("main", "console", { msg: args.map(a => (typeof a === "string" ? a : diario.limpar(a))) }, nivel);
+  };
+}
+
+// Janela vigiada: console, quedas e travamentos da tela vao para o diario.
+const NIVEL_CONSOLE = ["debug", "info", "aviso", "erro"];
+function vigiarJanela(janela, origem) {
+  const wc = janela.webContents;
+  wc.on("console-message", (_e, nivel, msg, linha, fonte) => {
+    registrar(origem, "console", { msg, linha, fonte: fonte ? path.basename(fonte) : null }, NIVEL_CONSOLE[nivel] || "info");
+  });
+  wc.on("render-process-gone", (_e, d) => registrar(origem, "janela.caiu", d, "erro"));
+  wc.on("unresponsive", () => registrar(origem, "janela.travou", null, "erro"));
+  wc.on("responsive", () => registrar(origem, "janela.voltou", null, "aviso"));
+  wc.on("did-fail-load", (_e, codigo, descricao) => registrar(origem, "janela.falhou-ao-carregar", { codigo, descricao }, "erro"));
+  wc.on("did-finish-load", () => registrar(origem, "janela.carregou", { url: path.basename(wc.getURL()) }));
+  janela.on("closed", () => registrar(origem, "janela.fechou", null));
+}
+
+function origemDoRemetente(wc) {
+  if (hostWindow && !hostWindow.isDestroyed() && wc === hostWindow.webContents) return "gerencia";
+  if (playerWindow && !playerWindow.isDestroyed() && wc === playerWindow.webContents) return "palco";
+  if (audienceWindow && !audienceWindow.isDestroyed() && wc === audienceWindow.webContents) return "publico";
+  return "desconhecida";
+}
+
+ipcMain.on("diario", (e, r) => {
+  if (!r || typeof r.evento !== "string") return;
+  registrar(origemDoRemetente(e.sender), r.evento.slice(0, 80), r.dados, ["debug", "info", "aviso", "erro"].includes(r.nivel) ? r.nivel : "info");
+});
+
+ipcMain.handle("abrir-diario", () => {
+  gravarDiario();
+  fs.mkdirSync(PASTA_DIARIO, { recursive: true });
+  return require("electron").shell.openPath(PASTA_DIARIO);
+});
+
+// Ultimas linhas de hoje, para a tela do diario na Gerencia.
+ipcMain.handle("ler-diario", (_e, quantas) => {
+  gravarDiario();
+  try {
+    const texto = fs.readFileSync(path.join(PASTA_DIARIO, diario.nomeDoArquivo()), "utf8");
+    const linhas = texto.trim().split("\n");
+    return linhas.slice(-Math.min(Math.max(Number(quantas) || 300, 1), 5000));
+  } catch (_) { return []; }
+});
+
+process.on("uncaughtException", (e) => registrar("main", "excecao-nao-tratada", { erro: e }, "erro"));
+process.on("unhandledRejection", (e) => registrar("main", "promessa-rejeitada", { erro: e }, "erro"));
 
 // mp4 1080p por padrao: qualidade de projecao sem pegar 4K, que incha o arquivo
 // sem ganho numa TV de bar. H.264/AAC, que toca em qualquer lugar. O KJ troca
@@ -263,7 +357,9 @@ ipcMain.handle("ganho-normalizacao", async (_, arquivo) => {
     medidaDe(arquivo),
     new Promise(r => setTimeout(() => r(null), 2500)),
   ]);
-  return loudness.ganhoDaMedida(medida);
+  const ganho = loudness.ganhoDaMedida(medida);
+  registrar("main", "volume.normalizacao", { arquivo: path.basename(String(arquivo || "")), lufs: medida && medida.lufs, ganho: Math.round(ganho * 1000) / 1000, semMedida: !medida });
+  return ganho;
 });
 
 // ── Fotos de artistas ──────────────────────────────────────
@@ -708,6 +804,7 @@ function createHostWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  vigiarJanela(hostWindow, "gerencia");
   hostWindow.loadFile(path.join(__dirname, "screens", "host.html"));
   hostWindow.on("closed", () => { hostWindow = null; });
 }
@@ -735,6 +832,7 @@ function createPlayerWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  vigiarJanela(playerWindow, "palco");
   playerWindow.loadFile(path.join(__dirname, "screens", "player.html"));
   playerWindow.webContents.once("did-finish-load", () => {
     console.log("[MAIN] Player carregado e pronto.");
@@ -765,6 +863,7 @@ function createAudienceWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  vigiarJanela(audienceWindow, "publico");
   audienceWindow.loadFile(path.join(__dirname, "screens", "player.html"), {
     search: "tela=publico",
   });
@@ -804,6 +903,11 @@ if (!instanciaUnica) {
 let bloqueioSuspensao = null;
 
 app.whenReady().then(() => {
+  limparDiariosVelhos();
+  registrar("main", "app.inicio", {
+    versao: app.getVersion(), plataforma: process.platform, arquitetura: process.arch,
+    electron: process.versions.electron, empacotado: app.isPackaged,
+  });
   try {
     bloqueioSuspensao = powerSaveBlocker.start("prevent-app-suspension");
     console.log("[MAIN] Suspensao em segundo plano desativada:", bloqueioSuspensao);
@@ -968,6 +1072,8 @@ ipcMain.handle("restart-to-update", () => {
 });
 
 ipcMain.handle("app-versao", () => app.getVersion());
+
+app.on("before-quit", () => { registrar("main", "app.fechando", null); gravarDiario(); });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -1169,9 +1275,13 @@ ipcMain.on("ajustar-tempo-publico", (_e, tempo) => {
 });
 
 ipcMain.handle("player-command", (_, cmd) => {
+  // Comando inteiro no diario (o console cortava em 80 caracteres). JSON vira
+  // objeto; comando simples ("stop", "pause") fica como texto.
+  let conteudo = String(cmd);
+  if (conteudo.startsWith("{")) { try { conteudo = JSON.parse(conteudo); } catch (_) { /* fica o texto */ } }
+  registrar("gerencia", "palco.comando", conteudo);
   if (playerWindow) {
     playerWindow.webContents.send("player-cmd", cmd);
-    console.log(`[CMD] → ${String(cmd).slice(0, 80)}`);
   }
   // Tela do público recebe a mesma info (ignora vídeo se não quiser)
   if (audienceWindow) {
@@ -1180,6 +1290,7 @@ ipcMain.handle("player-command", (_, cmd) => {
 });
 
 ipcMain.handle("song-ended", () => {
+  registrar("palco", "musica.terminou", null);
   if (hostWindow) hostWindow.webContents.send("song-ended");
   console.log("[MAIN] song-ended enviado ao host");
 });
@@ -1608,6 +1719,8 @@ let ytCancelado = false;
 let ytProcessoAtivo = null;
 
 function enviarProgresso(info) {
+  // Percentual a cada tique seria ruido; o que tem texto (etapas, erros) entra.
+  if (info && (info.log || info.status)) registrar("main", "download.progresso", { status: info.status, log: info.log, tipo: info.logTipo });
   if (hostWindow && !hostWindow.isDestroyed()) {
     hostWindow.webContents.send("yt-progress", info);
   }
@@ -2041,9 +2154,11 @@ ipcMain.handle("yt-download", async (_, opts) => {
   ytCancelado = false;
   const itemId = (opts && opts.itemId) || null;
   if (itemId) ytItensEmCurso.set(itemId, (ytItensEmCurso.get(itemId) || 0) + 1);
+  registrar("main", "download.inicio", { itemId, urls: opts && opts.urls, artista: opts && opts.artista, musica: opts && opts.musica, qualidade: opts && opts.qualidade });
   // O itemId vai junto no aviso de fim: se a Gerencia foi recarregada no meio,
   // quem esperava a resposta morreu, e a tela nova grava o "pronto" por ele.
   const avisar = (r) => {
+    registrar("main", "download.fim", { itemId, sucesso: !!(r && r.sucesso), erro: r && r.erro, cancelado: r && r.cancelado, baixados: r && r.totalBaixados }, r && r.sucesso ? "info" : "aviso");
     if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("yt-done", { ...r, itemId });
   };
   try {
@@ -2083,9 +2198,12 @@ ipcMain.handle("yt-previa", async (_, urlVideo) => {
     const url = String(stdout).trim().split("\n")[0];
     if (!/^https?:\/\//.test(url)) return { erro: "O YouTube não devolveu o áudio desta versão." };
     _previas.set(id, { url, em: Date.now() });
+    registrar("main", "previa.pronta", { id });
     return { url };
   } catch (e) {
-    return { erro: motivoFalha(1, String(e.stderr || e.message)) || "Não consegui a prévia desta versão." };
+    const erro = motivoFalha(1, String(e.stderr || e.message)) || "Não consegui a prévia desta versão.";
+    registrar("main", "previa.falhou", { id, erro }, "aviso");
+    return { erro };
   }
 });
 

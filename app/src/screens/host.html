@@ -366,6 +366,15 @@ header {
 .btn-previa { background:none; border:1px solid var(--azul); color:var(--azul); border-radius:8px; padding:3px 8px; font-size:.72rem; cursor:pointer; white-space:nowrap; }
 .btn-previa:hover, .btn-previa:focus-visible { background:var(--azul); color:var(--noite); }
 
+/* ── Diario ── */
+.diario-lista { margin-top:12px; max-height:62vh; overflow:auto; font-family:'Space Mono', monospace; font-size:.68rem; line-height:1.5; border:1px solid var(--linha); border-radius:10px; }
+.diario-linha { display:grid; grid-template-columns:92px 74px 190px 1fr; gap:8px; padding:3px 10px; border-bottom:1px solid var(--linha); }
+.diario-linha:nth-child(odd) { background:var(--palco2); }
+.diario-linha .evento { color:var(--azul); overflow-wrap:anywhere; }
+.diario-linha .dados { color:var(--mudo); overflow-wrap:anywhere; }
+.diario-linha[data-nivel="aviso"] .evento { color:var(--warn); }
+.diario-linha[data-nivel="erro"] .evento, .diario-linha[data-nivel="erro"] .dados { color:var(--perigo); }
+
 /* ── Modais ── */
 .modal-overlay {
   display:none; position:fixed; inset:0; z-index:200;
@@ -891,6 +900,22 @@ https://www.youtube.com/@canal/videos"></textarea>
   </div>
 </div>
 
+<!-- Diario: ultimas linhas de hoje (logs/voxly-AAAA-MM-DD.jsonl) -->
+<div class="modal-overlay" id="modalDiario">
+  <div class="modal-box" style="width:min(1100px,96vw);">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <h2 style="margin:0;flex:1;">📜 Diário de hoje</h2>
+      <input class="modal-input" id="diarioFiltro" placeholder="Filtrar (ex.: fila.saiu, erro, Chop Suey)" oninput="desenharDiario()" style="width:260px;margin:0;">
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalDiario()">↻ Atualizar</button>
+    </div>
+    <div id="diarioLista" class="diario-lista"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="window.electronAPI && window.electronAPI.abrirDiario()">📂 Abrir a pasta</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modalDiario').classList.remove('open')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalAjustes">
   <div class="modal-box" style="width:min(460px,94vw);">
     <h2>⚙ Configurações</h2>
@@ -954,6 +979,16 @@ https://www.youtube.com/@canal/videos"></textarea>
       interface — para ouvir a prévia de uma versão antes de baixar (🎧 na escolha de versão). Ela precisa ser um
       aparelho diferente do som da casa, senão a prévia não toca. A voz do sistema (sem o Piper) sai sempre pela saída
       padrão do computador.
+    </div>
+
+    <label class="modal-label">Diário do Voxly</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalDiario()">📜 Ver o diário de hoje</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.electronAPI && window.electronAPI.abrirDiario()">📂 Abrir a pasta</button>
+    </div>
+    <div style="font-size:.7rem;color:var(--mudo);margin:0 0 12px;line-height:1.45;">
+      Tudo o que acontece — fila, cantores, comandos ao Palco, downloads, erros das telas — num arquivo por dia,
+      guardado por 30 dias. Cada mudança na fila diz se saiu desta máquina ou veio de fora.
     </div>
 
     <label class="modal-label">Chamada por voz</label>
@@ -1026,6 +1061,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../trava.js"></script>
 <script src="../historico.js"></script>
 <script src="../saidas.js"></script>
+<script src="../diario.js"></script>
 <script src="../sessao-regras.js"></script>
 <script src="../texto.js"></script>
 <script src="../sugestoes.js"></script>
@@ -2012,6 +2048,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         // Sem relatorio salvo, esta sessao espera a proxima faxina — mas as
         // outras seguem. Antes uma falha interrompia a limpeza inteira.
         try {
+          diario('faxina.apagando', { id: doc.id, casa: d.nomeCasa, termino: d.horarioTermino, batimento: d.hostVivoEm }, 'aviso');
           await apagarSessao(doc.ref);
           apagadas++;
         } catch (e) {
@@ -2174,7 +2211,84 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // ── Diario ─────────────────────────────────────────────────
+  // Vai para o diario do processo principal (logs/voxly-AAAA-MM-DD.jsonl).
+  // Nunca lanca: registrar nao pode quebrar a acao que esta sendo registrada.
+  function diario(evento, dados, nivel) {
+    try {
+      if (window.electronAPI && window.electronAPI.diario) window.electronAPI.diario(evento, paraDiario(dados), nivel);
+    } catch (_) { /* sem diario, a Gerencia segue */ }
+  }
+
+  // O IPC so leva o que se clona: evento de DOM, elemento e funcao viram texto.
+  function paraDiario(v, prof = 0) {
+    if (v == null) return v;
+    if (typeof v === 'function') return '[funcao]';
+    if (typeof v !== 'object') return v;
+    if (typeof v.toMillis === 'function') return v.toMillis();
+    if (typeof Event !== 'undefined' && v instanceof Event) return '[evento ' + v.type + ']';
+    if (typeof Node !== 'undefined' && v instanceof Node) return '[elemento]';
+    if (prof > 4) return '[...]';
+    if (Array.isArray(v)) return v.slice(0, 50).map(x => paraDiario(x, prof + 1));
+    const o = {};
+    for (const k of Object.keys(v).slice(0, 60)) o[k] = paraDiario(v[k], prof + 1);
+    return o;
+  }
+
+  // Cada mudanca de uma colecao, com a origem: hasPendingWrites quer dizer que
+  // saiu DESTA maquina e ainda nao voltou do servidor; o resto veio de fora
+  // (cantor, outra maquina com o Voxly, faxina de outra Gerencia). Foi a falta
+  // exatamente disto que deixou sem explicacao as musicas que sumiram em 11/09.
+  const _vigiasDoDiario = new Map();
+  function vigiarNoDiario(nome, ref, resumo, { ignorar = [] } = {}) {
+    if (_vigiasDoDiario.has(nome)) _vigiasDoDiario.get(nome)();
+    const vistos = new Map();
+    let primeira = true;
+    const parar = ref.onSnapshot(snap => {
+      const origem = snap.metadata.hasPendingWrites ? 'esta-maquina' : 'fora';
+      if (primeira) {
+        primeira = false;
+        snap.docs.forEach(d => vistos.set(d.id, d.data()));
+        diario(nome + '.estado-inicial', { itens: snap.docs.map(d => resumo(d.id, d.data())) });
+        return;
+      }
+      for (const ch of snap.docChanges()) {
+        const id = ch.doc.id, dados = ch.doc.data();
+        if (ch.type === 'added') {
+          diario(nome + '.entrou', { ...resumo(id, dados), origem });
+        } else if (ch.type === 'removed') {
+          const emUso = nome === 'sessao' && id === SESSAO_ID;
+          diario(nome + '.saiu', { ...resumo(id, vistos.get(id) || dados), origem, emUso }, emUso ? 'erro' : 'aviso');
+        } else {
+          const mudancas = VoxlyDiario.diferencas(vistos.get(id), dados);
+          for (const k of ignorar) delete mudancas[k];
+          if (mudancas.candidatos) mudancas.candidatos = ['…', (dados.candidatos || []).length + ' versões'];
+          if (Object.keys(mudancas).length) diario(nome + '.mudou', { ...resumo(id, dados), mudancas, origem });
+        }
+        if (ch.type === 'removed') vistos.delete(id); else vistos.set(id, dados);
+      }
+    }, e => diario(nome + '.vigia-falhou', { erro: e.message }, 'erro'));
+    _vigiasDoDiario.set(nome, parar);
+  }
+
+  const resumoPedido = (id, d = {}) => ({ id, cantor: d.nomeArtistico, musica: d.musica, artista: d.artista,
+    status: d.status, slot: d.slot, tipo: d.tipo, ordemFila: d.ordemFila, duo: d.duoNome || null });
+  const resumoCantor = (id, d = {}) => ({ id, nome: d.nomeArtistico, status: d.status, modo: d.modo || null });
+  const resumoSimples = (id, d = {}) => ({ id, status: d.status, ...(d.musica ? { musica: d.musica } : {}) });
+  const resumoSessao = (id, d = {}) => ({ id, casa: d.nomeCasa, status: d.status });
+
+  // Vigias da sessao aberta: tudo que acontece dentro dela.
+  function vigiarSessaoNoDiario() {
+    if (!SESSAO_ID) return;
+    const ref = db.collection('sessoes').doc(SESSAO_ID);
+    vigiarNoDiario('fila', ref.collection('fila'), resumoPedido);
+    vigiarNoDiario('cantor', ref.collection('presencas'), resumoCantor, { ignorar: ['ultimoHeartbeat'] });
+    vigiarNoDiario('convite', ref.collection('convites'), resumoSimples);
+    vigiarNoDiario('busca', ref.collection('buscas'), resumoSimples);
+    vigiarNoDiario('historico', ref.collection('historico'), resumoSimples);
+  }
   function escutarFila() {
+    vigiarSessaoNoDiario();
     db.collection('sessoes').doc(SESSAO_ID).collection('fila')
       .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])
       .onSnapshot(snap => {
@@ -3383,6 +3497,33 @@ https://www.youtube.com/@canal/videos"></textarea>
             `<span>${escHtml(m.cantor)}${m.dupla ? ' & ' + escHtml(m.dupla) : ''}</span></li>`
           ).join('') || '<li>Nenhuma música cantada.</li>'}</ol>
         </details>`).join('')}`;
+  }
+
+  // ── Tela do diario ───────────────────────────────────────
+  let _linhasDiario = [];
+  async function abrirModalDiario() {
+    document.getElementById('modalDiario').classList.add('open');
+    const brutas = (window.electronAPI && window.electronAPI.lerDiario) ? await window.electronAPI.lerDiario(1500) : [];
+    _linhasDiario = brutas.map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean).reverse();
+    desenharDiario();
+  }
+  function desenharDiario() {
+    const filtro = (document.getElementById('diarioFiltro').value || '').toLowerCase();
+    const el = document.getElementById('diarioLista');
+    const linhas = _linhasDiario.filter(l => !filtro || JSON.stringify(l).toLowerCase().includes(filtro)).slice(0, 600);
+    // Montado pelo DOM: o diario guarda texto que veio de fora (nomes, titulos
+    // do YouTube) e nao pode virar HTML.
+    el.replaceChildren(...linhas.map(l => {
+      const linha = document.createElement('div');
+      linha.className = 'diario-linha';
+      linha.dataset.nivel = l.nivel;
+      for (const [cls, txt] of [['hora', l.hora], ['origem', l.origem], ['evento', l.evento],
+                                ['dados', l.dados == null ? '' : JSON.stringify(l.dados).slice(0, 400)]]) {
+        const c = document.createElement('span'); c.className = cls; c.textContent = txt; linha.appendChild(c);
+      }
+      return linha;
+    }));
+    if (!linhas.length) el.textContent = 'Nada registrado ainda hoje' + (filtro ? ' com esse filtro.' : '.');
   }
 
   function openSettings() {
@@ -4673,6 +4814,53 @@ https://www.youtube.com/@canal/videos"></textarea>
       }
     });
   }
+</script>
+<script>
+  // Toda acao do KJ vai para o diario: os botoes da tela e os passos do fluxo
+  // da noite (chamada, confirmacao, promover espera, faxina). Envelopar aqui,
+  // depois de tudo declarado, pega tanto o clique quanto a chamada interna —
+  // funcao declarada no topo do script e propriedade de window.
+  (function enveloparAcoesNoDiario() {
+    const NOMES = [
+      // botoes
+      'procurarVersoes','testarSaida','ajustarTom','ajustarPitchFila','vincularArquivo','verificarAtualizacao',
+      'usarVersaoLocal','trocarMusicaFila','toggleIntervalo','toggleAudiencia','tocarMusica','testarVoz','skipSong',
+      'selectFolder','scanFolder','salvarRegras','removerFaixaTema','removerDuoFila','reiniciarParaAtualizar',
+      'reiniciarMusica','reabrirPlayer','pularMusica','playAgora','pararPrevia','pararDownloadYt','openSettings',
+      'instalarPiper','iniciarFila','iniciarDownloadYt','importarFaixaTema','finalizarSessao','editarSessaoAtiva',
+      'derrubarSessoes','definirInicioShow','criarTema','confirmarIniciarSessao','confirmarExpulsaoCantor',
+      'confirmarExpulsao','confirmarEdicaoManualYt','confirmarDuoFila','baixarEscolhido','atualizarYtDlp',
+      'alternarPrevia','adicionarMusicaManual','adicionarFaixaTema','adicionarCantorManual','adicionarArquivoTema',
+      'abrirVersoesLocais','abrirModalCandidatos','abrirModalMusicaIdx','abrirModalExpulsar','abrirModalExpulsarCantor',
+      'abrirModalRelatorios','togglePrioridade','toggleDuo','toggleDuoIlimitado','escolherSaida','mudarVolume',
+      'ouvirPrevia','onDrop',
+      // fluxo da noite
+      'iniciarSessao','salvarEdicaoSessao','expurgarSessoesAnteriores','apagarSessao','preservarSessao',
+      'limparSessoesVencidas','marcarCantada','promoverEspera','iniciarConfirmacaoProxima','avancarCicloSeVazio',
+      'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
+    ];
+    for (const nome of NOMES) {
+      const original = window[nome];
+      if (typeof original !== 'function') continue;
+      window[nome] = function (...args) {
+        diario('kj.' + nome, { args: paraDiario(args) });
+        try {
+          const r = original.apply(this, args);
+          if (r && typeof r.then === 'function') {
+            r.catch(e => diario('kj.' + nome + '.falhou', { erro: String((e && e.message) || e) }, 'erro'));
+          }
+          return r;
+        } catch (e) {
+          diario('kj.' + nome + '.falhou', { erro: String((e && e.message) || e) }, 'erro');
+          throw e;
+        }
+      };
+    }
+    // Todas as sessoes: e aqui que aparece uma sessao apagada por outra maquina.
+    authPronta.then(() => vigiarNoDiario('sessao', db.collection('sessoes'), resumoSessao, { ignorar: ['hostVivoEm'] }));
+    window.addEventListener('error', e => diario('tela.erro', { msg: e.message, arquivo: e.filename, linha: e.lineno }, 'erro'));
+    window.addEventListener('unhandledrejection', e => diario('tela.promessa-rejeitada', { erro: String(e.reason && e.reason.message || e.reason) }, 'erro'));
+  })();
 </script>
 </body>
 </html>

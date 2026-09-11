@@ -810,6 +810,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // musica esperava o ganho era desfeito — o video voltava a tocar escondido,
   // junto com o intervalo. Pausa e play tem contador proprio: um Play nao pode
   // cancelar a musica que esta carregando.
+  // Diario do processo principal. A origem (palco/publico) ele descobre sozinho.
+  function diario(evento, dados, nivel) {
+    try { if (window.electronAPI && window.electronAPI.diario) window.electronAPI.diario(evento, dados, nivel); }
+    catch (_) { /* sem diario, o show segue */ }
+  }
   let ordemTransporte = 0;
   let ordemPausa = 0;
   // Saida de audio escolhida pelo KJ (a Scarlett, por exemplo). Vazio = o
@@ -1006,6 +1011,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // e melhor que ficar mudo.
   async function aplicarSaida(id) {
     saidaPrincipal = id || "";
+    diario('audio.saida', { id: saidaPrincipal ? saidaPrincipal.slice(0, 12) : 'padrao' });
     if (audioCtx && audioCtx.setSinkId) {
       await audioCtx.setSinkId(saidaPrincipal).catch(e => console.warn("[AUDIO] setSinkId:", e.message));
     }
@@ -1040,6 +1046,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // caminho entre o video e a saida. Num show, perder o ajuste de tom e um
     // detalhe; ficar mudo e o fim. Aqui ele sai do circuito e o som segue.
     node.onprocessorerror = () => {
+      diario('audio.tom-falhou', { semitons: currentSemitons }, 'erro');
       console.warn("[AUDIO] processador de tom falhou — tocando sem ajuste de tom");
       contornarPitch();
     };
@@ -1655,7 +1662,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function iniciarVideo(filePath, semitons) {
     const minhaOrdem = ++ordemTransporte;
-    const vencida = () => minhaOrdem !== ordemTransporte;
+    const vencida = () => {
+      if (minhaOrdem === ordemTransporte) return false;
+      diario('musica.inicio-cancelado', { arquivo: String(filePath).split('/').pop(), motivo: 'outra ordem chegou antes' }, 'aviso');
+      return true;
+    };
+    diario('musica.iniciando', { arquivo: String(filePath).split('/').pop(), semitons: semitons ?? currentSemitons, saida: saidaPrincipal || 'padrao' });
     idleAtivo = false;
     pararIntervalo();
     esconderPronto();
@@ -1678,6 +1690,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const ganho = await ganhoPedido;
     if (vencida()) return;
     if (normNode) normNode.gain.value = ganho;
+    diario('musica.ganho-aplicado', { ganho: Math.round(ganho * 1000) / 1000 });
     video.src = toFileUrl(filePath);
     video.load();
     video.play()
@@ -2042,6 +2055,19 @@ intervaloDeck = [];
   if (!isAudience) video.addEventListener("playing", () => rampar(1, 0.15));
 
   video.addEventListener("ended",     () => { if (video.style.display !== "none") aoTerminarMusica(); });
+  // Engasgos e erros do video: sem isto um travamento no meio da musica nao
+  // deixava rastro nenhum.
+  if (!isAudience) {
+    const onde = () => ({ arquivo: decodeURI(String(video.currentSrc || '')).split('/').pop(), tempo: Math.round(video.currentTime * 10) / 10 });
+    video.addEventListener("error",   () => diario('video.erro', { ...onde(), codigo: video.error && video.error.code, msg: video.error && video.error.message }, 'erro'));
+    video.addEventListener("stalled", () => diario('video.engasgou', onde(), 'aviso'));
+    video.addEventListener("waiting", () => diario('video.esperando-dados', onde(), 'aviso'));
+    video.addEventListener("playing", () => diario('video.tocando', onde()));
+    video.addEventListener("pause",   () => { if (video.currentSrc) diario('video.pausou', onde()); });
+    video.addEventListener("ended",   () => diario('video.fim', onde()));
+  }
+  window.addEventListener('error', e => diario('tela.erro', { msg: e.message, arquivo: e.filename, linha: e.lineno }, 'erro'));
+  window.addEventListener('unhandledrejection', e => diario('tela.promessa-rejeitada', { erro: String(e.reason && e.reason.message || e.reason) }, 'erro'));
   video.addEventListener("timeupdate", () => {
     if (video.duration && video.currentTime >= video.duration - 0.5 && video.style.display !== "none") {
       aoTerminarMusica();
