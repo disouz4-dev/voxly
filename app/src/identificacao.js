@@ -41,13 +41,7 @@ function escolherIdentidade({ pedido, metadados, itunes } = {}) {
 const RE_VERSAO_INDESEJADA =
   /\b(ao vivo|live|ac[ou]?ustic\w*|unplugged|remix\w*|karaoke|instrumental|cover|tribute|made famous|originally performed|sped up|slowed|nightcore|demo)\b/i;
 
-function palavras(t) {
-  return String(t || "")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/['\u2019]/g, "")
-    .replace(/[^a-z0-9]+/g, " ").trim()
-    .split(" ").filter(Boolean);
-}
+const { palavras } = require("./texto");
 
 // O criterio e o inverso do obvio: o titulo do YouTube carrega lixo (canal,
 // "karaoke", resolucao), entao exigir que ele caiba no resultado nunca casaria.

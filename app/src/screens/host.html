@@ -998,6 +998,8 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../trava.js"></script>
 <script src="../sessao-regras.js"></script>
 <script src="../relogio.js"></script>
+<script src="../texto.js"></script>
+<script src="../sugestoes.js"></script>
 <script src="../volume.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
@@ -4220,17 +4222,6 @@ https://www.youtube.com/@canal/videos"></textarea>
     buscaModalTimeout = setTimeout(() => _buscarModal(termo), 300);
   }
 
-  // O iTunes repete a mesma faixa em varios albuns e devolve versoes que nao
-  // servem para karaoke. Mesma regra do app do cantor, para artista e titulo
-  // sairem escritos igual dos dois lados — e o rename do download bater.
-  const RE_VERSAO_INDESEJADA =
-    /\b(ao vivo|live|ac[ou]?ustic\w*|unplugged|remix\w*|remaster\w*|karaoke|instrumental|cover|tribute|made famous|originally performed|sped up|slowed|8d|nightcore|demo|edit)\b|\(.*(?:ao vivo|live|remix|acoustic|version|feat|part).*\)/i;
-
-  function normSug(t) {
-    return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-
   // Passa pelo mesmo cache e teto da renomeacao. Este e o caminho que gasta
   // cota de verdade: dispara a cada 300ms de digitacao, e um 403 do iTunes
   // derruba tambem o autocomplete do app do cantor.
@@ -4259,24 +4250,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     try {
       let resultados = await _itunesHost(termo);
       if (!resultados || !resultados.length) resultados = await _deezerHost(termo);
-      if (!resultados) return [];
-      const d = { results: resultados };
-      const termos = normSug(termo).split(' ').filter(p => p.length > 2);
-      const vistos = new Set();
-      const itens  = [];
-      for (const t of d.results || []) {
-        const musica  = t.trackName  || '';
-        const artista = t.artistName || '';
-        if (!musica || RE_VERSAO_INDESEJADA.test(musica)) continue;
-        const alvo = normSug(artista + ' ' + musica);
-        if (termos.length && !termos.every(w => alvo.includes(w))) continue;
-        const chave = normSug(artista) + '|' + normSug(musica);
-        if (vistos.has(chave)) continue;
-        vistos.add(chave);
-        itens.push({ artista, musica, disponivel: false });
-        if (itens.length >= 5) break;
-      }
-      return itens;
+      // Mesmo filtro do app do cantor (sugestoes.js): artista e titulo saem
+      // escritos igual dos dois lados, e o rename do download bate.
+      return VoxlySugestoes.filtrarSugestoes(termo, resultados)
+        .map(i => ({ ...i, disponivel: false }));
     } catch (e) {
       console.warn('[MODAL] iTunes falhou:', e.message);
       return [];
@@ -4299,9 +4276,9 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     // Antes a busca parava no acervo: musica que ainda nao foi baixada dava
     // "Nenhum resultado" e o KJ nao tinha como colocar ninguem na fila com ela.
-    const vistos = new Set(locais.map(r => normSug(r.artista) + '|' + normSug(r.musica)));
+    const vistos = new Set(locais.map(r => VoxlyTexto.normalizar(r.artista) + '|' + VoxlyTexto.normalizar(r.musica)));
     const doItunes = (await sugerirItunesHost(termo))
-      .filter(r => !vistos.has(normSug(r.artista) + '|' + normSug(r.musica)));
+      .filter(r => !vistos.has(VoxlyTexto.normalizar(r.artista) + '|' + VoxlyTexto.normalizar(r.musica)));
 
     const resultados = [...locais.map(r => ({ ...r, disponivel: true })), ...doItunes];
     const el = document.getElementById('resultadosBuscaModal');

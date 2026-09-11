@@ -394,6 +394,8 @@
   <script src="/prioridade.js"></script>
   <script src="/ordem.js"></script>
   <script src="/trava.js"></script>
+  <script src="/texto.js"></script>
+  <script src="/sugestoes.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -835,50 +837,15 @@ function escutarFila() {
     // dominio publicado, ele falha com "Failed to fetch". Por isso o iTunes e o
     // principal aqui, e o Deezer fica como reserva atraves do host, que nao
     // sofre restricao de CORS.
-    // O iTunes devolve tudo que lembra o termo: versoes ao vivo, remixes,
-    // covers e outros artistas. Buscar "scarlet periphery" trazia um monte de
-    // coisa sem relacao. Aqui a lista e filtrada e reduzida a uma entrada por
-    // musica.
-    const RE_VERSAO_INDESEJADA =
-      /\b(ao vivo|live|ac[ou]?ustic\w*|unplugged|remix\w*|remaster\w*|karaoke|instrumental|cover|tribute|made famous|originally performed|sped up|slowed|8d|nightcore|demo|edit)\b|\(.*(?:ao vivo|live|remix|acoustic|version|feat|part).*\)/i;
-
-    function normSug(t) {
-      return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    }
-
+    // Filtro (versoes ao vivo, remixes, repetidas) em sugestoes.js, o mesmo da
+    // Gerencia.
     async function sugerirNoItunes(termo) {
       try {
         const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}` +
                     `&entity=song&limit=25&country=BR`;
         const d = await fetch(url).then(r => r.json());
-
-        // Palavras do que a pessoa digitou: o resultado tem que conter todas,
-        // entre artista e musica. Sem isso, "scarlet periphery" casava com
-        // qualquer musica que tivesse "scarlet".
-        const termos = normSug(termo).split(' ').filter(p => p.length > 2);
-
-        const vistos = new Set();
-        const itens = [];
-
-        for (const t of d.results || []) {
-          const musica  = t.trackName  || '';
-          const artista = t.artistName || '';
-          if (RE_VERSAO_INDESEJADA.test(musica)) continue;
-
-          const alvo = normSug(artista + ' ' + musica);
-          if (termos.length && !termos.every(p => alvo.includes(p))) continue;
-
-          // Uma entrada por musica: o iTunes repete a mesma faixa em varios
-          // albuns e coletaneas.
-          const chave = normSug(artista) + '|' + normSug(musica);
-          if (vistos.has(chave)) continue;
-          vistos.add(chave);
-
-          itens.push({ artista, musica, fonte: 'itunes' });
-          if (itens.length >= 5) break;
-        }
-        return itens;
+        return VoxlySugestoes.filtrarSugestoes(termo, d.results)
+          .map(i => ({ ...i, fonte: 'itunes' }));
       } catch (e) {
         console.warn('[SUGESTAO] iTunes falhou:', e.message);
         return [];

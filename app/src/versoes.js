@@ -4,14 +4,7 @@
 // mesma faixa costuma existir em canais diferentes, com tom e arranjo
 // diferentes, e pegar "a primeira que aparecer" tira essa escolha dele.
 
-function normalizar(txt) {
-  return String(txt || "")
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/['\u2019\u02bc]/g, "")   // "it's" e "its" sao a mesma palavra
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ").trim();
-}
+const { normalizar } = require("./texto");
 
 // Nome no padrao "Artista - Musica - Canal [id].ext".
 function decompor(nomeArquivo) {

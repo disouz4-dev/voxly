@@ -16,7 +16,7 @@
     "test": "node --test test/*.test.js",
     "lint": "node --check src/main.js && node --check src/preload.js",
     "fumaca": "node test/fumaca.mjs",
-    "sincronizar-regras": "cp src/prioridade.js src/ordem.js src/trava.js src/sessao-regras.js ../web/public/"
+    "sincronizar-regras": "cp src/prioridade.js src/ordem.js src/trava.js src/sessao-regras.js src/texto.js src/sugestoes.js ../web/public/"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
