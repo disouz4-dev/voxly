@@ -32,15 +32,7 @@ const TERMOS_INDESEJADOS = [
   "veja ", "assista", "confira", "reportagem", "materia sobre",
 ];
 
-function normalizar(txt) {
-  return String(txt || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // tira acentos
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const { normalizar } = require("./texto");
 
 function contemAlgum(texto, termos) {
   return termos.some(t => texto.includes(normalizar(t)));
