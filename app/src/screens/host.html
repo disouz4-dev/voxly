@@ -79,6 +79,13 @@ header {
 }
 .header-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
 
+/* Relogio do KJ: hora grande, e abaixo o quanto falta na sessao. A cor so muda
+   quando ha algo a fazer: ambar na tolerancia, vermelho com pedidos fechados. */
+.relogio-kj { display:flex; flex-direction:column; align-items:flex-end; line-height:1.1; margin-right:4px; font-family:'Space Mono', monospace; }
+.relogio-kj strong { font-size:1.05rem; color:var(--texto); letter-spacing:.04em; }
+.relogio-kj span { font-size:.62rem; color:var(--mudo); letter-spacing:.06em; }
+.relogio-kj[data-fase="tolerancia"] span { color:var(--warn); }
+.relogio-kj[data-fase="encerrada"] span { color:var(--danger); }
 .session-badge {
   font-family:'Space Mono', monospace; font-size:.7rem; letter-spacing:.22em;
   text-transform:uppercase; padding:7px 12px; border-radius:999px;
@@ -444,6 +451,10 @@ footer strong { color:var(--ambar); font-weight:700; }
     <h1>Voxly</h1>
   </div>
   <div class="header-controls">
+    <span class="relogio-kj" id="relogioKJ" aria-live="off">
+      <strong id="relogioHora">--:--</strong>
+      <span id="relogioSessao"></span>
+    </span>
     <span class="session-badge inativa" id="sessionBadge" onclick="editarSessaoAtiva()"
           title="Clique para editar nome, data e horário sem derrubar a sessão">● Sem Sessão</span>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
@@ -943,6 +954,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../relatorio.js"></script>
 <script src="../ordem.js"></script>
 <script src="../trava.js"></script>
+<script src="../relogio.js"></script>
 <script src="../volume.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
@@ -1187,6 +1199,26 @@ https://www.youtube.com/@canal/videos"></textarea>
     const ms = new Date(v).getTime();
     return Number.isFinite(ms) ? ms : null;
   }
+
+  // Relogio do KJ. Le dadosSessaoAtual a cada tique em vez de ser avisado:
+  // assim acompanha sozinho a edicao da sessao, o fim e a abertura de outra.
+  function atualizarRelogio() {
+    const hora = document.getElementById('relogioHora');
+    if (!hora) return;
+    const agora = Date.now();
+    hora.textContent = new Date(agora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const caixa = document.getElementById('relogioKJ');
+    const linha = document.getElementById('relogioSessao');
+    const t = SESSAO_ID && dadosSessaoAtual
+      ? VoxlyRelogio.tempoDaSessao({ inicio: dadosSessaoAtual.inicio, termino: dadosSessaoAtual.termino, agora })
+      : null;
+    linha.textContent = t ? t.texto : '';
+    caixa.dataset.fase = t ? t.fase : '';
+  }
+  atualizarRelogio();
+  // Tique de 15 s: o relogio mostra minutos, e 15 s de atraso no maximo nao
+  // se nota; um tique por segundo seria trabalho a toa a noite inteira.
+  setInterval(atualizarRelogio, 15000);
 
   // O badge mostrava so o codigo, que nao diz nada ao KJ no meio da noite.
   // Nome da casa e faixa de horario sao o que ele precisa conferir de relance.
@@ -2225,6 +2257,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
     el.innerHTML = presencasData.map((u, i) => {
       const prioridade = !u.primeiraMusicaCantada;
+      // Sessoes abertas antes do contador so tem o sim/nao: vale como 1.
+      const cantadas = u.musicasCantadas || (u.primeiraMusicaCantada ? 1 : 0);
+      const rotuloCantadas = cantadas === 0 ? 'ainda não cantou'
+        : cantadas === 1 ? '1 música' : `${cantadas} músicas`;
       const tagCls = u.modo === 'manual' ? 'tag tag-manual' : 'tag tag-online';
       const tagTxt = u.modo === 'manual' ? '👤 Manual' : '✅ Online';
       const avatarHtml = u.photoURL
@@ -2234,7 +2270,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         ${avatarHtml}
         <div style="flex:1;">
           <div class="user-name">${escHtml(u.nomeArtistico||'-')} ${prioridade ? '☕' : ''}</div>
-          <div class="user-status">${u.modo === 'manual' ? 'Manual' : 'Online'}</div>
+          <div class="user-status">🎤 ${rotuloCantadas}</div>
         </div>
         <button class="btn btn-secondary btn-sm" onclick="abrirModalMusicaIdx(${i})" title="Adicionar música" style="min-width:30px;">🎵</button>
         <button class="btn btn-danger btn-sm" onclick="abrirModalExpulsarCantor(${i})" title="Expulsar da sessão" style="min-width:30px;">✕</button>
@@ -2527,8 +2563,18 @@ https://www.youtube.com/@canal/videos"></textarea>
             status: 'cantada', data: firebase.firestore.FieldValue.serverTimestamp()
           }),
           db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.cantorUid)
-            .update({ primeiraMusicaCantada: true }),
+            .update({ primeiraMusicaCantada: true,
+                      musicasCantadas: firebase.firestore.FieldValue.increment(1) }),
         ]).catch(e => console.error('[HOST] Erro histórico:', e));
+
+        // O parceiro de duo tambem cantou, e o contador e para o KJ enxergar
+        // isso. So o contador: a regra do cafe com leite (primeiraMusicaCantada)
+        // continua olhando apenas o dono do pedido, como sempre olhou.
+        if (item.duoUid && item.duoUid !== item.cantorUid) {
+          db.collection('sessoes').doc(SESSAO_ID).collection('presencas').doc(item.duoUid)
+            .update({ musicasCantadas: firebase.firestore.FieldValue.increment(1) })
+            .catch(e => console.warn('[HOST] contador do duo:', e.message));
+        }
 
         // Promoção de espera — executa independente dos writes de histórico
         await promoverEspera(item.cantorUid);
