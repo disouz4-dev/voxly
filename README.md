@@ -88,8 +88,8 @@ open /Applications/Voxly.app
 
 **Fila**
 - 🎤 **Fila em tempo real** — os cantores pedem pelo celular, o host controla (tocar, pular, trocar a música de alguém, remover, adicionar cantor e música à mão). O pedido nunca entra duas vezes, mesmo com clique repetido.
-- ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**.
-- ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. O ☕ só aparece em quem de fato entrou assim. Pode ser desligado nas regras.
+- ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**; quem foi arrastado fica cravado no lugar.
+- ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. Se alguém sai do meio da fila, o resto se reacomoda sozinho para continuar um de cada — sem mexer em quem o KJ arrastou. O ☕ só aparece em quem de fato entrou assim. Pode ser desligado nas regras.
 - 🧑‍🤝‍🧑 **Presença online** — o host vê quem está conectado e **quantas músicas cada um já cantou** na noite.
 
 **Som**

@@ -86,8 +86,8 @@ open /Applications/Voxly.app
 
 **Queue**
 - 🎤 **Real-time queue** — singers request from their phones, the host controls it (play, skip, swap someone's song, remove, add a singer and song by hand). A request never lands twice, even on repeated taps.
-- ↕️ **First come, first served** — whoever asked first sings first. The KJ drags to reorder and the app plays **exactly the order on screen**.
-- ☕ **"Café com leite"** — when the wait goes past the limit the KJ sets (40 min by default), people who have not sung yet tonight are **interleaved** with the main queue: one from the queue, one newcomer, another from the queue… The main queue never stops moving. Can be turned off in the rules.
+- ↕️ **First come, first served** — whoever asked first sings first. The KJ drags to reorder and the app plays **exactly the order on screen**; a dragged request stays pinned where it was put.
+- ☕ **"Café com leite"** — when the wait goes past the limit the KJ sets (40 min by default), people who have not sung yet tonight are **interleaved** with the main queue: one from the queue, one newcomer, another from the queue… The main queue never stops moving. If someone leaves the middle of the queue, the rest re-accommodates on its own to keep one of each — without moving what the KJ dragged. Can be turned off in the rules.
 - 🧑‍🤝‍🧑 **Online presence** — the host sees who is connected and **how many songs each person has sung** tonight.
 
 **Sound**
