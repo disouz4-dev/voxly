@@ -114,6 +114,45 @@ open /Applications/Voxly.app
 - 🎛️ **Interval themes** — editable, theme-based playlists (Rock, Pagode, MPB...). Rock venue? Only rock plays between songs.
 - 🔄 **Auto-update** — new installers are downloaded from GitHub Releases (Linux and Windows).
 - 🔌 **Offline fallback (LAN)** — even without internet the karaoke keeps going (details below).
+- 💳 **Monthly licence per venue** — optional, off by default. A 🔑 Licence panel shows the status, renews via **Pix** inside the app and explains how it works. Details below.
+
+## 💳 Billing (monthly licence per venue)
+
+**Ships disabled.** While `app/src/chave-licenca.js` has `chavePublica: ""`,
+Voxly is the same app as always: no licence, no lock, no panel asking for money.
+Turning billing on is a deliberate step, described in
+[`servidor-licenca/README.md`](servidor-licenca/README.md).
+
+Once enabled:
+
+- **The venue pays**, per month and per computer. Singers still join for free
+  from their phones.
+- **Payment is via Pix**, generated inside the 🔑 Licence panel. No card data
+  ever touches Voxly — Mercado Pago handles the charge.
+- **The show never stops.** The licence is only checked when **opening a new
+  night**. A running session is never interrupted over billing.
+- **Works offline.** The ticket lives on the computer with its expiry signed
+  inside it. A venue with no Wi-Fi opens the night just the same.
+- **Grace period.** If the licence expires and the app cannot reach the server,
+  it still opens for 7 more days. Locking out someone who paid is worse than
+  letting a week slide.
+- **14-day trial** on a fresh install, no signup, no card.
+- **Turning the clock back does not extend it**: the app remembers the latest
+  date it has seen and never moves backwards.
+
+The licence is bound to the **computer code** (16 characters derived from the
+network card, hostname and platform), shown in the panel. Copying the Voxly
+folder to another machine produces a different code.
+
+**Ed25519** signatures: the server signs, the app only verifies. The private key
+exists nowhere in the app or the repository — it lives in the Cloudflare vault.
+
+| Where | What |
+|---|---|
+| `app/src/licenca.js` | the rule: read the ticket, check the term, decide whether a new night opens |
+| `app/src/instalacao.js` | this computer's code |
+| `app/src/chave-licenca.js` | public key and server address (empty = no billing) |
+| `servidor-licenca/` | the server (Cloudflare Workers + Mercado Pago) |
 
 ## 🏗️ Architecture
 
@@ -323,6 +362,9 @@ app/                       # Electron app (Host + Stage + Audience + LAN server)
 web/                       # singer web app (Firebase Hosting)
   public/                  # index, profile, signup + offline-client.js + rule copies
   firestore.rules          # Firestore security rules (includes relatorios/{sessaoId})
+servidor-licenca/          # licence server (Cloudflare Workers + Mercado Pago, Pix)
+  src/index.js             # creates the Pix, confirms payment, signs the ticket
+  gerar-chaves.mjs         # generates the Ed25519 pair (the private key never enters the repo)
 Dockerfile / docker-compose.yml
 .github/workflows/ci-cd.yml   # CI/CD pipeline
 scripts/                 # deploy and health-check

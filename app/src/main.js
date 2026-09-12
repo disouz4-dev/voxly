@@ -18,6 +18,9 @@ const ytdlp = require("./ytdlp");
 const loudness = require("./loudness");
 const { autoUpdater } = require("electron-updater");
 const diario = require("./diario");
+const licenca = require("./licenca");
+const { idDaMaquina, codigoLegivel } = require("./instalacao");
+const configLicenca = require("./chave-licenca");
 
 // ── Diario ─────────────────────────────────────────────────
 // Tudo que acontece, num arquivo por dia (logs/voxly-AAAA-MM-DD.jsonl na pasta
@@ -2210,6 +2213,183 @@ ipcMain.handle("yt-cancel", () => {
   }
   return true;
 });
+
+// ── Licenca ────────────────────────────────────────────────
+// A casa paga por mes. O que o app guarda aqui e so o bilhete assinado pelo
+// servidor e tres datas. Toda a REGRA mora em licenca.js, testada; este bloco
+// e o encanamento: ler do disco, falar com o servidor, responder a tela.
+//
+// Regra de ouro, repetida aqui porque e a que importa: NADA neste bloco roda
+// durante um show. A checagem acontece quando a Gerencia abre e quando o KJ
+// manda abrir uma sessao nova. Se o servidor estiver fora do ar, o Voxly toca
+// igual.
+
+const nodeCrypto = require("crypto");
+
+// A chave publica vem do pacote e so serve para CONFERIR assinatura. Sem ela
+// configurada, o Voxly roda sem cobrar (ver chave-licenca.js).
+const CHAVE_PUBLICA = (() => {
+  try {
+    if (!configLicenca.chavePublica) return null;
+    return nodeCrypto.createPublicKey({
+      key: Buffer.from(configLicenca.chavePublica, "base64"),
+      format: "der", type: "spki",
+    });
+  } catch (e) {
+    registrar("main", "licenca.chave-invalida", { erro: e.message }, "erro");
+    return null;
+  }
+})();
+const COBRANDO = !!(CHAVE_PUBLICA && configLicenca.servidor);
+
+function conferirAssinatura(corpo, assinatura) {
+  return nodeCrypto.verify(null, corpo, CHAVE_PUBLICA, assinatura);
+}
+
+let _instalacaoId = null;
+function instalacaoId() {
+  if (!_instalacaoId) _instalacaoId = idDaMaquina();
+  return _instalacaoId;
+}
+
+// Marca de quando este Voxly foi instalado, para contar o periodo de teste.
+function instaladoEm() {
+  let quando = store.get("licenca.instaladoEm");
+  if (!quando) { quando = Date.now(); store.set("licenca.instaladoEm", quando); }
+  return quando;
+}
+
+// A maior data que o app ja viu. E o que impede atrasar o relogio do
+// computador para esticar a licenca.
+function marcarRelogio() {
+  const agora = Date.now();
+  const vista = Number(store.get("licenca.ultimaVista")) || 0;
+  if (agora > vista) store.set("licenca.ultimaVista", agora);
+  return Math.max(agora, vista);
+}
+
+function licencaGuardada() {
+  const texto = store.get("licenca.bilhete");
+  if (!texto || !CHAVE_PUBLICA) return null;
+  const r = licenca.abrirLicenca(texto, conferirAssinatura);
+  if (!r.ok) {
+    registrar("main", "licenca.recusada", { motivo: r.motivo }, "aviso");
+    return null;
+  }
+  return r;
+}
+
+function estadoDaLicenca() {
+  marcarRelogio();
+  const estado = licenca.estadoDaLicenca({
+    cobrando:    COBRANDO,
+    licenca:     licencaGuardada(),
+    instalacao:  instalacaoId(),
+    agora:       Date.now(),
+    ultimaVista: Number(store.get("licenca.ultimaVista")) || 0,
+    instaladoEm: instaladoEm(),
+    ultimoContato: Number(store.get("licenca.ultimoContato")) || 0,
+  });
+  return {
+    ...estado,
+    recado:      licenca.recadoDoTopo(estado),
+    instalacao:  instalacaoId(),
+    codigo:      codigoLegivel(instalacaoId()),
+    plano:       configLicenca.plano,
+    servidor:    configLicenca.servidor || "",
+  };
+}
+
+async function falarComServidor(caminho, corpo) {
+  if (!configLicenca.servidor) throw new Error("sem servidor de licenca");
+  const controle = new AbortController();
+  const corta = setTimeout(() => controle.abort(), 15000);
+  try {
+    const r = await fetch(configLicenca.servidor.replace(/\/+$/, "") + caminho, {
+      method: corpo ? "POST" : "GET",
+      headers: { "content-type": "application/json" },
+      body: corpo ? JSON.stringify(corpo) : undefined,
+      signal: controle.signal,
+    });
+    const texto = await r.text();
+    let dados = {};
+    try { dados = texto ? JSON.parse(texto) : {}; } catch (_) { dados = {}; }
+    if (!r.ok) throw new Error(dados.erro || `servidor respondeu ${r.status}`);
+    return dados;
+  } finally { clearTimeout(corta); }
+}
+
+// Busca o bilhete mais recente. Guarda so se for VALIDO e melhor do que o que
+// ja esta no disco: servidor invadido ou resposta torta nao piora a situacao de
+// quem pagou.
+async function buscarLicenca() {
+  if (!COBRANDO) return { situacao: "aberto" };
+  try {
+    const r = await falarComServidor(`/licenca/${encodeURIComponent(instalacaoId())}`);
+    store.set("licenca.ultimoContato", Date.now());
+    if (r && r.licenca) {
+      const nova = licenca.abrirLicenca(r.licenca, conferirAssinatura);
+      const atual = licencaGuardada();
+      if (nova.ok && nova.instalacao === instalacaoId() && (!atual || nova.valeAte >= atual.valeAte)) {
+        store.set("licenca.bilhete", r.licenca);
+        registrar("main", "licenca.atualizada", { valeAte: nova.valeAte, casa: nova.casa });
+      }
+    }
+  } catch (e) {
+    registrar("main", "licenca.sem-contato", { erro: e.message }, "aviso");
+  }
+  return estadoDaLicenca();
+}
+
+ipcMain.handle("licenca-estado", () => estadoDaLicenca());
+ipcMain.handle("licenca-atualizar", () => buscarLicenca());
+
+// Gera a cobranca no Mercado Pago. O app NAO toca em dado de pagamento: ele
+// pede um Pix ao servidor e recebe de volta o QR Code e o copia-e-cola. Cartao,
+// CPF e afins acontecem fora daqui, na tela do Mercado Pago.
+ipcMain.handle("licenca-cobrar", async (_e, dados) => {
+  try {
+    const r = await falarComServidor("/cobranca", {
+      instalacao: instalacaoId(),
+      casa:  String((dados && dados.casa) || "").slice(0, 80),
+      email: String((dados && dados.email) || "").slice(0, 120),
+      meses: Math.min(Math.max(parseInt(dados && dados.meses, 10) || 1, 1), 12),
+    });
+    registrar("main", "licenca.cobranca-criada", { id: r.cobranca });
+    return r;
+  } catch (e) {
+    registrar("main", "licenca.cobranca-falhou", { erro: e.message }, "erro");
+    return { erro: e.message };
+  }
+});
+
+// A tela pergunta de tempos em tempos se o Pix caiu.
+ipcMain.handle("licenca-cobranca-estado", async (_e, id) => {
+  try {
+    const r = await falarComServidor(`/cobranca/${encodeURIComponent(String(id || ""))}`);
+    if (r && r.pago) await buscarLicenca();
+    return r;
+  } catch (e) { return { erro: e.message }; }
+});
+
+// Bilhete colado a mao: socorro para a casa que ficou sem internet no dia da
+// renovacao. A assinatura e conferida do mesmo jeito — colar nao burla nada.
+ipcMain.handle("licenca-colar", (_e, texto) => {
+  if (!CHAVE_PUBLICA) return { erro: "Este Voxly nao usa licenca." };
+  const r = licenca.abrirLicenca(String(texto || "").trim(), conferirAssinatura);
+  if (!r.ok) return { erro: "Bilhete invalido." };
+  if (r.instalacao !== instalacaoId()) return { erro: "Este bilhete e de outro computador." };
+  store.set("licenca.bilhete", String(texto).trim());
+  registrar("main", "licenca.colada", { valeAte: r.valeAte });
+  return estadoDaLicenca();
+});
+
+// Uma conferida ao abrir e outra a cada seis horas. Nada disso trava nada:
+// serve para o bilhete novo chegar sozinho depois que o cliente paga.
+if (COBRANDO) {
+  setTimeout(() => { buscarLicenca().catch(() => {}); }, 8000);
+  setInterval(() => { buscarLicenca().catch(() => {}); }, 6 * 60 * 60 * 1000);
+}
 
 // ── Watcher ────────────────────────────────────────────────
 function startWatcher(folder) {

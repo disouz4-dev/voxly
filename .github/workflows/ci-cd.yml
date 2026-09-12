@@ -30,6 +30,12 @@ jobs:
         run: npm run lint --if-present
         working-directory: app
 
+      # A esteira so passava o lint: os testes existiam e ninguem os rodava
+      # aqui. Agora um teste quebrado derruba o run antes de virar release.
+      - name: Testes
+        run: npm test
+        working-directory: app
+
   # ---- Build Docker ----
   build:
     needs: test

@@ -116,6 +116,46 @@ open /Applications/Voxly.app
 - 🎛️ **Temas de intervalo** — playlists editáveis por tema (Rock, Pagode, MPB...). Casa de rock? Só toca Rock no intervalo.
 - 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases (Linux e Windows).
 - 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
+- 💳 **Licença mensal por casa** — opcional e desligada por padrão. Painel 🔑 Licença com o estado, renovação por **Pix** dentro do app e a explicação de como funciona. Detalhes abaixo.
+
+## 💳 Cobrança (licença mensal por casa)
+
+**Vem desligada.** Enquanto `app/src/chave-licenca.js` estiver com
+`chavePublica: ""`, o Voxly é o app de sempre: sem licença, sem trava, sem
+painel pedindo dinheiro. Ligar a cobrança é um passo consciente, descrito em
+[`servidor-licenca/README.md`](servidor-licenca/README.md).
+
+Quando ligada:
+
+- **Quem paga é a casa**, por mês e por computador. Quem canta continua entrando
+  de graça pelo celular.
+- **O pagamento é por Pix**, gerado dentro do painel 🔑 Licença. Nenhum dado de
+  cartão passa pelo Voxly — quem cobra é o Mercado Pago.
+- **O show nunca para.** A licença é consultada só na hora de **abrir uma noite
+  nova**. Sessão em andamento não é interrompida por nada relacionado a cobrança.
+- **Funciona sem internet.** O bilhete fica guardado no computador com a
+  validade assinada dentro dele. Bar sem Wi-Fi abre a noite igual.
+- **Tolerância.** Se a licença vencer e o app não conseguir falar com o servidor,
+  ainda dá para abrir por mais 7 dias. Travar a noite de quem pagou é pior do
+  que deixar passar uma semana.
+- **14 dias de teste** na instalação nova, sem cadastro e sem cartão.
+- **Atrasar o relógio não estica a licença**: o app guarda a maior data que já
+  viu e não anda para trás.
+
+A licença é amarrada ao **código do computador** (16 letras derivadas da placa
+de rede, do nome da máquina e do sistema), mostrado no painel. Copiar a pasta do
+Voxly para outra máquina gera outro código. Trocou de computador, o código muda
+e a licença precisa ser transferida.
+
+Assinatura **Ed25519**: o servidor assina, o app só confere. A chave privada não
+existe em lugar nenhum do app nem do repositório — mora no cofre do Cloudflare.
+
+| Onde | O quê |
+|---|---|
+| `app/src/licenca.js` | a regra: ler o bilhete, conferir prazo, decidir se abre a noite |
+| `app/src/instalacao.js` | o código deste computador |
+| `app/src/chave-licenca.js` | chave pública e endereço do servidor (vazio = não cobra) |
+| `servidor-licenca/` | o servidor (Cloudflare Workers + Mercado Pago) |
 
 ## 🏗️ Arquitetura
 
@@ -354,6 +394,9 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/diario.js            # formato do diário (logs/voxly-AAAA-MM-DD.jsonl)
   src/guia.js              # cartões do guia do Público, conforme as regras do KJ
   src/seguro.js            # escape de HTML e validação de endereço de imagem (copiado para web/public)
+  src/licenca.js           # regra da licença: prazo, tolerância, relógio, trava da sessão nova
+  src/instalacao.js        # código que identifica este computador
+  src/chave-licenca.js     # chave pública e servidor da cobrança (vazio = não cobra)
   test/cdp.mjs             # acesso às janelas do app aberto, pelo DevTools
   test/roteiro-show.mjs    # roteiro de show automatizado
   src/ordem.js             # ┐ regras que valem nos DOIS lados (Gerência e app
@@ -367,6 +410,9 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
 web/                       # web dos cantores (Firebase Hosting)
   public/                  # index, profile, signup + offline-client.js + cópias das regras
   firestore.rules          # regras de segurança (inclui relatorios/{sessaoId})
+servidor-licenca/          # servidor de licença (Cloudflare Workers + Mercado Pago, Pix)
+  src/index.js             # cria o Pix, confirma o pagamento, assina o bilhete
+  gerar-chaves.mjs         # cria o par Ed25519 (a privada nunca entra no repositório)
 Dockerfile / docker-compose.yml
 .github/workflows/ci-cd.yml   # pipeline CI/CD
 scripts/                 # deploy e health-check

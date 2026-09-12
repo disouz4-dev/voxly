@@ -1,0 +1,15 @@
+name = "voxly-licenca"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# Guarda-volumes das licencas. Crie com:
+#   npx wrangler kv namespace create LICENCAS
+# e cole o id que ele imprimir aqui embaixo.
+[[kv_namespaces]]
+binding = "LICENCAS"
+id = "COLE_AQUI_O_ID_DO_KV"
+
+# Segredos NUNCA entram neste arquivo. Sao tres, postos por comando:
+#   npx wrangler secret put MP_TOKEN
+#   npx wrangler secret put MP_WEBHOOK_SEGREDO
+#   npx wrangler secret put LICENCA_CHAVE_PRIVADA

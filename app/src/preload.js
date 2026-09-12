@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ytPrevia:           (url) => ipcRenderer.invoke("yt-previa", url),
   // Diario: send, nao invoke — registrar nunca pode fazer a tela esperar.
   diario:             (evento, dados, nivel) => ipcRenderer.send("diario", { evento, dados, nivel }),
+  // Licenca: a tela so pergunta e mostra; quem confere assinatura e o main.
+  licencaEstado:         () => ipcRenderer.invoke("licenca-estado"),
+  licencaAtualizar:      () => ipcRenderer.invoke("licenca-atualizar"),
+  licencaCobrar:         (dados) => ipcRenderer.invoke("licenca-cobrar", dados),
+  licencaCobrancaEstado: (id) => ipcRenderer.invoke("licenca-cobranca-estado", id),
+  licencaColar:          (texto) => ipcRenderer.invoke("licenca-colar", texto),
   abrirDiario:        () => ipcRenderer.invoke("abrir-diario"),
   lerDiario:          (quantas) => ipcRenderer.invoke("ler-diario", quantas),
   onYtProgress:       (cb) => ipcRenderer.on("yt-progress", (_e, info) => cb(info)),

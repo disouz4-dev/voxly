@@ -513,6 +513,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     <button class="btn btn-ghost btn-sm" onclick="abrirModalTemas()" title="Temas (playlists editáveis) da música de intervalo">🎛 Temas</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalYoutube()" title="Baixar músicas do YouTube">⬇ YouTube</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalRelatorios()" title="Participantes e músicas de todas as noites">📊 Relatórios</button>
+    <button class="btn btn-ghost btn-sm" id="btnLicenca" onclick="abrirModalLicenca()" style="display:none;" title="Licença do Voxly">🔑 Licença</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
 </header>
@@ -912,6 +913,58 @@ https://www.youtube.com/@canal/videos"></textarea>
     <div id="relatoriosCorpo"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" onclick="fecharModalRelatorios()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Licenca: estado, renovacao por Pix e a explicacao de como a coisa funciona -->
+<div class="modal-overlay" id="modalLicenca">
+  <div class="modal-box" style="width:min(680px,96vw);">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <h2 style="margin:0;flex:1;">🔑 Licença do Voxly</h2>
+      <button class="btn btn-ghost btn-sm" onclick="conferirLicencaAgora()" title="Pergunta ao servidor se há licença nova">↻ Conferir</button>
+    </div>
+
+    <div id="licencaResumo" style="margin:12px 0 4px;"></div>
+
+    <div id="licencaCobranca" style="display:none;border:1px solid var(--linha);border-radius:10px;padding:13px;margin-top:12px;">
+      <label class="modal-label">Nome da casa (aparece no recibo e no painel)</label>
+      <input class="modal-input" id="licencaCasa" maxlength="80" placeholder="Ex.: Casa do Rock">
+      <label class="modal-label">E-mail para o recibo</label>
+      <input class="modal-input" id="licencaEmail" maxlength="120" placeholder="voce@exemplo.com" type="email">
+      <label class="modal-label">Quanto tempo</label>
+      <select class="modal-select" id="licencaMeses">
+        <option value="1">1 mês</option>
+        <option value="3">3 meses</option>
+        <option value="6">6 meses</option>
+        <option value="12">12 meses</option>
+      </select>
+      <button class="btn btn-primary btn-sm" style="margin-top:10px;" id="btnGerarPix" onclick="gerarPix()">Gerar Pix</button>
+      <div id="licencaPix" style="display:none;margin-top:14px;text-align:center;">
+        <img id="licencaPixQr" alt="QR Code do Pix" style="width:210px;height:210px;background:#fff;border-radius:8px;padding:6px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+          <input class="modal-input" id="licencaPixCola" readonly style="flex:1;font-family:'Space Mono',monospace;font-size:.7rem;margin:0;">
+          <button class="btn btn-secondary btn-sm" onclick="copiarPix()">Copiar</button>
+        </div>
+        <p id="licencaPixEstado" style="font-size:.8rem;color:var(--mudo);margin:10px 0 0;">Esperando o pagamento cair…</p>
+      </div>
+    </div>
+
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;font-size:.85rem;color:var(--mudo);">Como isso funciona</summary>
+      <div id="licencaComoFunciona" style="font-size:.82rem;color:var(--mudo);line-height:1.6;margin-top:8px;"></div>
+    </details>
+
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:.85rem;color:var(--mudo);">Recebi um código de licença por fora</summary>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <input class="modal-input" id="licencaBilhete" placeholder="VOXLY1..." style="flex:1;font-family:'Space Mono',monospace;font-size:.7rem;margin:0;">
+        <button class="btn btn-secondary btn-sm" onclick="colarBilhete()">Aplicar</button>
+      </div>
+    </details>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="fecharModalLicenca()">Fechar</button>
     </div>
   </div>
 </div>
@@ -1492,6 +1545,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       catch (e) { mostrarToast('❌ ' + e.message, 8000); }
       return;
     }
+    // A licenca so e consultada AQUI, na hora de abrir a noite. Nunca durante
+    // o show: sessao em andamento nao para por causa de cobranca.
+    if (!(await licencaLiberaSessao())) return;
     await iniciarSessao({ nomeCasa, inicio, termino });
   }
 
@@ -4915,6 +4971,176 @@ https://www.youtube.com/@canal/videos"></textarea>
       }
     });
   }
+
+  // ── Licença ──────────────────────────────────────────────
+  // Esta tela não decide nada sobre licença: ela pergunta ao processo
+  // principal, que é quem tem a chave pública para conferir a assinatura. Aqui
+  // é só o que o KJ vê e os botões que ele aperta.
+  let _licenca = null;
+  let _relogioPix = null;
+
+  const DIZERES = {
+    aberto:          { cor: 'var(--mudo)',   titulo: 'Sem licença',                 texto: 'Esta instalação do Voxly não usa licença.' },
+    teste:           { cor: 'var(--ambar)',  titulo: 'Período de teste',            texto: 'Tudo liberado, sem pagar nada.' },
+    ativa:           { cor: 'var(--ok)',     titulo: 'Licença ativa',               texto: '' },
+    vencendo:        { cor: 'var(--ambar)',  titulo: 'Licença perto do fim',        texto: 'Dá para renovar agora e o tempo que sobra não se perde.' },
+    tolerancia:      { cor: 'var(--ambar)',  titulo: 'Vencida, mas ainda abrindo',  texto: 'O Voxly não conseguiu conferir o pagamento. Ninguém fica sem show por causa disso.' },
+    vencida:         { cor: 'var(--perigo)', titulo: 'Licença vencida',             texto: 'A sessão que estiver rolando continua até o fim. Para abrir uma noite nova, renove.' },
+    'sem-licenca':   { cor: 'var(--perigo)', titulo: 'Teste terminado',             texto: 'Para abrir uma noite nova, ative a licença.' },
+    'outra-maquina': { cor: 'var(--perigo)', titulo: 'Licença de outro computador', texto: 'Peça a transferência informando o código desta máquina.' },
+  };
+
+  function dataCurta(ms) {
+    if (!ms) return '—';
+    return new Date(ms).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  async function carregarLicenca(doServidor) {
+    if (!window.electronAPI || !window.electronAPI.licencaEstado) return null;
+    try {
+      _licenca = doServidor ? await window.electronAPI.licencaAtualizar()
+                            : await window.electronAPI.licencaEstado();
+    } catch (_) { _licenca = null; }
+    pintarBotaoLicenca();
+    return _licenca;
+  }
+
+  // O botão só aparece quando existe licença nesta instalação, e muda de cor
+  // quando há o que resolver. Em noite tranquila ele não pisca para ninguém.
+  function pintarBotaoLicenca() {
+    const btn = document.getElementById('btnLicenca');
+    if (!btn) return;
+    if (!_licenca || _licenca.situacao === 'aberto') { btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    btn.textContent = _licenca.recado ? '🔑 ' + _licenca.recado : '🔑 Licença';
+    const ruim = ['vencida', 'sem-licenca', 'outra-maquina'].includes(_licenca.situacao);
+    btn.className = 'btn btn-sm ' + (ruim ? 'btn-danger' : (_licenca.recado ? 'btn-secondary' : 'btn-ghost'));
+  }
+
+  async function abrirModalLicenca() {
+    document.getElementById('modalLicenca').classList.add('open');
+    desenharLicenca(await carregarLicenca(false));
+    carregarLicenca(true).then(desenharLicenca);   // confere com o servidor em segundo plano
+  }
+
+  function fecharModalLicenca() {
+    document.getElementById('modalLicenca').classList.remove('open');
+    pararDePerguntarPix();
+  }
+
+  function desenharLicenca(e) {
+    if (!e) return;
+    const d = DIZERES[e.situacao] || DIZERES.aberto;
+    const dias = e.diasRestantes === null ? '' :
+      `<strong style="color:${d.cor}">${e.diasRestantes}</strong> dia${e.diasRestantes === 1 ? '' : 's'}`;
+
+    document.getElementById('licencaResumo').innerHTML = `
+      <div style="border-left:3px solid ${d.cor};padding:2px 0 2px 12px;">
+        <div style="font-size:1.05rem;font-weight:700;color:${d.cor};">${escHtml(d.titulo)}</div>
+        <div style="font-size:.85rem;color:var(--texto);margin-top:4px;">
+          ${e.casa ? escHtml(e.casa) + ' · ' : ''}${dias ? dias + ' · ' : ''}
+          ${e.valeAte ? 'até ' + escHtml(dataCurta(e.valeAte)) : ''}
+        </div>
+        ${d.texto ? `<div style="font-size:.8rem;color:var(--mudo);margin-top:6px;line-height:1.5;">${escHtml(d.texto)}</div>` : ''}
+      </div>
+      <div style="margin-top:12px;font-size:.78rem;color:var(--mudo);">
+        Código deste computador:
+        <span style="font-family:'Space Mono',monospace;color:var(--texto);">${escHtml(e.codigo || '')}</span>
+      </div>`;
+
+    document.getElementById('licencaComoFunciona').innerHTML = `
+      <p><strong>Você paga por mês, por computador.</strong> Quem paga é a casa; quem canta entra de graça pelo celular, como sempre.</p>
+      <p><strong>O pagamento é por Pix.</strong> O QR aparece aqui dentro, você paga pelo banco e a licença se renova sozinha em alguns segundos. Nenhum dado do seu cartão passa pelo Voxly.</p>
+      <p><strong>O show nunca para.</strong> A licença é olhada só na hora de abrir uma noite. Se a internet cair no meio do show, se o servidor sair do ar, se o Pix demorar — a noite segue até o fim.</p>
+      <p><strong>Funciona sem internet.</strong> A licença fica guardada neste computador com a data de validade assinada. Bar sem Wi-Fi abre a noite igual.</p>
+      <p><strong>Se vencer</strong>, a noite em andamento termina normalmente e o bloqueio só vale para abrir a próxima. E se o Voxly não conseguir falar com o servidor, ainda há uma semana de tolerância antes de travar qualquer coisa.</p>
+      <p><strong>Trocou de computador?</strong> O código acima muda junto. Mande o novo para transferir a licença.</p>`;
+
+    const caixa = document.getElementById('licencaCobranca');
+    caixa.style.display = e.situacao === 'aberto' ? 'none' : '';
+    const casa = document.getElementById('licencaCasa');
+    if (casa && !casa.value) casa.value = e.casa || (dadosSessaoAtual && dadosSessaoAtual.nomeCasa) || '';
+  }
+
+  async function conferirLicencaAgora() {
+    desenharLicenca(await carregarLicenca(true));
+    mostrarToast('🔑 Licença conferida com o servidor.', 4000);
+  }
+
+  async function gerarPix() {
+    const btn   = document.getElementById('btnGerarPix');
+    const casa  = document.getElementById('licencaCasa').value.trim();
+    const email = document.getElementById('licencaEmail').value.trim();
+    const meses = parseInt(document.getElementById('licencaMeses').value, 10) || 1;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return mostrarToast('❌ Informe um e-mail válido para o recibo.', 6000);
+
+    btn.disabled = true;
+    btn.textContent = 'Gerando…';
+    try {
+      const r = await window.electronAPI.licencaCobrar({ casa, email, meses });
+      if (!r || r.erro) return mostrarToast('❌ ' + ((r && r.erro) || 'Não consegui gerar o Pix.'), 8000);
+      document.getElementById('licencaPixQr').src = 'data:image/png;base64,' + String(r.qr || '');
+      document.getElementById('licencaPixCola').value = r.copiaECola || '';
+      document.getElementById('licencaPixEstado').textContent =
+        `R$ ${Number(r.valor || 0).toFixed(2).replace('.', ',')} · esperando o pagamento cair…`;
+      document.getElementById('licencaPix').style.display = '';
+      perguntarPix(r.cobranca);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Gerar Pix';
+    }
+  }
+
+  // Pix cai em segundos, mas às vezes o aviso demora. Pergunta a cada 5 s por
+  // meia hora e desiste — sem deixar um relógio rodando para sempre.
+  function perguntarPix(cobranca) {
+    pararDePerguntarPix();
+    if (!cobranca) return;
+    let tentativas = 0;
+    _relogioPix = setInterval(async () => {
+      if (++tentativas > 360) return pararDePerguntarPix();
+      const r = await window.electronAPI.licencaCobrancaEstado(cobranca).catch(() => null);
+      if (r && r.pago) {
+        pararDePerguntarPix();
+        document.getElementById('licencaPix').style.display = 'none';
+        mostrarToast('✅ Pagamento confirmado. Licença renovada.', 8000);
+        desenharLicenca(await carregarLicenca(true));
+      }
+    }, 5000);
+  }
+
+  function pararDePerguntarPix() {
+    if (_relogioPix) { clearInterval(_relogioPix); _relogioPix = null; }
+  }
+
+  async function copiarPix() {
+    const campo = document.getElementById('licencaPixCola');
+    try { await navigator.clipboard.writeText(campo.value); mostrarToast('📋 Código Pix copiado.', 4000); }
+    catch (_) { campo.select(); mostrarToast('📋 Selecionado — use Ctrl+C.', 5000); }
+  }
+
+  async function colarBilhete() {
+    const campo = document.getElementById('licencaBilhete');
+    const r = await window.electronAPI.licencaColar(campo.value.trim()).catch(() => null);
+    if (!r || r.erro) return mostrarToast('❌ ' + ((r && r.erro) || 'Não consegui aplicar.'), 7000);
+    campo.value = '';
+    _licenca = r;
+    pintarBotaoLicenca();
+    desenharLicenca(r);
+    mostrarToast('✅ Licença aplicada.', 6000);
+  }
+
+  // Chamada só em confirmarIniciarSessao. Devolve false e abre o painel quando
+  // não dá para abrir noite nova.
+  async function licencaLiberaSessao() {
+    const e = await carregarLicenca(true);
+    if (!e || e.podeAbrirSessao !== false) return true;
+    mostrarToast('🔑 ' + (e.aviso || 'Licença vencida.') + ' A sessão nova não abre até renovar.', 10000);
+    abrirModalLicenca();
+    return false;
+  }
+
+  carregarLicenca(false);
 </script>
 <script>
   // Toda acao do KJ vai para o diario: os botoes da tela e os passos do fluxo
