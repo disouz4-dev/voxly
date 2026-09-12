@@ -2784,9 +2784,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     const moved = filaData.splice(de, 1)[0];
     filaData.splice(para, 0, moved);
 
-    // Atualiza ordemFila apenas nos itens aguardando
+    // Renumera quem espera na ordem que ficou na tela, e CRAVA o que foi
+    // arrastado: a intercalacao do cafe com leite se acomoda em volta dele, mas
+    // nunca o tira do lugar onde o KJ pos (ordem.js).
     const aguardando = filaData.filter(d => d.status === 'aguardando');
     aguardando.forEach((item, idx) => { item.ordemFila = idx + 1; });
+    moved.fixado = true;
     renderQueue();
 
     if (!modoOffline) {
@@ -2794,7 +2797,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       aguardando.forEach(item => {
         batch.update(
           db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id),
-          { ordemFila: item.ordemFila }
+          item.id === moved.id ? { ordemFila: item.ordemFila, fixado: true } : { ordemFila: item.ordemFila }
         );
       });
       await batch.commit();
@@ -2897,8 +2900,8 @@ https://www.youtube.com/@canal/videos"></textarea>
       // que tenha sido pedida assim. Sem zerar o tipo, ela seguia com o ☕ e
       // contava na alternancia das duas filas.
       await doc.ref.update({
-        slot: 'ativa', tipo: 'normal',
-        ordemFila: VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()), { prioridade: false }),
+        slot: 'ativa', tipo: 'normal', fixado: false,
+        ordemFila: VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data())),
       });
       console.log('[HOST] Música em espera promovida para fila principal.');
     } catch(e) {
@@ -4860,7 +4863,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       status: 'aguardando', slot: 'ativa', tipo,
       // MAIOR + 1, nao "quantos ha + 1": com buracos na numeracao o pedido
       // novo entrava na frente de quem ja esperava.
-      ordemFila: VoxlyOrdem.ordemParaNovo(filaData, { prioridade: tipo === 'prioridade' }),
+      ordemFila: VoxlyOrdem.ordemParaNovo(filaData),
       adicionadoEm: modoOffline ? Date.now() : firebase.firestore.FieldValue.serverTimestamp()
     };
     if (!modoOffline) {

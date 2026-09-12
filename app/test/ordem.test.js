@@ -2,7 +2,7 @@
 
 // A ordem da fila.
 //
-// Dois defeitos do show de 10/09 tinham a mesma raiz:
+// Tres defeitos do show de 10/09 e do teste de 11/09 tinham a mesma raiz:
 //
 // 1. "Quem entra depois sobe na frente." Todo pedido novo recebia
 //    ordemFila = (quantos estao aguardando) + 1. Isso supoe numeros continuos,
@@ -13,14 +13,21 @@
 //    ("cafe com leite") antes de tudo, em cada atualizacao. O KJ arrastava
 //    alguem para cima de um prioridade e na atualizacao seguinte ele voltava.
 //
-// Agora a prioridade vale na ENTRADA — ela escolhe onde o pedido entra — e
-// depois disso so conta o ordemFila, que o arrastar do KJ reescreve.
+// 3. Dois cafes com leite seguidos. A intercalacao era decidida na ENTRADA e
+//    congelava: quando alguem saia do meio da fila (o KJ tocou fora de ordem,
+//    o cantor desistiu), os vizinhos colavam e a fila principal parava por
+//    duas musicas. Agora o ordemFila e so a ordem de chegada e a intercalacao
+//    e feita na hora de montar a fila — quem o KJ arrastou fica cravado.
 
 const test = require("node:test");
 const assert = require("node:assert");
 const { ordenarFila, ordemParaNovo } = require("../src/ordem");
 
 const esp = (id, ordemFila, extra = {}) => ({ id, status: "aguardando", slot: "ativa", ordemFila, ...extra });
+const N = (id, ordem) => esp(id, ordem, { tipo: "normal" });
+const C = (id, ordem) => esp(id, ordem, { tipo: "prioridade" });
+const tipos = fila => ordenarFila(fila).map(i => i.tipo === "prioridade" ? "C" : "N");
+const ids = fila => ordenarFila(fila).map(i => i.id);
 
 test("o caso do show: com buraco na numeracao, o novo vai para o fim", () => {
   // 1 e 2 ja cantaram e sairam da fila.
@@ -33,139 +40,113 @@ test("fila vazia comeca em 1", () => {
   assert.strictEqual(ordemParaNovo([], { prioridade: false }), 1);
 });
 
-test("a ordem manual do KJ vence a prioridade", () => {
-  // O KJ arrastou o "normal" para cima: ele ficou com ordem 1.
-  const fila = [esp("cafe", 2, { tipo: "prioridade" }), esp("normal", 1, { tipo: "normal" })];
-  assert.deepStrictEqual(ordenarFila(fila).map(i => i.id), ["normal", "cafe"]);
+test("chegada e chegada: o cafe com leite tambem entra no fim da ordem de chegada", () => {
+  // Quem decide onde ele CANTA e a intercalacao, na hora de montar a fila.
+  const fila = [N("a", 1), N("b", 2)];
+  assert.strictEqual(ordemParaNovo(fila, { prioridade: true }), 3);
 });
 
 // ── Cafe com leite: duas filas andando juntas ────────────────────────────
-// Regra definida pelo dono do app: "se dez pessoas chegarem, a logica deve ser
-// uma pessoa da fila, um cafe com leite, outra pessoa da fila, outro cafe com
-// leite. A fila principal nunca pode parar de andar."
-//
-// A primeira versao desta regra (que eu escrevi) punha toda prioridade antes
-// de todos os normais: com dez chegando, a fila principal pararia ate as dez
-// cantarem. Era o oposto do pedido.
+// Regra do dono do app: "se dez pessoas chegarem, a logica deve ser uma pessoa
+// da fila, um cafe com leite, outra pessoa da fila, outro cafe com leite. A
+// fila principal nunca pode parar de andar."
 
-// Simula chegadas, uma de cada vez, como acontece no app.
-function chegam(fila, tipos) {
-  let atual = [...fila];
-  tipos.forEach((tipo, k) => {
-    const ordemFila = ordemParaNovo(atual, { prioridade: tipo === "P" });
-    atual.push(esp(`${tipo}${k}`, ordemFila, { tipo: tipo === "P" ? "prioridade" : "normal" }));
-  });
-  return ordenarFila(atual).map(i => i.tipo === "prioridade" ? "P" : "N");
-}
-
-test("o exemplo do dono: dez cafe com leite chegam numa fila de cinco", () => {
-  const fila = [1, 2, 3, 4, 5].map(n => esp(`n${n}`, n, { tipo: "normal" }));
-  const ordem = chegam(fila, Array(10).fill("P"));
-  assert.deepStrictEqual(ordem.slice(0, 10), ["N","P","N","P","N","P","N","P","N","P"],
-    "um da fila, um cafe com leite, alternando");
+test("o exemplo do dono: cinco na fila e cinco cafes com leite alternam", () => {
+  const fila = [N("n1", 1), N("n2", 2), N("n3", 3), N("n4", 4), N("n5", 5),
+                C("c1", 6), C("c2", 7), C("c3", 8), C("c4", 9), C("c5", 10)];
+  assert.deepStrictEqual(tipos(fila), ["N", "C", "N", "C", "N", "C", "N", "C", "N", "C"]);
 });
 
-test("a fila principal nunca para: normal que chega depois ainda alterna", () => {
-  // Cinco normais, dez cafes: sobram cinco cafes no fim. Um normal novo nao
-  // pode esperar os cinco — ele entra depois do primeiro que sobrou.
-  const fila = [1, 2, 3, 4, 5].map(n => esp(`n${n}`, n, { tipo: "normal" }));
-  const ordem = chegam(fila, [...Array(10).fill("P"), "N"]);
-  const idx = ordem.lastIndexOf("N");
-  const cafesAntes = ordem.slice(0, idx).filter(t => t === "P").length;
-  const normaisAntes = ordem.slice(0, idx).filter(t => t === "N").length;
-  // Alternancia estrita comecando pela fila principal: antes do proximo normal
-  // ha tantos cafes quantos normais — N,P,N,P,...,N,P e entao ele.
-  assert.strictEqual(cafesAntes, normaisAntes,
-    `o normal novo esperou ${cafesAntes} cafes com ${normaisAntes} normais na frente: ${ordem.join("")}`);
+test("a fila comeca pela fila principal, nao pelo cafe com leite", () => {
+  assert.deepStrictEqual(tipos([C("c1", 1), N("n1", 2)]), ["N", "C"]);
 });
 
-test("o primeiro cafe com leite entra depois do primeiro da fila, nao antes", () => {
-  const fila = [esp("n1", 4, { tipo: "normal" }), esp("n2", 5, { tipo: "normal" })];
-  const n = ordemParaNovo(fila, { prioridade: true });
-  assert.ok(n > 4 && n < 5, `recebeu ${n}: devia ficar entre n1 e n2`);
+test("dentro de cada fila vale a ordem de chegada", () => {
+  const fila = [C("c1", 5), N("n1", 1), C("c2", 6), N("n2", 2)];
+  assert.deepStrictEqual(ids(fila), ["n1", "c1", "n2", "c2"]);
 });
 
-test("entre cafes com leite vale a ordem de chegada", () => {
-  const fila = [1, 2, 3].map(n => esp(`n${n}`, n, { tipo: "normal" }));
-  let atual = [...fila];
-  for (const id of ["p1", "p2"]) {
-    atual.push(esp(id, ordemParaNovo(atual, { prioridade: true }), { tipo: "prioridade" }));
-  }
-  const ids = ordenarFila(atual).map(i => i.id).filter(x => x.startsWith("p"));
-  assert.deepStrictEqual(ids, ["p1", "p2"]);
+test("mais cafes que gente na fila: os que sobram vao no fim, na ordem de chegada", () => {
+  const fila = [N("n1", 1), C("c1", 2), C("c2", 3), C("c3", 4)];
+  assert.deepStrictEqual(ids(fila), ["n1", "c1", "c2", "c3"]);
 });
 
-test("quem ja esta na fila principal nunca e passado por um normal que chega depois", () => {
-  // O defeito do show: "tem gente que ja esta na fila e pessoas que colocam
-  // depois acabam subindo".
-  const fila = [esp("n1", 1, { tipo: "normal" }), esp("p1", 1.5, { tipo: "prioridade" }), esp("n2", 2, { tipo: "normal" })];
-  const n = ordemParaNovo(fila, { prioridade: false });
-  const ordem = ordenarFila([...fila, esp("novo", n, { tipo: "normal" })]).map(i => i.id);
-  assert.ok(ordem.indexOf("novo") > ordem.indexOf("n2"), ordem.join(","));
+test("so a fila principal: ninguem e reordenado", () => {
+  assert.deepStrictEqual(ids([N("n1", 1), N("n2", 2), N("n3", 3)]), ["n1", "n2", "n3"]);
 });
 
-test("so cafes com leite esperando: o primeiro ainda vai antes do normal novo", () => {
-  // Quem ja esperava nao pode ser furado por quem acabou de chegar.
-  const fila = [esp("p1", 1, { tipo: "prioridade" }), esp("p2", 2, { tipo: "prioridade" })];
-  const n = ordemParaNovo(fila, { prioridade: false });
-  const ordem = ordenarFila([...fila, esp("n1", n, { tipo: "normal" })]).map(i => i.id);
-  assert.deepStrictEqual(ordem, ["p1", "n1", "p2"]);
+// ── O caso do teste de 11/09 ─────────────────────────────────────────────
+test("alguem sai do meio e a fila se reacomoda: nunca dois cafes seguidos", () => {
+  const fila = [N("rafa", 1), C("mari", 2), N("bia", 3), C("tuca", 4), N("duda", 5)];
+  assert.deepStrictEqual(ids(fila), ["rafa", "mari", "bia", "tuca", "duda"]);
+  // O KJ tocou a Bia fora de ordem (era a unica com arquivo baixado).
+  const semBia = fila.filter(i => i.id !== "bia");
+  assert.deepStrictEqual(tipos(semBia), ["N", "C", "N", "C"], "a Duda sobe e separa os dois cafes");
+  assert.deepStrictEqual(ids(semBia), ["rafa", "mari", "duda", "tuca"]);
 });
 
-test("cafe com leite sem ninguem na fila principal vai para o fim", () => {
-  const fila = [esp("p1", 1, { tipo: "prioridade" })];
-  assert.ok(ordemParaNovo(fila, { prioridade: true }) > 1);
-  assert.strictEqual(ordemParaNovo([], { prioridade: true }), 1);
+// ── O arrastar do KJ ─────────────────────────────────────────────────────
+test("quem o KJ arrastou fica cravado onde ele pos", () => {
+  // KJ arrastou o cafe "c2" para o topo: ele fica em primeiro, e o resto
+  // se acomoda em volta.
+  const fila = [C("c2", 1, ), N("n1", 2), N("n2", 3), C("c1", 4)];
+  fila[0].fixado = true;
+  assert.deepStrictEqual(ids(fila), ["c2", "n1", "c1", "n2"]);
 });
 
+test("dois arrastados seguidos continuam seguidos: a vontade do KJ vence a alternancia", () => {
+  const fila = [C("c1", 1), C("c2", 2), N("n1", 3), N("n2", 4)];
+  fila[0].fixado = true; fila[1].fixado = true;
+  assert.deepStrictEqual(ids(fila), ["c1", "c2", "n1", "n2"]);
+});
+
+test("o arrastado no meio nao sai do lugar quando alguem sai da fila", () => {
+  const fila = [N("n1", 1), N("n2", 2), C("c1", 3, ), N("n3", 4)];
+  fila[2].fixado = true;   // KJ arrastou o cafe para a 3a posicao
+  assert.deepStrictEqual(ids(fila), ["n1", "n2", "c1", "n3"]);
+});
+
+// ── O resto da ordem ─────────────────────────────────────────────────────
 test("quem esta no palco ou sendo chamado vem antes da fila", () => {
   const fila = [
-    esp("fila1", 1),
-    { id: "chamado", status: "confirmando", ordemFila: 9 },
-    { id: "pronto",  status: "pronto",      ordemFila: 8 },
-    { id: "palco",   status: "tocando",     ordemFila: 7 },
+    esp("espera", 1, { tipo: "normal" }),
+    { id: "tocando", status: "tocando", slot: "ativa", ordemFila: 9 },
+    { id: "chamando", status: "confirmando", slot: "ativa", ordemFila: 8 },
+    { id: "pronto", status: "pronto", slot: "ativa", ordemFila: 7 },
   ];
-  assert.deepStrictEqual(ordenarFila(fila).map(i => i.id), ["palco", "pronto", "chamado", "fila1"]);
+  assert.deepStrictEqual(ids(fila), ["tocando", "pronto", "chamando", "espera"]);
+});
+
+test("quem acabou de confirmar fica junto de quem está sendo chamado", () => {
+  const fila = [esp("a", 1), { id: "c", status: "confirmado", slot: "ativa", ordemFila: 9 }, esp("b", 2)];
+  assert.deepStrictEqual(ids(fila), ["c", "a", "b"]);
+});
+
+test("pedido em espera fica fora da intercalação e no fim", () => {
+  const fila = [N("n1", 1), C("c1", 2), esp("x", 3, { tipo: "prioridade", slot: "espera" })];
+  assert.deepStrictEqual(ids(fila), ["n1", "c1", "x"]);
 });
 
 test("a ordenacao e consistente, nao depende da ordem de entrada", () => {
-  // A comparacao antiga devolvia -1 nos dois sentidos para dois 'tocando'.
-  const a = [esp("x", 2), { id: "t1", status: "tocando", ordemFila: 1 }, esp("y", 1)];
-  const b = [...a].reverse();
-  assert.deepStrictEqual(ordenarFila(a).map(i => i.id), ordenarFila(b).map(i => i.id));
+  const fila = [N("n1", 1), C("c1", 2), N("n2", 3), C("c2", 4)];
+  const embaralhada = [fila[3], fila[1], fila[2], fila[0]];
+  assert.deepStrictEqual(ids(fila), ids(embaralhada));
 });
 
 test("ordenarFila nao altera o array recebido", () => {
-  const fila = [esp("b", 2), esp("a", 1)];
+  const fila = [N("n1", 2), C("c1", 1)];
+  const copia = JSON.parse(JSON.stringify(fila));
   ordenarFila(fila);
-  assert.deepStrictEqual(fila.map(i => i.id), ["b", "a"]);
+  assert.deepStrictEqual(fila, copia);
 });
 
 test("pedido sem ordemFila vai para o fim, nao para o comeco", () => {
-  // `|| 0` fazia registro antigo sem o campo pular para o topo.
-  const fila = [esp("com", 1), { id: "sem", status: "aguardando", slot: "ativa" }];
-  assert.deepStrictEqual(ordenarFila(fila).map(i => i.id), ["com", "sem"]);
+  const fila = [N("a", 1), { id: "sem", status: "aguardando", slot: "ativa", tipo: "normal" }, N("b", 2)];
+  assert.deepStrictEqual(ids(fila), ["a", "b", "sem"]);
 });
 
-// Pedido na vaga de espera nao toca neste ciclo: nao pode servir de ancora
-// para a alternancia. Sem fixture com "espera", tirar o filtro de ordem.js
-// deixava a suite verde.
-test("pedido em espera não conta na alternância do café com leite", () => {
-  const fila = [
-    esp("a", 1),
-    esp("x", 1.5, { tipo: "prioridade", slot: "espera" }),   // café na ESPERA: ignorado
-    esp("b", 2),
-  ];
-  // Com o de espera ignorado, o primeiro café real entra logo depois de "a".
-  assert.strictEqual(ordemParaNovo(fila, { prioridade: true }), 1.5);
-  // E um normal vai para o fim, depois de tudo — inclusive do número do de espera.
-  assert.strictEqual(ordemParaNovo(fila, { prioridade: false }), 3);
-});
-
-// "confirmado" e o instante entre o cantor confirmar e a Gerencia marcar
-// "pronto". Sem peso proprio ele caia para o fim da fila, e o Play escolhia
-// outro no lugar de quem acabou de confirmar.
-test("quem acabou de confirmar fica junto de quem está sendo chamado", () => {
-  const fila = [esp("a", 1), { id: "c", status: "confirmado", slot: "ativa", ordemFila: 9 }, esp("b", 2)];
-  assert.deepStrictEqual(ordenarFila(fila).map(i => i.id), ["c", "a", "b"]);
+test("lista vazia ou torta nao quebra", () => {
+  assert.deepStrictEqual(ordenarFila([]), []);
+  assert.deepStrictEqual(ordenarFila(null), []);
+  assert.strictEqual(ordenarFila([null, undefined]).length, 2);
 });
