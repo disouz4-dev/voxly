@@ -129,12 +129,17 @@ service cloud.firestore {
           && aceitaConversa(convite().deUid) && aceitaConversa(convite().paraUid);
 
         allow update: if logado() && participo() && (
-          // uma mensagem nova, no fim, sem mexer nas anteriores
+          // uma mensagem nova, no fim, sem mexer nas anteriores: todas as antigas
+          // continuam la, ha exatamente uma a mais, e a ultima e a nova (nao e
+          // nenhuma das antigas) — so ela e conferida, e tem que ser minha.
+          // (Recortar a lista com [0:n] foi a primeira ideia; o banco recusava
+          // ate a primeira mensagem de uma conversa vazia.)
           (soMudou(['mensagens'])
             && resource.data.status == 'aberto'
             && request.resource.data.mensagens.size() == resource.data.mensagens.size() + 1
             && request.resource.data.mensagens.size() <= 200
-            && request.resource.data.mensagens[0:resource.data.mensagens.size()] == resource.data.mensagens
+            && request.resource.data.mensagens.hasAll(resource.data.mensagens)
+            && !(request.resource.data.mensagens[resource.data.mensagens.size()] in resource.data.mensagens)
             && mensagemBoa(request.resource.data.mensagens[resource.data.mensagens.size()]))
           // marcar ate onde eu li — so a minha marca
           || (soMudou(['vistoEm'])

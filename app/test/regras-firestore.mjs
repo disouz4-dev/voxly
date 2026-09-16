@@ -155,8 +155,11 @@ await naoDeve("a Ana", "mandar mensagem com mais de 500 letras", () =>
 await naoDeve("a Ana", "mandar mensagem com campo a mais", () =>
   updateDoc(conversa(ana.bd, "c1"), { mensagens: arrayUnion(msg(ana, "oi", { foto: "http://x" })) }));
 const atuais = await mensagens(ana.bd, "c1");
+if (!atuais || atuais.length < 2) { falhas++; console.log("  FALHA a conversa devia ter 2 mensagens antes dos testes de reescrever"); }
 await naoDeve("a Ana", "reescrever mensagem antiga", () =>
   updateDoc(conversa(ana.bd, "c1"), { mensagens: [{ ...atuais[0], texto: "editado" }, atuais[1], msg(ana, "nova")] }));
+await naoDeve("a Ana", "enfiar mensagem falsa do Beto no meio, reordenando", () =>
+  updateDoc(conversa(ana.bd, "c1"), { mensagens: [{ ...msg(ana, "sou o Beto"), deUid: beto.uid }, atuais[0], atuais[1]] }));
 await naoDeve("a Ana", "apagar a mensagem do Beto", () =>
   updateDoc(conversa(ana.bd, "c1"), { mensagens: [atuais[0]] }));
 await deve("o Beto", "marcar o que leu", () => updateDoc(conversa(beto.bd, "c1"), { [`vistoEm.${beto.uid}`]: Date.now() }));
