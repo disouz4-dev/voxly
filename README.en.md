@@ -361,6 +361,7 @@ app/                       # Electron app (Host + Stage + Audience + LAN server)
                            # rules shared with the singers' app; copied to
                            # web/public by `npm run sincronizar-regras`,
                            # copias.test.js fails if they drift
+  scripts/versao-web.js    # writes web/public/versao.js from package.json's version (part of sincronizar-regras)
   test/                    # automated tests (node --test)
 web/                       # singer web app (Firebase Hosting)
   public/                  # index, profile, signup + offline-client.js + rule copies

@@ -119,7 +119,10 @@
 
     <div class="footer">
       Desenvolvido por <strong>diSouz4</strong> para <strong>Nexus Solutions</strong><br>
-      <a href="#" onclick="alert('Voxly 1.1.1 — © 2026 Nexus Solutions'); return false;">Versão 1.1.1</a>
+      <!-- Versao vem de versao.js, gerado do package.json do Voxly -->
+      <a href="#" id="linkVersao" onclick="alert('Voxly ' + (window.VOXLY_VERSAO || '') + ' — © 2026 Nexus Solutions'); return false;">Versão <span id="versaoWeb"></span></a>
+      <script src="/versao.js"></script>
+      <script>document.getElementById('versaoWeb').textContent = window.VOXLY_VERSAO || '';</script>
     </div>
   </div>
 

@@ -412,9 +412,10 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/sugestoes.js         # │
   src/chat.js              # │ (convite de dueto: respostas prontas e conversa)
   src/entrada.js           # ┘ (ingresso da noite: quem está liberado, quem conferir)
+  scripts/versao-web.js    # grava web/public/versao.js com a versão do package.json (vem no sincronizar-regras)
   test/                    # testes automatizados (node --test)
 web/                       # web dos cantores (Firebase Hosting)
-  public/                  # index, profile, signup + offline-client.js + cópias das regras
+  public/                  # index, profile, signup + offline-client.js + cópias das regras + versao.js (gerado)
   firestore.rules          # regras de segurança (inclui relatorios/{sessaoId})
 servidor-licenca/          # servidor de licença (Cloudflare Workers + Mercado Pago, Pix)
   src/index.js             # cria o Pix, confirma o pagamento, assina o bilhete
