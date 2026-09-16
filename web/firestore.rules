@@ -41,6 +41,14 @@ service cloud.firestore {
           || (exists(pagamento) && get(pagamento).data.status == 'pago');
     }
 
+    // Ver o que esta DENTRO da sessao (fila, presencas, convites...). Com
+    // ingresso ligado, quem nao pagou nao acessa: so ve o documento da sessao,
+    // que traz o preco e o QR. A Gerencia dona ve tudo; sessao abandonada
+    // tambem abre, para a faxina de outra maquina guardar o relatorio.
+    function podeVerSessao(sid) {
+      return logado() && (souDono(sid) || entradaPaga(sid) || abandonada(dadosDaSessao(sid)));
+    }
+
     function soMudou(campos) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
     }
@@ -65,7 +73,7 @@ service cloud.firestore {
                                     || semDono(resource.data));
 
       match /fila/{itemId} {
-        allow read:   if logado();
+        allow read:   if podeVerSessao(sid);
         // O cantor cria o proprio pedido; a Gerencia cria por qualquer um
         // (cantor adicionado a mao pelo KJ nao tem conta). Com entrada paga
         // ligada, o pedido do cantor so entra depois de o KJ confirmar o Pix.
@@ -77,13 +85,15 @@ service cloud.firestore {
         allow delete: if logado() && (souDono(sid) || resource.data.cantorUid == eu());
       }
 
+      // Marcar presenca nao exige ingresso: e assim que o KJ ve quem esta na
+      // porta esperando (e pode liberar de cortesia). Ver as outras, exige.
       match /presencas/{uid} {
-        allow read:  if logado();
+        allow read:  if podeVerSessao(sid) || (logado() && uid == eu());
         allow write: if logado() && (souDono(sid) || uid == eu());
       }
 
       match /convites/{id} {
-        allow read:   if logado();
+        allow read:   if podeVerSessao(sid);
         allow create: if logado() && (souDono(sid) || request.resource.data.deUid == eu());
         // A recusa guarda o NUMERO de uma das respostas prontas (chat.js), nunca
         // texto: senao recusar virava jeito de mandar qualquer coisa a quem
@@ -117,7 +127,7 @@ service cloud.firestore {
               && m.em is int;
         }
 
-        allow read: if logado() && participo();
+        allow read: if logado() && participo() && podeVerSessao(sid);
 
         allow create: if logado()
           && convite().status == 'aceito'
@@ -159,8 +169,8 @@ service cloud.firestore {
 
       // Ponte de busca: o cantor grava o termo, a Gerencia devolve os candidatos.
       match /buscas/{id} {
-        allow read:   if logado();
-        allow create: if logado();
+        allow read:   if podeVerSessao(sid);
+        allow create: if podeVerSessao(sid);
         allow update, delete: if souDono(sid);
       }
 
@@ -185,8 +195,8 @@ service cloud.firestore {
                                       || semDono(dadosDaSessao(sid)));
       }
 
-      match /historico/{id} { allow read: if logado(); allow write: if souDono(sid); }
-      match /meta/{doc}     { allow read: if logado(); allow write: if souDono(sid); }
+      match /historico/{id} { allow read: if podeVerSessao(sid); allow write: if souDono(sid); }
+      match /meta/{doc}     { allow read: if podeVerSessao(sid); allow write: if souDono(sid); }
     }
 
     // Resumo permanente de cada noite, gravado pela Gerencia dona antes de a

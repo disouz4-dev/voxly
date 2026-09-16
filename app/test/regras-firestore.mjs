@@ -206,6 +206,16 @@ const aviso = (quem, extra = {}) => ({
 await deve("a dona", "ligar a entrada de R$ 15", () =>
   updateDoc(sessao(dono.bd), { cobranca: { ativa: true, valor: 15, brcode: "000201...", qr: "", recebedor: "DIEGO" } }));
 await naoDeve("o Caio", "pedir música sem pagar", () => pedidoDe(caio, "caio_1"));
+await deve("o Caio", "ver o preço e o QR (documento da sessão)", () => getDoc(sessao(caio.bd)));
+await deve("o Caio", "marcar presença na porta, sem pagar", () =>
+  setDoc(doc(caio.bd, "sessoes", SID, "presencas", caio.uid), { nomeArtistico: "Caio", status: "aqui" }));
+await naoDeve("o Caio", "ver a fila sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "fila")));
+await naoDeve("o Caio", "ver quem está na sessão sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "presencas")));
+await naoDeve("o Caio", "ver os convites sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "convites")));
+await naoDeve("o Caio", "ver o histórico da noite sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "historico")));
+await naoDeve("o Caio", "pedir busca no YouTube sem pagar", () =>
+  setDoc(doc(caio.bd, "sessoes", SID, "buscas", "b_caio"), { termo: "x", status: "pendente" }));
+await deve("a dona", "ver a fila com o ingresso ligado", () => getDocs(collection(dono.bd, "sessoes", SID, "fila")));
 await naoDeve("o Caio", "se marcar como pago", () => setDoc(pagamento(caio.bd, caio.uid), { ...aviso(caio), status: "pago" }));
 await naoDeve("o Caio", "avisar que pagou um valor menor", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio, { valor: 1 })));
 await naoDeve("o Caio", "avisar pagamento em nome de outro", () => setDoc(pagamento(caio.bd, estranho.uid), aviso(caio)));
@@ -221,12 +231,16 @@ await deve("a dona", "confirmar que caiu", () => updateDoc(pagamento(dono.bd, ca
 await deve("o Caio", "ver que está pago", () => getDoc(pagamento(caio.bd, caio.uid)));
 await naoDeve("o Caio", "sobrescrever o pagamento confirmado", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio)));
 await deve("o Caio", "pedir música depois de pago", () => pedidoDe(caio, "caio_3"));
+await deve("o Caio", "ver a fila depois de pago", () => getDocs(collection(caio.bd, "sessoes", SID, "fila")));
+await deve("o Caio", "ver quem está na sessão depois de pago", () => getDocs(collection(caio.bd, "sessoes", SID, "presencas")));
 await naoDeve("o estranho", "pedir música sem pagar, com o Caio pago", () => pedidoDe(estranho, "estranho_1"));
 await deve("a dona", "liberar o estranho de cortesia", () =>
   setDoc(pagamento(dono.bd, estranho.uid), { status: "pago", cortesia: true, valor: 0, nomeArtistico: "Estranho" }));
 await deve("o estranho", "pedir música com cortesia", () => pedidoDe(estranho, "estranho_2"));
 await deve("a dona", "desligar a entrada", () => updateDoc(sessao(dono.bd), { "cobranca.ativa": false }));
 await deve("a Ana", "pedir música com a entrada desligada", () => pedidoDe(ana, "ana_1"));
+await deve("a Ana", "ver a fila com o ingresso desligado, sem pagamento nenhum", () => getDocs(collection(ana.bd, "sessoes", SID, "fila")));
+await deve("a Ana", "ver quem está na sessão com o ingresso desligado", () => getDocs(collection(ana.bd, "sessoes", SID, "presencas")));
 await naoDeve("o Caio", "religar ou mudar a cobrança da sessão", () =>
   updateDoc(sessao(caio.bd), { cobranca: { ativa: false, valor: 0 } }));
 

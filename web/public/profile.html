@@ -58,6 +58,7 @@
     .nav-btn span { font-size: 1.3rem; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: flex-end; justify-content: center; }
     .modal-overlay.open { display: flex; }
+    #entradaSection { display:none; }
     .entrada-card { border:1px solid var(--accent); }
     .entrada-qr { display:block; width:220px; height:220px; margin:12px auto; background:#fff; border-radius:10px; padding:6px; }
     .entrada-cola { display:flex; gap:8px; margin-top:6px; }
@@ -268,6 +269,19 @@
     </div>
   </div>
 
+  <!-- INGRESSO — a porta da sessao. Com cobranca ligada, e so isto que quem nao
+       pagou ve: o conteudo da sessao nem e carregado (e o banco recusa ler). -->
+  <div id="entradaSection" aria-label="Ingresso da noite">
+    <div style="max-width:440px;margin:0 auto;padding:4px 16px 110px;">
+      <div style="text-align:center;margin:6px 0 14px;">
+        <div style="font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-family:'Space Mono',monospace;">🎟️ Ingresso da noite</div>
+        <div id="entradaCasa" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.15rem;margin-top:6px;"></div>
+      </div>
+      <div class="card entrada-card" id="entradaCard"></div>
+      <button class="entrada-btn-sec" style="display:block;width:100%;margin-top:14px;" onclick="sair()">Sair da sessão</button>
+    </div>
+  </div>
+
   <!-- SEÇÃO DE MÚSICA — oculta até entrar na sessão -->
   <div id="sessao-conteudo" style="display:none;">
 
@@ -280,12 +294,6 @@
 
     <!-- TAB: FILA (padrão) -->
     <div id="tab-fila">
-      <!-- Ingresso: aparece so quando o KJ cobra e o cantor ainda nao esta liberado -->
-      <div class="section" id="entradaSection" style="display:none;">
-        <div class="section-title">🎟️ Ingresso da noite</div>
-        <div class="card entrada-card" id="entradaCard"></div>
-      </div>
-
       <div class="section">
         <div class="section-title">🎤 Sua Fila</div>
         <div class="card">
@@ -644,7 +652,8 @@
 
       document.getElementById('nomeArtistico').textContent = perfilData.nomeArtistico;
       document.getElementById('nomeCompleto').textContent  = perfilData.nomeCompleto;
-      document.getElementById('genresList').innerHTML = (perfilData.generos||[]).map(g=>`<span class="genre-tag">${g}</span>`).join('');      prepararPreferenciaChat();
+      document.getElementById('genresList').innerHTML = (perfilData.generos||[]).map(g=>`<span class="genre-tag">${g}</span>`).join('');
+      prepararPreferenciaChat();
     }
 
     async function registrarPresenca() {
@@ -1304,22 +1313,28 @@ function escutarFila() {
     let meuPagamento   = null;
     let _situacaoEntradaAntes = null;
 
+    let _pagamentoCarregado = false;
     function escutarMeuPagamento() {
-      if (!currentUser || modoOffline) return;
+      if (!currentUser) return;
+      if (modoOffline) { _pagamentoCarregado = true; return; }
       db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').doc(currentUser.uid)
         .onSnapshot(snap => {
           meuPagamento = snap.exists ? snap.data() : null;
+          _pagamentoCarregado = true;
           desenharEntrada();
-        }, e => console.warn('[entrada]', e.message));
+        }, e => {
+          console.warn('[entrada]', e.message);
+          _pagamentoCarregado = true;   // sem isto o celular ficava em "Conferindo" para sempre
+          desenharEntrada();
+        });
     }
 
     function avisarEntradaPendente() {
       const s = VoxlyEntrada.situacaoDoCantor(sessaoAtualDoc, meuPagamento);
       mostrarToast(s === 'aguardando'
         ? '⏳ O KJ ainda está conferindo seu Pix. Assim que confirmar, você pede.'
-        : '🎟️ Pague o ingresso da noite para pedir música.', 4500);
-      mudarTab('fila');
-      document.getElementById('entradaSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        : '🎟️ Pague o ingresso da noite para entrar.', 4500);
+      desenharEntrada();
     }
 
     function desenharEntrada() {
@@ -1329,12 +1344,40 @@ function escutarFila() {
       const s = modoOffline ? 'livre' : VoxlyEntrada.situacaoDoCantor(sessaoAtualDoc, meuPagamento);
 
       if (_situacaoEntradaAntes && _situacaoEntradaAntes !== 'pago' && s === 'pago') {
-        mostrarToast('✅ Ingresso confirmado! Pode pedir sua música.', 5000);
+        mostrarToast('✅ Ingresso confirmado! Bem-vindo à sessão.', 5000);
       }
       _situacaoEntradaAntes = s;
 
-      if (s === 'livre' || s === 'pago') { sec.style.display = 'none'; card.innerHTML = ''; return; }
+      const conteudo = document.getElementById('sessao-conteudo');
+      if (!SESSAO_ID) return;
+      // Sem o documento da sessao ainda nao da para saber se cobra: nao libera
+      // no escuro.
+      if (!sessaoAtualDoc && !modoOffline) {
+        sec.style.display = 'block';
+        conteudo.style.display = 'none';
+        card.innerHTML = '<div class="loading">Entrando na sessão…</div>';
+        return;
+      }
+
+      if (s === 'livre' || s === 'pago') {
+        sec.style.display = 'none';
+        card.innerHTML = '';
+        conteudo.style.display = 'block';
+        liberarSessao();
+        return;
+      }
+
+      // Bloqueado. Se ja estava dentro (o KJ ligou o ingresso no meio da noite,
+      // ou desfez uma confirmacao), recarrega: os ouvintes da sessao param e
+      // o celular volta a ver so a porta.
+      if (_sessaoLiberada) { location.reload(); return; }
+      conteudo.style.display = 'none';
       sec.style.display = 'block';
+      if (!_pagamentoCarregado) {
+        card.innerHTML = '<div class="loading">Conferindo seu ingresso…</div>';
+        return;
+      }
+      document.getElementById('entradaCasa').textContent = (sessaoAtualDoc && sessaoAtualDoc.nomeCasa) || '';
 
       const c = sessaoAtualDoc.cobranca;
       const valor = VoxlyEntrada.emReais(c.valor);
@@ -1346,7 +1389,7 @@ function escutarFila() {
             <div style="font-weight:700;margin-top:4px;">O KJ está conferindo seu Pix</div>
             <div style="font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.45;">
               ${escHtml(valor)} · pago como <strong>${escHtml(meuPagamento.nomePagador || '')}</strong><br>
-              Assim que ele confirmar, seus pedidos são liberados.
+              Assim que ele confirmar, você entra na sessão.
             </div>
           </div>`;
         return;
@@ -1364,7 +1407,7 @@ function escutarFila() {
         <div style="text-align:center;">
           <div style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.6rem;color:var(--accent);">${escHtml(valor)}</div>
           <div style="font-size:.8rem;color:var(--muted);margin-top:4px;line-height:1.45;">
-            Vale a noite toda. Pix para <strong>${escHtml(c.recebedor || '')}</strong>.
+            Para entrar na sessão. Vale a noite toda.<br>Pix para <strong>${escHtml(c.recebedor || '')}</strong>.
           </div>
         </div>
         ${qrOk ? `<img class="entrada-qr" src="${qr}" alt="QR Code do Pix">` : ''}
@@ -1910,27 +1953,38 @@ function escutarFila() {
     // ── Ativar conteúdo após entrar na sessão ────────────────
     async function ativarConteudoSessao() {
       document.getElementById('sessao-entrada').style.display  = 'none';
-      document.getElementById('sessao-conteudo').style.display = 'block';
-      // Carrega regras e presencas da sessão
+      // O conteudo so aparece depois de decidir se esta sessao cobra ingresso.
+      document.getElementById('sessao-conteudo').style.display = 'none';
       try {
         const sessaoDoc = await db.collection('sessoes').doc(SESSAO_ID).get();
         if (sessaoDoc.exists) {
+          sessaoAtualDoc = sessaoDoc.data();
           sessaoRegras  = { ...sessaoRegras, ...(sessaoDoc.data().regras || {}) };
           sessaoTermino = sessaoDoc.data().horarioTermino || null;
         }
       } catch(e) {}
+      // Presenca vale mesmo sem ingresso: e como o KJ ve quem esta na porta.
       await registrarPresenca();
       escutarSessao();
+      escutarMeuPagamento();
+      ativarPresencaOnDisconnect();
+      desenharEntrada();
+    }
+
+    // Tudo que le o que esta dentro da sessao. Roda uma vez, quando o cantor
+    // esta liberado (sessao sem ingresso, ou ingresso confirmado).
+    let _sessaoLiberada = false;
+    function liberarSessao() {
+      if (_sessaoLiberada) return;
+      _sessaoLiberada = true;
       escutarFila();
       escutarFilaEvento();
       escutarConfirmacao();
-      escutarMeuPagamento();
       escutarConvites();
       escutarRespostasDosConvites();
       escutarConversas();
       prepararPreferenciaChat();
       carregarHistorico();
-      ativarPresencaOnDisconnect();
     }
 
     // ── Sessões ativas ───────────────────────────────────────
