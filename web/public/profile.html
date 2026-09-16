@@ -58,6 +58,23 @@
     .nav-btn span { font-size: 1.3rem; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: flex-end; justify-content: center; }
     .modal-overlay.open { display: flex; }
+    .pref-chat { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:12px; font-size:.8rem; color:var(--muted); cursor:pointer; }
+    .pref-chat input { width:16px; height:16px; accent-color:var(--accent); }
+    .recusa-opcao { font-family:inherit; display:block; width:100%; text-align:left; padding:12px 14px; margin-bottom:8px; background:var(--surface2); color:var(--text,#fff); border:1px solid #ffffff15; border-radius:10px; font-size:.88rem; line-height:1.35; cursor:pointer; }
+    .recusa-opcao:active { border-color:var(--accent); }
+    .conversa-item { display:flex; align-items:center; gap:10px; padding:12px; border-radius:10px; background:var(--surface2); margin-bottom:8px; border:1px solid #ffffff10; cursor:pointer; }
+    .conversa-badge { margin-left:auto; min-width:22px; height:22px; padding:0 6px; border-radius:11px; background:var(--accent); color:#000; font-weight:700; font-size:.75rem; display:flex; align-items:center; justify-content:center; }
+    #chatPainel { display:none; position:fixed; inset:0; z-index:150; background:var(--bg); flex-direction:column; }
+    #chatPainel.open { display:flex; }
+    .chat-topo { display:flex; align-items:center; gap:10px; padding:12px 14px; background:var(--surface2); border-bottom:1px solid #ffffff15; }
+    .chat-lista { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:6px; }
+    .chat-msg { max-width:80%; padding:8px 12px; border-radius:14px; font-size:.9rem; line-height:1.35; white-space:pre-wrap; word-break:break-word; }
+    .chat-msg.minha { align-self:flex-end; background:var(--accent); color:#000; border-bottom-right-radius:4px; }
+    .chat-msg.dele  { align-self:flex-start; background:var(--surface2); border-bottom-left-radius:4px; }
+    .chat-hora { display:block; font-size:.62rem; opacity:.6; margin-top:2px; }
+    .chat-envio { display:flex; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:var(--surface2); border-top:1px solid #ffffff15; }
+    .chat-envio textarea { flex:1; resize:none; max-height:110px; padding:10px 12px; border-radius:18px; border:1px solid #ffffff20; background:var(--surface); color:inherit; font:inherit; font-size:.9rem; }
+    .chat-aviso { text-align:center; font-size:.75rem; color:var(--muted); padding:8px; }
     .modal { background: var(--surface); border-radius: 20px 20px 0 0; padding: 24px 20px; width: 100%; max-height: 80vh; overflow-y: auto; border-top: 1px solid #ffffff15; }
     .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; text-align: center; }
     .modal-input { width: 100%; padding: 12px; background: var(--surface2); border: 1px solid #ffffff20; border-radius: 8px; color: var(--text); font-size: 0.95rem; margin-bottom: 10px; }
@@ -228,6 +245,10 @@
     <div class="hero-name" id="nomeArtistico">—</div>
     <div class="hero-fullname" id="nomeCompleto">—</div>
     <div class="hero-genres" id="genresList"></div>
+    <label class="pref-chat" id="prefChatLinha" style="display:none;">
+      <input type="checkbox" id="prefChat" onchange="mudarPreferenciaChat(this.checked)">
+      💬 Receber conversas de dueto
+    </label>
   </div>
 
   <!-- ENTRADA NA SESSÃO — lista de casas com sessão aberta agora -->
@@ -275,6 +296,16 @@
       <div class="section" id="convitesSection" style="display:none;">
         <div class="section-title">📩 Convites de Duo</div>
         <div class="card" id="convitesList"></div>
+      </div>
+
+      <div class="section" id="respostasSection" style="display:none;">
+        <div class="section-title">📨 Respostas aos seus convites</div>
+        <div class="card" id="respostasList"></div>
+      </div>
+
+      <div class="section" id="conversasSection" style="display:none;">
+        <div class="section-title">💬 Conversas de dueto</div>
+        <div class="card" id="conversasList"></div>
       </div>
 
       <div class="section">
@@ -406,6 +437,7 @@
   <script src="/sugestoes.js"></script>
   <script src="/historico.js"></script>
   <script src="/seguro.js"></script>
+  <script src="/chat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -600,7 +632,7 @@
 
       document.getElementById('nomeArtistico').textContent = perfilData.nomeArtistico;
       document.getElementById('nomeCompleto').textContent  = perfilData.nomeCompleto;
-      document.getElementById('genresList').innerHTML = (perfilData.generos||[]).map(g=>`<span class="genre-tag">${g}</span>`).join('');
+      document.getElementById('genresList').innerHTML = (perfilData.generos||[]).map(g=>`<span class="genre-tag">${g}</span>`).join('');      prepararPreferenciaChat();
     }
 
     async function registrarPresenca() {
@@ -1228,26 +1260,305 @@ function escutarFila() {
             const b = ev.target.closest('[data-convite]');
             const c = b && convites[Number(b.dataset.convite)];
             if (!c) return;
-            if (b.dataset.acao === 'aceitar') aceitarConvite(c.id, c.filaItemId, c.deNome);
-            else recusarConvite(c.id, c.filaItemId);
+            if (b.dataset.acao === 'aceitar') aceitarConvite(c);
+            else abrirRecusa(c);
           };
         });
     }
 
-    async function aceitarConvite(conviteId, filaItemId, deNome) {
-      await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(conviteId)
+    async function aceitarConvite(c) {
+      await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(c.id)
         .update({ status: 'aceito' });
-      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(filaItemId)
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(c.filaItemId)
         .update({ duoPendente: false, duoNomeConfirmado: perfilData.nomeArtistico,
                   // Sem isto a tela do publico mostrava so as iniciais do parceiro.
                   duoPhotoURL: perfilData.photoURL || null });
+      oferecerConversa({ ...c, status: 'aceito' });
     }
 
-    async function recusarConvite(conviteId, filaItemId) {
-      await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(conviteId)
-        .update({ status: 'recusado' });
-      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(filaItemId)
-        .update({ duoPendente: false, duoUid: null, duoNome: null, duoPhotoURL: null });
+    // ── Recusa com resposta pronta ─────────────────────────────
+    // O convite guarda so o numero da resposta (VoxlyChat.RECUSAS). Quem
+    // convidou le o texto do mesmo arquivo; as regras do banco recusam
+    // qualquer outra coisa.
+    let _recusando = null;
+
+    function abrirRecusa(c) {
+      _recusando = c;
+      document.getElementById('recusaQuem').textContent =
+        `Escolha como responder a ${c.deNome || 'quem convidou'}:`;
+      const el = document.getElementById('recusaOpcoes');
+      el.innerHTML = VoxlyChat.RECUSAS.map((r, i) =>
+        `<button class="recusa-opcao" data-resposta="${i}">${escHtml(r)}</button>`).join('');
+      el.onclick = ev => {
+        const b = ev.target.closest('[data-resposta]');
+        if (b) recusarConvite(_recusando, Number(b.dataset.resposta));
+      };
+      document.getElementById('modalRecusa').classList.add('open');
+    }
+
+    function fecharRecusa() {
+      _recusando = null;
+      document.getElementById('modalRecusa').classList.remove('open');
+    }
+
+    async function recusarConvite(c, resposta) {
+      if (!c) return;
+      fecharRecusa();
+      try {
+        await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(c.id)
+          .update({ status: 'recusado', resposta });
+        await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(c.filaItemId)
+          .update({ duoPendente: false, duoUid: null, duoNome: null, duoPhotoURL: null });
+        mostrarToast('Convite recusado. Sua resposta foi enviada.', 4000);
+      } catch (e) {
+        console.error('[convite] recusa falhou:', e);
+        mostrarToast('Não consegui recusar agora. Tente de novo.', 5000);
+      }
+    }
+
+    // Quem convidou ve a resposta uma vez e marca como vista.
+    function escutarRespostasDosConvites() {
+      if (!currentUser || modoOffline) return;
+      db.collection('sessoes').doc(SESSAO_ID).collection('convites')
+        .where('deUid', '==', currentUser.uid)
+        .onSnapshot(snap => {
+          const recusas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(c => c.status === 'recusado' && !c.respostaVista);
+          const sec = document.getElementById('respostasSection');
+          const el  = document.getElementById('respostasList');
+          if (!recusas.length) { sec.style.display = 'none'; el.innerHTML = ''; return; }
+          sec.style.display = 'block';
+          el.innerHTML = recusas.map((c, i) => `
+            <div style="padding:12px;border-radius:8px;background:var(--surface2);margin-bottom:8px;border:1px solid #ffffff15;">
+              <div style="font-size:.8rem;color:var(--muted);">${escHtml(c.paraNome || 'Seu convidado')} · ${escHtml(c.musica || '')}</div>
+              <div style="font-size:.9rem;margin:6px 0 10px;line-height:1.4;">“${escHtml(VoxlyChat.respostaDaRecusa(c.resposta))}”</div>
+              <button data-vista="${i}" style="padding:6px 14px;background:none;border:1px solid #ffffff25;border-radius:8px;color:inherit;font-size:.8rem;cursor:pointer;">Ok</button>
+            </div>`).join('');
+          el.onclick = ev => {
+            const b = ev.target.closest('[data-vista]');
+            const c = b && recusas[Number(b.dataset.vista)];
+            if (c) db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(c.id)
+              .update({ respostaVista: true }).catch(() => {});
+          };
+        }, e => console.warn('[convites] respostas:', e.message));
+    }
+
+    // ── Conversas de dueto ─────────────────────────────────────
+    // So online: o modo LAN nao tem conversa. Um ouvinte so para todas as
+    // conversas desta pessoa na noite; o painel aberto le do mesmo ouvinte.
+    let _conversas = [];
+    let _conversaAberta = null;       // id
+    let _oferta = null;               // convite aceito esperando resposta
+    let _meusEnvios = [];
+    let _naoLidasAntes = 0;
+
+    function prepararPreferenciaChat() {
+      const linha = document.getElementById('prefChatLinha');
+      if (!linha) return;
+      linha.style.display = modoOffline ? 'none' : '';
+      document.getElementById('prefChat').checked = VoxlyChat.aceitaConversa(perfilData);
+    }
+
+    async function mudarPreferenciaChat(ligado) {
+      try {
+        await db.collection('cantores').doc(currentUser.uid).update({ aceitaChat: !!ligado });
+        perfilData.aceitaChat = !!ligado;
+        if (!ligado) {
+          // Desligar vale ja: as conversas abertas se encerram.
+          const abertas = _conversas.filter(c => c.status === 'aberto');
+          await Promise.all(abertas.map(c => refConversa(c.id)
+            .update({ status: 'fechado', fechadoPor: currentUser.uid }).catch(() => {})));
+          fecharPainelChat();
+        }
+        mostrarToast(ligado ? '💬 Você vai receber conversas de dueto.' : '🔕 Conversas de dueto desligadas.', 3500);
+      } catch (e) {
+        document.getElementById('prefChat').checked = !ligado;
+        mostrarToast('Não consegui salvar agora. Tente de novo.', 5000);
+      }
+    }
+
+    function refConversa(id) {
+      return db.collection('sessoes').doc(SESSAO_ID).collection('chats').doc(id);
+    }
+
+    // Depois de aceitar: pergunta se quer conversar, mas so se os dois
+    // deixaram conversas ligadas. Se o outro desligou, o convite fica aceito
+    // e pronto — sem dizer a ninguem que ele desligou.
+    async function oferecerConversa(convite) {
+      if (modoOffline || !VoxlyChat.aceitaConversa(perfilData)) {
+        return mostrarToast('✓ Convite aceito!', 3500);
+      }
+      let dele = null;
+      try {
+        const snap = await db.collection('cantores').doc(convite.deUid).get();
+        dele = snap.exists ? snap.data() : null;
+      } catch (_) {}
+      if (!VoxlyChat.podeOferecerConversa(perfilData, dele)) {
+        return mostrarToast('✓ Convite aceito!', 3500);
+      }
+      _oferta = convite;
+      document.getElementById('abrirChatTexto').textContent =
+        `Quer abrir uma conversa com ${convite.deNome || 'seu dueto'} para combinar a apresentação?`;
+      document.getElementById('modalAbrirChat').classList.add('open');
+    }
+
+    async function responderAbrirChat(sim) {
+      const convite = _oferta;
+      _oferta = null;
+      document.getElementById('modalAbrirChat').classList.remove('open');
+      if (!convite) return;
+      if (!sim) return mostrarToast('✓ Convite aceito. Sem conversa.', 3500);
+
+      const doc = VoxlyChat.conversaDoConvite(convite, currentUser.uid);
+      if (!doc) return;
+      const btn = document.getElementById('btnAbrirChat');
+      btn.disabled = true;
+      try {
+        await refConversa(convite.id).set({
+          ...doc, criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        abrirPainelChat(convite.id);
+      } catch (e) {
+        // Ja existe (o outro abriu primeiro) ou o outro acabou de desligar.
+        const ja = await refConversa(convite.id).get().catch(() => null);
+        if (ja && ja.exists) abrirPainelChat(convite.id);
+        else mostrarToast('Não foi possível abrir a conversa. O convite continua aceito.', 5000);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function escutarConversas() {
+      if (!currentUser || modoOffline) return;
+      db.collection('sessoes').doc(SESSAO_ID).collection('chats')
+        .where('participantes', 'array-contains', currentUser.uid)
+        .onSnapshot(snap => {
+          _conversas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          desenharConversas();
+          if (_conversaAberta) desenharPainelChat();
+        }, e => console.warn('[conversas]', e.message));
+    }
+
+    function nomeDoOutro(c) {
+      const outro = VoxlyChat.outroParticipante(c, currentUser.uid);
+      return (c.nomes && c.nomes[outro]) || 'Dueto';
+    }
+
+    function desenharConversas() {
+      const sec = document.getElementById('conversasSection');
+      const el  = document.getElementById('conversasList');
+      if (!_conversas.length) { sec.style.display = 'none'; el.innerHTML = ''; return; }
+      sec.style.display = 'block';
+
+      const naoLidas = _conversas.reduce((n, c) =>
+        n + (c.id === _conversaAberta ? 0 : VoxlyChat.naoLidas(c, currentUser.uid)), 0);
+      if (naoLidas > _naoLidasAntes) mostrarToast('💬 Nova mensagem de dueto', 3500);
+      _naoLidasAntes = naoLidas;
+
+      el.innerHTML = _conversas.map((c, i) => {
+        const n = VoxlyChat.naoLidas(c, currentUser.uid);
+        const ultima = (c.mensagens || []).slice(-1)[0];
+        const sub = c.status !== 'aberto' ? 'Conversa encerrada'
+          : ultima ? ultima.texto : (c.musica ? `${c.musica}` : 'Diga oi!');
+        return `
+          <div class="conversa-item" data-conversa="${i}" style="${c.status !== 'aberto' ? 'opacity:.55;' : ''}">
+            <div style="min-width:0;">
+              <div style="font-weight:700;font-size:.9rem;">${escHtml(nomeDoOutro(c))}</div>
+              <div style="font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(sub)}</div>
+            </div>
+            ${n && c.id !== _conversaAberta ? `<span class="conversa-badge">${n}</span>` : ''}
+          </div>`;
+      }).join('');
+      el.onclick = ev => {
+        const b = ev.target.closest('[data-conversa]');
+        const c = b && _conversas[Number(b.dataset.conversa)];
+        if (c) abrirPainelChat(c.id);
+      };
+    }
+
+    function abrirPainelChat(id) {
+      _conversaAberta = id;
+      document.getElementById('chatPainel').classList.add('open');
+      desenharPainelChat();
+      setTimeout(() => document.getElementById('chatTexto').focus(), 50);
+    }
+
+    function fecharPainelChat() {
+      _conversaAberta = null;
+      document.getElementById('chatPainel').classList.remove('open');
+      desenharConversas();
+    }
+
+    function horaCurta(ms) {
+      return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function desenharPainelChat() {
+      const c = _conversas.find(x => x.id === _conversaAberta);
+      if (!c) {
+        // Ainda nao chegou pelo ouvinte (acabou de ser criada): espera o proximo.
+        document.getElementById('chatNome').textContent = 'Abrindo conversa…';
+        return;
+      }
+      document.getElementById('chatNome').textContent = nomeDoOutro(c);
+      document.getElementById('chatMusica').textContent =
+        [c.musica, c.artista].filter(Boolean).join(' — ');
+
+      const lista = document.getElementById('chatLista');
+      const noFim = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 60;
+      lista.innerHTML = (c.mensagens || []).map(m => `
+        <div class="chat-msg ${m.deUid === currentUser.uid ? 'minha' : 'dele'}">${escHtml(m.texto)}<span class="chat-hora">${escHtml(horaCurta(m.em))}</span></div>
+      `).join('') || '<div class="chat-aviso">Combinem a apresentação por aqui. A conversa some quando a noite acabar.</div>';
+      if (noFim) lista.scrollTop = lista.scrollHeight;
+
+      const aberta = VoxlyChat.conversaAberta(c);
+      document.getElementById('chatEnvio').style.display = aberta ? '' : 'none';
+      document.getElementById('btnEncerrarChat').style.display = c.status === 'aberto' ? '' : 'none';
+      const aviso = document.getElementById('chatAviso');
+      aviso.style.display = aberta ? 'none' : '';
+      aviso.textContent = c.status !== 'aberto'
+        ? (c.fechadoPor === currentUser.uid ? 'Você encerrou esta conversa.' : 'A conversa foi encerrada.')
+        : 'A conversa chegou ao limite de mensagens.';
+
+      // Marca como lido o que ja esta na tela.
+      const ultimaDele = (c.mensagens || []).filter(m => m.deUid !== currentUser.uid).slice(-1)[0];
+      const visto = Number(c.vistoEm && c.vistoEm[currentUser.uid]) || 0;
+      if (ultimaDele && ultimaDele.em > visto) {
+        refConversa(c.id).update({ [`vistoEm.${currentUser.uid}`]: ultimaDele.em }).catch(() => {});
+      }
+    }
+
+    async function enviarMensagem() {
+      const c = _conversas.find(x => x.id === _conversaAberta);
+      const campo = document.getElementById('chatTexto');
+      if (!c || !VoxlyChat.conversaAberta(c)) return;
+      const agora = Date.now();
+      if (!VoxlyChat.podeEnviar(_meusEnvios, agora)) {
+        return mostrarToast('Calma! Espere uns segundos para mandar mais.', 3000);
+      }
+      const msg = VoxlyChat.novaMensagem({
+        uid: currentUser.uid, nome: perfilData.nomeArtistico, texto: campo.value, agora,
+      });
+      if (!msg) return;
+      _meusEnvios = [..._meusEnvios.filter(t => t > agora - VoxlyChat.RAJADA.janelaMs), agora];
+      campo.value = '';
+      try {
+        await refConversa(c.id).update({
+          mensagens: firebase.firestore.FieldValue.arrayUnion(msg),
+        });
+        const lista = document.getElementById('chatLista');
+        lista.scrollTop = lista.scrollHeight;
+      } catch (e) {
+        campo.value = msg.texto;
+        mostrarToast('Mensagem não enviada. Tente de novo.', 4000);
+      }
+    }
+
+    async function encerrarChat() {
+      const c = _conversas.find(x => x.id === _conversaAberta);
+      if (!c || !confirm('Encerrar a conversa? Ninguém mais consegue mandar mensagem nela.')) return;
+      await refConversa(c.id).update({ status: 'fechado', fechadoPor: currentUser.uid })
+        .catch(() => mostrarToast('Não consegui encerrar agora.', 4000));
     }
 
     function escutarFilaEvento() {
@@ -1479,6 +1790,9 @@ function escutarFila() {
       escutarFilaEvento();
       escutarConfirmacao();
       escutarConvites();
+      escutarRespostasDosConvites();
+      escutarConversas();
+      prepararPreferenciaChat();
       carregarHistorico();
       ativarPresencaOnDisconnect();
     }
@@ -2050,5 +2364,44 @@ function escutarFila() {
       } catch(e) { return null; }
     }
   </script>
+  <!-- Recusar convite: so respostas prontas -->
+  <div class="modal-overlay" id="modalRecusa" onclick="if(event.target===this)fecharRecusa()">
+    <div class="modal">
+      <div class="modal-title">Recusar convite</div>
+      <p id="recusaQuem" style="font-size:.85rem;color:var(--muted);margin:0 0 14px;"></p>
+      <div id="recusaOpcoes"></div>
+      <button onclick="fecharRecusa()" style="width:100%;padding:10px;background:none;border:none;color:var(--muted);font-size:.85rem;cursor:pointer;">Voltar</button>
+    </div>
+  </div>
+
+  <!-- Depois de aceitar: abrir conversa? -->
+  <div class="modal-overlay" id="modalAbrirChat">
+    <div class="modal" style="text-align:center;">
+      <div style="font-size:2.2rem;">🎤💬</div>
+      <div class="modal-title" style="margin-top:6px;">Dueto aceito!</div>
+      <p id="abrirChatTexto" style="font-size:.88rem;color:var(--muted);line-height:1.45;margin:6px 0 18px;"></p>
+      <button class="btn-pedir" id="btnAbrirChat" onclick="responderAbrirChat(true)">💬 Abrir conversa</button>
+      <button onclick="responderAbrirChat(false)" style="width:100%;margin-top:8px;padding:12px;background:none;border:1px solid #ffffff20;border-radius:12px;color:var(--muted);font-size:.88rem;cursor:pointer;">Agora não</button>
+    </div>
+  </div>
+
+  <!-- Conversa aberta -->
+  <div id="chatPainel" role="dialog" aria-label="Conversa de dueto">
+    <div class="chat-topo">
+      <button onclick="fecharPainelChat()" aria-label="Voltar" style="background:none;border:none;color:inherit;font-size:1.3rem;cursor:pointer;padding:4px 8px;">←</button>
+      <div style="flex:1;min-width:0;">
+        <div id="chatNome" style="font-weight:700;"></div>
+        <div id="chatMusica" style="font-size:.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      </div>
+      <button id="btnEncerrarChat" onclick="encerrarChat()" style="background:none;border:1px solid #ff174450;color:#ff6b6b;border-radius:8px;padding:6px 10px;font-size:.75rem;cursor:pointer;">Encerrar</button>
+    </div>
+    <div class="chat-lista" id="chatLista"></div>
+    <div class="chat-aviso" id="chatAviso" style="display:none;"></div>
+    <div class="chat-envio" id="chatEnvio">
+      <textarea id="chatTexto" rows="1" maxlength="500" placeholder="Mensagem…"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarMensagem();}"></textarea>
+      <button onclick="enviarMensagem()" aria-label="Enviar" style="border:none;border-radius:50%;width:42px;height:42px;background:var(--accent);color:#000;font-size:1.1rem;cursor:pointer;">➤</button>
+    </div>
+  </div>
 </body>
 </html>

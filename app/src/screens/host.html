@@ -2097,6 +2097,14 @@ https://www.youtube.com/@canal/videos"></textarea>
       if (exigirRelatorio) throw new Error(`relatorio de ${ref.id} nao foi salvo: ${e.message}`);
       mostrarToast(`⚠️ O relatório de ${ref.id} não foi salvo antes de apagar`, 8000);
     }
+    // Conversas de dueto: a Gerencia nao pode LER (sao so dos dois cantores),
+    // entao nao da para listar. Mas cada conversa tem o id do convite que a
+    // abriu — e os convites a Gerencia le. Tem que vir antes de apagar os
+    // convites, senao ninguem mais sabe os ids e a conversa fica para sempre.
+    const convites = await ref.collection('convites').get().catch(() => null);
+    if (convites) {
+      await Promise.all(convites.docs.map(d => ref.collection('chats').doc(d.id).delete().catch(() => {})));
+    }
     for (const sub of SUBCOLECOES_SESSAO) {
       const snap = await ref.collection(sub).get().catch(() => null);
       if (!snap) continue;

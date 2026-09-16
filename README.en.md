@@ -89,6 +89,8 @@ open /Applications/Voxly.app
 - ↕️ **First come, first served** — whoever asked first sings first. The KJ drags to reorder and the app plays **exactly the order on screen**; a dragged request stays pinned where it was put.
 - ☕ **"Café com leite"** — when the wait goes past the limit the KJ sets (40 min by default), people who have not sung yet tonight are **interleaved** with the main queue: one from the queue, one newcomer, another from the queue… The main queue never stops moving. If someone leaves the middle of the queue, the rest re-accommodates on its own to keep one of each — without moving what the KJ dragged. Can be turned off in the rules.
 - 🧑‍🤝‍🧑 **Online presence** — the host sees who is connected and **how many songs each person has sung** tonight.
+- 🎤 **Duet invite** — a singer invites another from the app. The invitee accepts or declines; declining means picking **one of five polite ready-made replies**, which reach the inviter. There is no free text in a decline.
+- 💬 **Duet chat** — after accepting, the app asks whether to open a chat with the partner to plan the performance. If not, the invite stays accepted and nothing opens. Each singer chooses in their profile whether to receive chats (on by default); with it off, nobody can open a chat with them and open ones are closed. Only the two can read it — not even the KJ. Either can end it, and it **disappears with the night**. Online only (hidden in local-network mode).
 
 **Sound**
 - 🎚️ **Pitch shifting** — singers can change the song key to match their voice.

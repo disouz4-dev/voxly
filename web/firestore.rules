@@ -74,8 +74,71 @@ service cloud.firestore {
       match /convites/{id} {
         allow read:   if logado();
         allow create: if logado() && (souDono(sid) || request.resource.data.deUid == eu());
-        allow update, delete: if logado() && (souDono(sid) || resource.data.paraUid == eu()
-                                              || resource.data.deUid == eu());
+        // A recusa guarda o NUMERO de uma das respostas prontas (chat.js), nunca
+        // texto: senao recusar virava jeito de mandar qualquer coisa a quem
+        // convidou, inclusive quem desligou as conversas.
+        allow update: if logado() && (souDono(sid) || resource.data.paraUid == eu()
+                                      || resource.data.deUid == eu())
+                      && (!('resposta' in request.resource.data)
+                          || (request.resource.data.resposta is int
+                              && request.resource.data.resposta >= 0
+                              && request.resource.data.resposta <= 4));
+        allow delete: if logado() && (souDono(sid) || resource.data.paraUid == eu()
+                                      || resource.data.deUid == eu());
+      }
+
+      // Conversa do dueto. So os dois leem; nem a Gerencia. O id e o do
+      // convite, e ela so nasce de convite ACEITO entre duas pessoas que nao
+      // desligaram as conversas. Limites iguais aos de chat.js.
+      match /chats/{chatId} {
+        function convite() {
+          return get(/databases/$(database)/documents/sessoes/$(sid)/convites/$(chatId)).data;
+        }
+        function aceitaConversa(uid) {
+          return get(/databases/$(database)/documents/cantores/$(uid)).data.get('aceitaChat', true) != false;
+        }
+        function participo() { return eu() in resource.data.participantes; }
+        function mensagemBoa(m) {
+          return m.keys().hasOnly(['deUid', 'deNome', 'texto', 'em'])
+              && m.deUid == eu()
+              && m.texto is string && m.texto.size() > 0 && m.texto.size() <= 500
+              && m.deNome is string && m.deNome.size() <= 60
+              && m.em is int;
+        }
+
+        allow read: if logado() && participo();
+
+        allow create: if logado()
+          && convite().status == 'aceito'
+          && eu() in [convite().deUid, convite().paraUid]
+          && request.resource.data.participantes.size() == 2
+          && request.resource.data.participantes.hasAll([convite().deUid, convite().paraUid])
+          && request.resource.data.status == 'aberto'
+          && request.resource.data.mensagens.size() == 0
+          && aceitaConversa(convite().deUid) && aceitaConversa(convite().paraUid);
+
+        allow update: if logado() && participo() && (
+          // uma mensagem nova, no fim, sem mexer nas anteriores
+          (soMudou(['mensagens'])
+            && resource.data.status == 'aberto'
+            && request.resource.data.mensagens.size() == resource.data.mensagens.size() + 1
+            && request.resource.data.mensagens.size() <= 200
+            && request.resource.data.mensagens[0:resource.data.mensagens.size()] == resource.data.mensagens
+            && mensagemBoa(request.resource.data.mensagens[resource.data.mensagens.size()]))
+          // marcar ate onde eu li — so a minha marca
+          || (soMudou(['vistoEm'])
+            && request.resource.data.vistoEm.diff(resource.data.vistoEm).affectedKeys().hasOnly([eu()]))
+          // encerrar: qualquer um dos dois, e nao reabre
+          || (soMudou(['status', 'fechadoPor'])
+            && request.resource.data.status == 'fechado'
+            && request.resource.data.fechadoPor == eu())
+        );
+
+        // Morre com a noite: a faxina apaga sem ler (pelo id do convite). Vale
+        // tambem para a sessao abandonada, derrubada de outra maquina: conversa
+        // particular nao pode sobrar no banco porque a dona sumiu.
+        allow delete: if logado() && (souDono(sid) || abandonada(dadosDaSessao(sid))
+                                      || semDono(dadosDaSessao(sid)));
       }
 
       // Ponte de busca: o cantor grava o termo, a Gerencia devolve os candidatos.

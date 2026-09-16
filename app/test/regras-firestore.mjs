@@ -11,7 +11,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import {
-  getFirestore, doc, collection, setDoc, updateDoc, deleteDoc, getDoc, getDocs, serverTimestamp, Timestamp,
+  getFirestore, doc, collection, setDoc, updateDoc, deleteDoc, getDoc, getDocs, serverTimestamp, Timestamp, arrayUnion,
 } from "firebase/firestore";
 
 const CONFIG = {
@@ -118,6 +118,76 @@ await deve("a dona", "abrir uma sessão que ficará abandonada", () => setDoc(do
   hostVivoEm: Timestamp.fromMillis(Date.now() - 30 * 60e3),   // sem marcar presença há 30 min
 }));
 await deve("outra Gerência", "derrubar a sessão abandonada", () => deleteDoc(doc(estranho.bd, "sessoes", SID2)));
+
+console.log("\n── Convite de dueto e conversa ──");
+const ana  = await entrar("ana");
+const beto = await entrar("beto");
+const convite = (bd, id) => doc(bd, "sessoes", SID, "convites", id);
+const conversa = (bd, id) => doc(bd, "sessoes", SID, "chats", id);
+const msg = (quem, texto, extra = {}) => ({ deUid: quem.uid, deNome: quem.nome, texto, em: Date.now(), ...extra });
+const mensagens = async (bd, id) => (await getDoc(conversa(bd, id))).data().mensagens;
+
+await deve("a Ana", "criar o próprio perfil", () => setDoc(doc(ana.bd, "cantores", ana.uid), { nomeArtistico: "Ana" }));
+await deve("o Beto", "criar o próprio perfil", () => setDoc(doc(beto.bd, "cantores", beto.uid), { nomeArtistico: "Beto" }));
+await deve("a Ana", "convidar o Beto para um dueto", () => setDoc(convite(ana.bd, "c1"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Zombie", status: "pendente",
+}));
+
+const novaConversa = { participantes: [ana.uid, beto.uid], nomes: {}, status: "aberto", mensagens: [], vistoEm: {} };
+await naoDeve("o Beto", "abrir conversa antes de aceitar o convite", () => setDoc(conversa(beto.bd, "c1"), novaConversa));
+await deve("o Beto", "aceitar o convite", () => updateDoc(convite(beto.bd, "c1"), { status: "aceito" }));
+await naoDeve("o estranho", "abrir a conversa do dueto dos outros", () => setDoc(conversa(estranho.bd, "c1"), novaConversa));
+await naoDeve("o Beto", "abrir conversa pondo um terceiro dentro", () =>
+  setDoc(conversa(beto.bd, "c1"), { ...novaConversa, participantes: [beto.uid, estranho.uid] }));
+await deve("o Beto", "abrir a conversa depois de aceitar", () => setDoc(conversa(beto.bd, "c1"), novaConversa));
+
+await deve("a Ana", "mandar mensagem", () => updateDoc(conversa(ana.bd, "c1"), { mensagens: arrayUnion(msg(ana, "Bora! Tom original?")) }));
+await deve("o Beto", "ler a conversa", () => getDoc(conversa(beto.bd, "c1")));
+await deve("o Beto", "responder", () => updateDoc(conversa(beto.bd, "c1"), { mensagens: arrayUnion(msg(beto, "Fechado")) }));
+await naoDeve("o estranho", "ler a conversa", () => getDoc(conversa(estranho.bd, "c1")));
+await naoDeve("a Gerência", "ler a conversa (é só dos dois)", () => getDoc(conversa(dono.bd, "c1")));
+await naoDeve("o estranho", "mandar mensagem na conversa", () =>
+  updateDoc(conversa(estranho.bd, "c1"), { mensagens: arrayUnion(msg(estranho, "oi")) }));
+await naoDeve("a Ana", "mandar mensagem em nome do Beto", () =>
+  updateDoc(conversa(ana.bd, "c1"), { mensagens: arrayUnion({ ...msg(ana, "sou o Beto"), deUid: beto.uid }) }));
+await naoDeve("a Ana", "mandar mensagem com mais de 500 letras", () =>
+  updateDoc(conversa(ana.bd, "c1"), { mensagens: arrayUnion(msg(ana, "x".repeat(501))) }));
+await naoDeve("a Ana", "mandar mensagem com campo a mais", () =>
+  updateDoc(conversa(ana.bd, "c1"), { mensagens: arrayUnion(msg(ana, "oi", { foto: "http://x" })) }));
+const atuais = await mensagens(ana.bd, "c1");
+await naoDeve("a Ana", "reescrever mensagem antiga", () =>
+  updateDoc(conversa(ana.bd, "c1"), { mensagens: [{ ...atuais[0], texto: "editado" }, atuais[1], msg(ana, "nova")] }));
+await naoDeve("a Ana", "apagar a mensagem do Beto", () =>
+  updateDoc(conversa(ana.bd, "c1"), { mensagens: [atuais[0]] }));
+await deve("o Beto", "marcar o que leu", () => updateDoc(conversa(beto.bd, "c1"), { [`vistoEm.${beto.uid}`]: Date.now() }));
+await naoDeve("o Beto", "marcar como lido pela Ana", () => updateDoc(conversa(beto.bd, "c1"), { [`vistoEm.${ana.uid}`]: Date.now() }));
+await naoDeve("o Beto", "trocar os participantes", () =>
+  updateDoc(conversa(beto.bd, "c1"), { participantes: [beto.uid, estranho.uid] }));
+await deve("a Ana", "encerrar a conversa", () => updateDoc(conversa(ana.bd, "c1"), { status: "fechado", fechadoPor: ana.uid }));
+await naoDeve("o Beto", "mandar mensagem na conversa encerrada", () =>
+  updateDoc(conversa(beto.bd, "c1"), { mensagens: arrayUnion(msg(beto, "ei")) }));
+await naoDeve("o Beto", "reabrir a conversa encerrada", () => updateDoc(conversa(beto.bd, "c1"), { status: "aberto" }));
+
+console.log("\n── Recusa com resposta pronta ──");
+await deve("a Ana", "convidar de novo", () => setDoc(convite(ana.bd, "c2"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Iris", status: "pendente",
+}));
+await naoDeve("o Beto", "recusar com texto livre", () => updateDoc(convite(beto.bd, "c2"), { status: "recusado", resposta: "texto qualquer" }));
+await naoDeve("o Beto", "recusar com resposta que não existe", () => updateDoc(convite(beto.bd, "c2"), { status: "recusado", resposta: 7 }));
+await deve("o Beto", "recusar com uma das cinco respostas", () => updateDoc(convite(beto.bd, "c2"), { status: "recusado", resposta: 2 }));
+await deve("a Ana", "marcar a resposta como vista", () => updateDoc(convite(ana.bd, "c2"), { respostaVista: true }));
+
+console.log("\n── Quem desligou as conversas não recebe ──");
+await deve("a Ana", "convidar mais uma vez", () => setDoc(convite(ana.bd, "c3"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Creep", status: "pendente",
+}));
+await deve("a Ana", "desligar as conversas", () => updateDoc(doc(ana.bd, "cantores", ana.uid), { aceitaChat: false }));
+await deve("o Beto", "aceitar o convite", () => updateDoc(convite(beto.bd, "c3"), { status: "aceito" }));
+await naoDeve("o Beto", "abrir conversa com quem desligou", () => setDoc(conversa(beto.bd, "c3"), novaConversa));
+
+await deve("a Gerência dona", "apagar a conversa na faxina, sem ler", () => deleteDoc(conversa(dono.bd, "c1")));
+await deleteDoc(doc(ana.bd, "cantores", ana.uid)).catch(() => {});
+await deleteDoc(doc(beto.bd, "cantores", beto.uid)).catch(() => {});
 
 console.log("\n── Limpeza ──");
 for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta"]) {

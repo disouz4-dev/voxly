@@ -91,6 +91,8 @@ open /Applications/Voxly.app
 - ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**; quem foi arrastado fica cravado no lugar.
 - ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. Se alguém sai do meio da fila, o resto se reacomoda sozinho para continuar um de cada — sem mexer em quem o KJ arrastou. O ☕ só aparece em quem de fato entrou assim. Pode ser desligado nas regras.
 - 🧑‍🤝‍🧑 **Presença online** — o host vê quem está conectado e **quantas músicas cada um já cantou** na noite.
+- 🎤 **Convite de dueto** — o cantor convida outro pelo app. Quem recebe aceita ou recusa; para recusar escolhe **uma de cinco respostas prontas e educadas**, que chegam para quem convidou. Não existe texto livre na recusa.
+- 💬 **Conversa de dueto** — depois de aceitar, o app pergunta se a pessoa quer abrir uma conversa com o parceiro para combinar a apresentação. Se não quiser, o convite fica aceito e nada se abre. Cada cantor escolhe no perfil se recebe conversas (vem ligado); com ela desligada, ninguém consegue abrir conversa com ele e as que estavam abertas se encerram. Só os dois leem — nem o KJ. Qualquer um encerra, e a conversa **some junto com a noite**. Só funciona com internet (no modo rede local não aparece).
 
 **Som**
 - 🎚️ **Controle de tom (pitch shift)** para quem quer cantar em outro tom.
@@ -405,7 +407,8 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/historico.js         # │ (histórico do cantor)
   src/trava.js             # │ copias.test.js falha se divergirem
   src/texto.js             # │
-  src/sugestoes.js         # ┘
+  src/sugestoes.js         # │
+  src/chat.js              # ┘ (convite de dueto: respostas prontas e conversa)
   test/                    # testes automatizados (node --test)
 web/                       # web dos cantores (Firebase Hosting)
   public/                  # index, profile, signup + offline-client.js + cópias das regras
