@@ -32,6 +32,15 @@ service cloud.firestore {
     // Sessao antiga, de antes do carimbo de dono: continua administravel.
     function semDono(d) { return !('donoUid' in d); }
 
+    // Entrada paga: desligada, todo mundo pede. Ligada, so quem a Gerencia dona
+    // marcou como pago (entrada.js). O cantor nao consegue se marcar.
+    function entradaPaga(sid) {
+      let cobranca = dadosDaSessao(sid).get('cobranca', {});
+      let pagamento = /databases/$(database)/documents/sessoes/$(sid)/pagamentos/$(eu());
+      return cobranca.get('ativa', false) != true
+          || (exists(pagamento) && get(pagamento).data.status == 'pago');
+    }
+
     function soMudou(campos) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
     }
@@ -58,8 +67,10 @@ service cloud.firestore {
       match /fila/{itemId} {
         allow read:   if logado();
         // O cantor cria o proprio pedido; a Gerencia cria por qualquer um
-        // (cantor adicionado a mao pelo KJ nao tem conta).
-        allow create: if logado() && (souDono(sid) || request.resource.data.cantorUid == eu());
+        // (cantor adicionado a mao pelo KJ nao tem conta). Com entrada paga
+        // ligada, o pedido do cantor so entra depois de o KJ confirmar o Pix.
+        allow create: if logado() && (souDono(sid)
+                                      || (request.resource.data.cantorUid == eu() && entradaPaga(sid)));
         allow update: if logado() && (souDono(sid) || resource.data.cantorUid == eu()
                                       || (resource.data.duoUid == eu()
                                           && soMudou(['duoPendente', 'duoNomeConfirmado', 'duoPhotoURL', 'duoUid', 'duoNome'])));
@@ -146,6 +157,27 @@ service cloud.firestore {
         allow read:   if logado();
         allow create: if logado();
         allow update, delete: if souDono(sid);
+      }
+
+      // Entrada paga. O cantor avisa que pagou (status "aguardando") e pode
+      // avisar de novo depois de um "nao-caiu"; so a Gerencia dona confirma. O
+      // cantor nao le o pagamento dos outros.
+      match /pagamentos/{uid} {
+        function avisoBom(d) {
+          return d.keys().hasOnly(['status', 'nomeArtistico', 'nomePagador', 'valor', 'avisadoEm'])
+              && d.status == 'aguardando'
+              && d.nomeArtistico is string && d.nomeArtistico.size() <= 60
+              && d.nomePagador is string && d.nomePagador.size() > 0 && d.nomePagador.size() <= 80
+              && d.valor == dadosDaSessao(sid).cobranca.valor
+              && d.avisadoEm == request.time;
+        }
+        allow read:   if logado() && (uid == eu() || souDono(sid));
+        allow create: if logado() && (souDono(sid) || (uid == eu() && avisoBom(request.resource.data)));
+        allow update: if logado() && (souDono(sid)
+                                      || (uid == eu() && resource.data.status == 'nao-caiu'
+                                          && avisoBom(request.resource.data)));
+        allow delete: if logado() && (souDono(sid) || abandonada(dadosDaSessao(sid))
+                                      || semDono(dadosDaSessao(sid)));
       }
 
       match /historico/{id} { allow read: if logado(); allow write: if souDono(sid); }

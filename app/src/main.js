@@ -2214,6 +2214,25 @@ ipcMain.handle("yt-cancel", () => {
   return true;
 });
 
+// ── Pix da entrada ─────────────────────────────────────────
+// O QR da entrada e gerado aqui, na maquina do KJ. O QR do app usa um servico
+// de fora (api.qrserver.com), o que e aceitavel para um endereco publico, mas
+// nao para um codigo que carrega a chave Pix e o nome de quem recebe.
+const pix = require("./pix");
+ipcMain.handle("pix-gerar", async (_e, dados) => {
+  try {
+    const d = dados || {};
+    const brcode = pix.gerarBrCode({
+      chave: d.chave, nome: d.nome, cidade: d.cidade, valor: d.valor, txid: d.txid,
+    });
+    const qr = await require("qrcode").toDataURL(brcode, { margin: 1, width: 420, errorCorrectionLevel: "M" });
+    const chave = pix.normalizarChave(d.chave);
+    return { brcode, qr, tipo: chave.tipo, lido: pix.lerBrCode(brcode) };
+  } catch (e) {
+    return { erro: e.message };
+  }
+});
+
 // ── Licenca ────────────────────────────────────────────────
 // A casa paga por mes. O que o app guarda aqui e so o bilhete assinado pelo
 // servidor e tres datas. Toda a REGRA mora em licenca.js, testada; este bloco

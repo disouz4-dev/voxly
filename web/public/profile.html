@@ -58,6 +58,11 @@
     .nav-btn span { font-size: 1.3rem; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: flex-end; justify-content: center; }
     .modal-overlay.open { display: flex; }
+    .entrada-card { border:1px solid var(--accent); }
+    .entrada-qr { display:block; width:220px; height:220px; margin:12px auto; background:#fff; border-radius:10px; padding:6px; }
+    .entrada-cola { display:flex; gap:8px; margin-top:6px; }
+    .entrada-cola input { flex:1; min-width:0; padding:10px; border-radius:10px; border:1px solid #ffffff20; background:var(--surface2); color:inherit; font-family:'Space Mono',monospace; font-size:.68rem; }
+    .entrada-cola button, .entrada-btn-sec { padding:10px 14px; border-radius:10px; border:1px solid #ffffff25; background:none; color:inherit; font-family:inherit; font-size:.82rem; cursor:pointer; }
     .pref-chat { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:12px; font-size:.8rem; color:var(--muted); cursor:pointer; }
     .pref-chat input { width:16px; height:16px; accent-color:var(--accent); }
     .recusa-opcao { font-family:inherit; display:block; width:100%; text-align:left; padding:12px 14px; margin-bottom:8px; background:var(--surface2); color:var(--text,#fff); border:1px solid #ffffff15; border-radius:10px; font-size:.88rem; line-height:1.35; cursor:pointer; }
@@ -275,6 +280,12 @@
 
     <!-- TAB: FILA (padrão) -->
     <div id="tab-fila">
+      <!-- Ingresso: aparece so quando o KJ cobra e o cantor ainda nao esta liberado -->
+      <div class="section" id="entradaSection" style="display:none;">
+        <div class="section-title">🎟️ Ingresso da noite</div>
+        <div class="card entrada-card" id="entradaCard"></div>
+      </div>
+
       <div class="section">
         <div class="section-title">🎤 Sua Fila</div>
         <div class="card">
@@ -438,6 +449,7 @@
   <script src="/historico.js"></script>
   <script src="/seguro.js"></script>
   <script src="/chat.js"></script>
+  <script src="/entrada.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -765,6 +777,10 @@ function escutarFila() {
     const travaPedido     = VoxlyTrava.criarTrava();
 
     async function abrirModal(slot) {
+      if (!VoxlyEntrada.entradaLiberada(sessaoAtualDoc, meuPagamento) && !modoOffline) {
+        avisarEntradaPendente();
+        return false;
+      }
       slotAtivo = slot;
       document.querySelector('.modal-title').textContent = itemTrocando ? '🔄 Trocar Música' : '🎵 Pedir Música';
       document.getElementById('modalSlotLabel').textContent = slot === 'ativa' ? 'FILA PRINCIPAL' : 'EM ESPERA';
@@ -1035,6 +1051,10 @@ function escutarFila() {
       const slot      = slotAtivo;
       const trocando  = itemTrocando;
       if (!escolhida) { errEl.textContent = 'Selecione uma música.'; return; }
+      if (!modoOffline && !VoxlyEntrada.entradaLiberada(sessaoAtualDoc, meuPagamento)) {
+        errEl.textContent = 'Pague o ingresso da noite para pedir música.';
+        return;
+      }
       if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
         errEl.textContent = 'A sessão desta casa já encerrou — não dá mais para colocar música.';
         return;
@@ -1220,7 +1240,7 @@ function escutarFila() {
       if (!slot) { mostrarToast('Você já tem uma música na fila e outra em espera.', 4000); return; }
 
       itemTrocando = null;
-      await abrirModal(slot);
+      if ((await abrirModal(slot)) === false) return;
       // Disponivel = ja esta no acervo da casa; senao a Gerencia baixa pelo
       // video guardado, a mesma versao que tocou da outra vez.
       const acervo = (await garantirCatalogo().catch(() => null)) || [];
@@ -1274,6 +1294,119 @@ function escutarFila() {
                   // Sem isto a tela do publico mostrava so as iniciais do parceiro.
                   duoPhotoURL: perfilData.photoURL || null });
       oferecerConversa({ ...c, status: 'aceito' });
+    }
+
+    // ── Entrada paga ───────────────────────────────────────────
+    // O KJ cobra uma entrada por noite, por Pix direto na chave dele. Este
+    // celular mostra o QR, avisa "Ja paguei" e espera o KJ conferir. A trava de
+    // verdade esta no banco: sem "pago", o pedido nao entra na fila.
+    let sessaoAtualDoc = null;
+    let meuPagamento   = null;
+    let _situacaoEntradaAntes = null;
+
+    function escutarMeuPagamento() {
+      if (!currentUser || modoOffline) return;
+      db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').doc(currentUser.uid)
+        .onSnapshot(snap => {
+          meuPagamento = snap.exists ? snap.data() : null;
+          desenharEntrada();
+        }, e => console.warn('[entrada]', e.message));
+    }
+
+    function avisarEntradaPendente() {
+      const s = VoxlyEntrada.situacaoDoCantor(sessaoAtualDoc, meuPagamento);
+      mostrarToast(s === 'aguardando'
+        ? '⏳ O KJ ainda está conferindo seu Pix. Assim que confirmar, você pede.'
+        : '🎟️ Pague o ingresso da noite para pedir música.', 4500);
+      mudarTab('fila');
+      document.getElementById('entradaSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function desenharEntrada() {
+      const sec = document.getElementById('entradaSection');
+      const card = document.getElementById('entradaCard');
+      if (!sec || !card) return;
+      const s = modoOffline ? 'livre' : VoxlyEntrada.situacaoDoCantor(sessaoAtualDoc, meuPagamento);
+
+      if (_situacaoEntradaAntes && _situacaoEntradaAntes !== 'pago' && s === 'pago') {
+        mostrarToast('✅ Ingresso confirmado! Pode pedir sua música.', 5000);
+      }
+      _situacaoEntradaAntes = s;
+
+      if (s === 'livre' || s === 'pago') { sec.style.display = 'none'; card.innerHTML = ''; return; }
+      sec.style.display = 'block';
+
+      const c = sessaoAtualDoc.cobranca;
+      const valor = VoxlyEntrada.emReais(c.valor);
+
+      if (s === 'aguardando') {
+        card.innerHTML = `
+          <div style="text-align:center;padding:6px 0;">
+            <div style="font-size:1.8rem;">⏳</div>
+            <div style="font-weight:700;margin-top:4px;">O KJ está conferindo seu Pix</div>
+            <div style="font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.45;">
+              ${escHtml(valor)} · pago como <strong>${escHtml(meuPagamento.nomePagador || '')}</strong><br>
+              Assim que ele confirmar, seus pedidos são liberados.
+            </div>
+          </div>`;
+        return;
+      }
+
+      // Qualquer outra coisa que nao seja um QR de verdade nao vira <img>.
+      const qr = VoxlySeguro.urlDeImagem(c.qr);
+      const qrOk = qr && qr.startsWith('data:image/');
+      const naoCaiu = s === 'nao-caiu';
+      const nomeSugerido = (meuPagamento && meuPagamento.nomePagador) || (perfilData && perfilData.nomeCompleto) || '';
+
+      card.innerHTML = `
+        ${naoCaiu ? `<div style="padding:10px 12px;border-radius:10px;background:#ff174418;border:1px solid #ff174450;color:#ff8a8a;font-size:.82rem;line-height:1.45;margin-bottom:12px;">
+          O KJ não encontrou seu Pix no extrato. Confira se o pagamento saiu e avise de novo — ou fale com ele no balcão.</div>` : ''}
+        <div style="text-align:center;">
+          <div style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.6rem;color:var(--accent);">${escHtml(valor)}</div>
+          <div style="font-size:.8rem;color:var(--muted);margin-top:4px;line-height:1.45;">
+            Vale a noite toda. Pix para <strong>${escHtml(c.recebedor || '')}</strong>.
+          </div>
+        </div>
+        ${qrOk ? `<img class="entrada-qr" src="${qr}" alt="QR Code do Pix">` : ''}
+        <div style="font-size:.72rem;color:var(--muted);text-align:center;">Ou copie o código e cole no app do seu banco:</div>
+        <div class="entrada-cola">
+          <input id="entradaCola" readonly value="${escHtml(c.brcode || '')}">
+          <button onclick="copiarPixEntrada()">Copiar</button>
+        </div>
+        <label style="display:block;font-size:.75rem;color:var(--muted);margin:14px 0 4px;">Nome na conta que pagou (para o KJ achar no extrato)</label>
+        <input id="entradaNome" maxlength="80" value="${escHtml(nomeSugerido)}"
+          style="width:100%;padding:11px;border-radius:10px;border:1px solid #ffffff20;background:var(--surface2);color:inherit;font-family:inherit;font-size:.9rem;box-sizing:border-box;">
+        <button class="btn-pedir" id="btnJaPaguei" style="margin-top:12px;" onclick="avisarQuePaguei()">✅ Já paguei</button>`;
+    }
+
+    async function copiarPixEntrada() {
+      const campo = document.getElementById('entradaCola');
+      try { await navigator.clipboard.writeText(campo.value); mostrarToast('📋 Código Pix copiado. Cole no app do banco.', 3500); }
+      catch (_) { campo.select(); document.execCommand && document.execCommand('copy'); mostrarToast('📋 Código selecionado — copie e cole no app do banco.', 4000); }
+    }
+
+    async function avisarQuePaguei() {
+      const nome = VoxlyEntrada.limparNomePagador(document.getElementById('entradaNome').value);
+      if (!nome) return mostrarToast('Informe o nome da conta que fez o Pix.', 4000);
+      const btn = document.getElementById('btnJaPaguei');
+      btn.disabled = true;
+      btn.textContent = 'Avisando o KJ…';
+      try {
+        // set, nao update: depois de um "nao caiu" o documento e reescrito
+        // inteiro, com exatamente os campos que a regra do banco aceita.
+        await db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').doc(currentUser.uid).set({
+          status:        'aguardando',
+          nomeArtistico: String(perfilData.nomeArtistico || '').slice(0, 60),
+          nomePagador:   nome,
+          valor:         Number(sessaoAtualDoc.cobranca.valor),
+          avisadoEm:     firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        console.error('[entrada] aviso falhou:', e);
+        mostrarToast('Não consegui avisar o KJ. Tente de novo.', 5000);
+        btn.disabled = false;
+        btn.textContent = '✅ Já paguei';
+      }
     }
 
     // ── Recusa com resposta pronta ─────────────────────────────
@@ -1724,6 +1857,8 @@ function escutarFila() {
           return;
         }
         const data = snap.data();
+        sessaoAtualDoc = data;
+        desenharEntrada();
         // Regras e termino acompanham a sessao: lidos so na entrada, o KJ
         // desligava o cafe com leite (ou mudava o limite, ou o horario) e os
         // celulares ja conectados seguiam pela regra velha.
@@ -1789,6 +1924,7 @@ function escutarFila() {
       escutarFila();
       escutarFilaEvento();
       escutarConfirmacao();
+      escutarMeuPagamento();
       escutarConvites();
       escutarRespostasDosConvites();
       escutarConversas();
@@ -2310,7 +2446,7 @@ function escutarFila() {
         setTimeout(() => av.remove(), 2600);
         return;
       }
-      await abrirModal(slot);
+      if ((await abrirModal(slot)) === false) return;
       selecionarMusica(song.id || null, limparNome(song.musica || ''), song.artista || '', song.disponivel !== false);
     }
 

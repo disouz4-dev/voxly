@@ -189,8 +189,46 @@ await deve("a Gerência dona", "apagar a conversa na faxina, sem ler", () => del
 await deleteDoc(doc(ana.bd, "cantores", ana.uid)).catch(() => {});
 await deleteDoc(doc(beto.bd, "cantores", beto.uid)).catch(() => {});
 
+console.log("\n── Entrada paga por Pix ──");
+const caio = await entrar("caio");
+const pagamento = (bd, uid) => doc(bd, "sessoes", SID, "pagamentos", uid);
+const pedidoDe = (quem, id) => setDoc(item(quem.bd, id), {
+  cantorUid: quem.uid, nomeArtistico: quem.nome, musica: "Chop Suey!", artista: "System of a Down",
+  status: "aguardando", slot: "ativa", ordemFila: 9,
+});
+const aviso = (quem, extra = {}) => ({
+  status: "aguardando", nomeArtistico: quem.nome, nomePagador: "Caio da Silva", valor: 15, avisadoEm: serverTimestamp(), ...extra,
+});
+
+await deve("a dona", "ligar a entrada de R$ 15", () =>
+  updateDoc(sessao(dono.bd), { cobranca: { ativa: true, valor: 15, brcode: "000201...", qr: "", recebedor: "DIEGO" } }));
+await naoDeve("o Caio", "pedir música sem pagar", () => pedidoDe(caio, "caio_1"));
+await naoDeve("o Caio", "se marcar como pago", () => setDoc(pagamento(caio.bd, caio.uid), { ...aviso(caio), status: "pago" }));
+await naoDeve("o Caio", "avisar que pagou um valor menor", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio, { valor: 1 })));
+await naoDeve("o Caio", "avisar pagamento em nome de outro", () => setDoc(pagamento(caio.bd, estranho.uid), aviso(caio)));
+await naoDeve("o Caio", "avisar com campo a mais", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio, { cortesia: true })));
+await deve("o Caio", "avisar que pagou", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio)));
+await naoDeve("o Caio", "pedir música antes de o KJ conferir", () => pedidoDe(caio, "caio_2"));
+await naoDeve("o Caio", "trocar o aviso para pago", () => updateDoc(pagamento(caio.bd, caio.uid), { status: "pago" }));
+await naoDeve("o estranho", "ver o pagamento do Caio", () => getDoc(pagamento(estranho.bd, caio.uid)));
+await deve("a dona", "ver os avisos de pagamento", () => getDocs(collection(dono.bd, "sessoes", SID, "pagamentos")));
+await deve("a dona", "dizer que o Pix não caiu", () => updateDoc(pagamento(dono.bd, caio.uid), { status: "nao-caiu" }));
+await deve("o Caio", "avisar de novo depois do não caiu", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio)));
+await deve("a dona", "confirmar que caiu", () => updateDoc(pagamento(dono.bd, caio.uid), { status: "pago", confirmadoEm: serverTimestamp() }));
+await deve("o Caio", "ver que está pago", () => getDoc(pagamento(caio.bd, caio.uid)));
+await naoDeve("o Caio", "sobrescrever o pagamento confirmado", () => setDoc(pagamento(caio.bd, caio.uid), aviso(caio)));
+await deve("o Caio", "pedir música depois de pago", () => pedidoDe(caio, "caio_3"));
+await naoDeve("o estranho", "pedir música sem pagar, com o Caio pago", () => pedidoDe(estranho, "estranho_1"));
+await deve("a dona", "liberar o estranho de cortesia", () =>
+  setDoc(pagamento(dono.bd, estranho.uid), { status: "pago", cortesia: true, valor: 0, nomeArtistico: "Estranho" }));
+await deve("o estranho", "pedir música com cortesia", () => pedidoDe(estranho, "estranho_2"));
+await deve("a dona", "desligar a entrada", () => updateDoc(sessao(dono.bd), { "cobranca.ativa": false }));
+await deve("a Ana", "pedir música com a entrada desligada", () => pedidoDe(ana, "ana_1"));
+await naoDeve("o Caio", "religar ou mudar a cobrança da sessão", () =>
+  updateDoc(sessao(caio.bd), { cobranca: { ativa: false, valor: 0 } }));
+
 console.log("\n── Limpeza ──");
-for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta"]) {
+for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta", "pagamentos"]) {
   const snap = await getDocs(collection(dono.bd, "sessoes", SID, sub));
   for (const d of snap.docs) await deleteDoc(d.ref).catch(() => {});
 }

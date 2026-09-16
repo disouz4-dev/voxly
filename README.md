@@ -91,6 +91,7 @@ open /Applications/Voxly.app
 - ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**; quem foi arrastado fica cravado no lugar.
 - ☕ **Café com leite** — quando a espera passa do limite que o KJ define (padrão 40 min), quem ainda não cantou na noite entra **intercalado** com a fila principal: um da fila, um café com leite, outro da fila… A fila principal nunca para. Se alguém sai do meio da fila, o resto se reacomoda sozinho para continuar um de cada — sem mexer em quem o KJ arrastou. O ☕ só aparece em quem de fato entrou assim. Pode ser desligado nas regras.
 - 🧑‍🤝‍🧑 **Presença online** — o host vê quem está conectado e **quantas músicas cada um já cantou** na noite.
+- 🎟️ **Ingresso por noite (opcional)** — ao iniciar a sessão o KJ escolhe se o Voxly cobra ingresso e o valor (começa em R$ 10,00). Vem desligado: noite grátis ou casa que cobra por conta própria não passa por cobrança nenhuma. Ligado, o cantor vê o **QR Pix e o copia-e-cola da chave do KJ** (Nubank, Ton, qualquer banco — o dinheiro cai direto, sem intermediário e sem taxa) e só pede música depois de liberado; o ingresso vale a noite toda. O banco não avisa o Voxly que o Pix caiu, então a confirmação é do KJ: o cantor aperta **Já paguei** informando o nome da conta que pagou, a Gerência avisa na hora, e o painel **💰 Pix** mostra quem conferir no extrato (✓ Caiu / ✗ Não caiu), quem está na sessão sem ingresso (🎁 liberar grátis) e quem já foi liberado. Em **Cantores Online** cada nome traz a marca 🎟️ pagou, ⏳ conferir Pix ou ✗ sem ingresso. Ao finalizar, o Voxly lista quem pagou e não cantou, para o KJ decidir se devolve. O relatório da noite guarda quantos pagaram e o total. A trava é do banco de dados: o cantor não consegue se marcar como pago nem pedir sem estar liberado. O QR é gerado no computador do KJ, sem serviço de fora. Só vale com internet (no modo rede local não há cobrança).
 - 🎤 **Convite de dueto** — o cantor convida outro pelo app. Quem recebe aceita ou recusa; para recusar escolhe **uma de cinco respostas prontas e educadas**, que chegam para quem convidou. Não existe texto livre na recusa.
 - 💬 **Conversa de dueto** — depois de aceitar, o app pergunta se a pessoa quer abrir uma conversa com o parceiro para combinar a apresentação. Se não quiser, o convite fica aceito e nada se abre. Cada cantor escolhe no perfil se recebe conversas (vem ligado); com ela desligada, ninguém consegue abrir conversa com ele e as que estavam abertas se encerram. Só os dois leem — nem o KJ. Qualquer um encerra, e a conversa **some junto com a noite**. Só funciona com internet (no modo rede local não aparece).
 
@@ -396,6 +397,7 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/diario.js            # formato do diário (logs/voxly-AAAA-MM-DD.jsonl)
   src/guia.js              # cartões do guia do Público, conforme as regras do KJ
   src/seguro.js            # escape de HTML e validação de endereço de imagem (copiado para web/public)
+  src/pix.js               # Pix copia-e-cola (BR Code) da chave do KJ, com CRC do Banco Central
   src/licenca.js           # regra da licença: prazo, tolerância, relógio, trava da sessão nova
   src/instalacao.js        # código que identifica este computador
   src/chave-licenca.js     # chave pública e servidor da cobrança (vazio = não cobra)
@@ -408,7 +410,8 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/trava.js             # │ copias.test.js falha se divergirem
   src/texto.js             # │
   src/sugestoes.js         # │
-  src/chat.js              # ┘ (convite de dueto: respostas prontas e conversa)
+  src/chat.js              # │ (convite de dueto: respostas prontas e conversa)
+  src/entrada.js           # ┘ (ingresso da noite: quem está liberado, quem conferir)
   test/                    # testes automatizados (node --test)
 web/                       # web dos cantores (Firebase Hosting)
   public/                  # index, profile, signup + offline-client.js + cópias das regras

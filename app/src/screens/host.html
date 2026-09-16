@@ -513,6 +513,7 @@ footer strong { color:var(--ambar); font-weight:700; }
     <button class="btn btn-ghost btn-sm" onclick="abrirModalTemas()" title="Temas (playlists editáveis) da música de intervalo">🎛 Temas</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalYoutube()" title="Baixar músicas do YouTube">⬇ YouTube</button>
     <button class="btn btn-ghost btn-sm" onclick="abrirModalRelatorios()" title="Participantes e músicas de todas as noites">📊 Relatórios</button>
+    <button class="btn btn-ghost btn-sm" id="btnPagamentos" onclick="abrirModalPagamentos()" style="display:none;" title="Conferir os Pix de ingresso">💰 Pix</button>
     <button class="btn btn-ghost btn-sm" id="btnLicenca" onclick="abrirModalLicenca()" style="display:none;" title="Licença do Voxly">🔑 Licença</button>
     <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Config</button>
   </div>
@@ -893,6 +894,38 @@ https://www.youtube.com/@canal/videos"></textarea>
     <label class="modal-label">Término da sessão</label>
     <input class="modal-input" type="datetime-local" id="sessaoHorarioTermino">
 
+    <!-- Ingresso: escolha de cada noite. Desligado, ninguem paga nada pelo Voxly. -->
+    <div style="margin-top:14px;padding:11px 13px;border:1px solid var(--linha);border-radius:9px;">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+        <span style="flex:1;">
+          <span style="font-weight:700;">🎟️ Cobrar ingresso pelo Voxly</span><br>
+          <span style="font-size:.72rem;color:var(--mudo);">Deixe desligado em noite grátis ou quando a casa cobra por conta própria.</span>
+        </span>
+        <span class="rule-toggle"><input type="checkbox" id="cobranca-ativa" onchange="toggleCobranca()"><span class="rule-slider"></span></span>
+      </label>
+      <div id="cobranca-campos" style="display:none;margin-top:10px;">
+        <label class="modal-label">Valor do ingresso (R$)</label>
+        <input class="modal-input" type="text" id="cobranca-valor" inputmode="decimal" placeholder="10,00" oninput="previaCobranca()">
+        <label class="modal-label">Chave Pix que recebe (Nubank, Ton, qualquer banco)</label>
+        <input class="modal-input" type="text" id="cobranca-chave" placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória" oninput="previaCobranca()">
+        <div style="display:flex;gap:8px;">
+          <div style="flex:2;">
+            <label class="modal-label">Nome de quem recebe</label>
+            <input class="modal-input" type="text" id="cobranca-nome" maxlength="60" placeholder="Como está no banco" oninput="previaCobranca()">
+          </div>
+          <div style="flex:1;">
+            <label class="modal-label">Cidade</label>
+            <input class="modal-input" type="text" id="cobranca-cidade" maxlength="40" placeholder="São Paulo" oninput="previaCobranca()">
+          </div>
+        </div>
+        <div id="cobranca-previa" style="font-size:.74rem;color:var(--mudo);line-height:1.45;margin-top:6px;"></div>
+        <div style="font-size:.7rem;color:var(--mudo);line-height:1.45;margin-top:6px;">
+          O cantor só pede música depois de pagar. O Pix cai direto na sua conta e o banco não avisa o Voxly:
+          quando o cantor aperta "Já paguei", ele aparece em 💰 Pix e você confirma ao ver no extrato.
+        </div>
+      </div>
+    </div>
+
     <p id="sessaoErro" style="display:none;font-size:.78rem;color:var(--perigo);margin-top:12px;"></p>
 
     <div class="modal-footer">
@@ -913,6 +946,20 @@ https://www.youtube.com/@canal/videos"></textarea>
     <div id="relatoriosCorpo"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" onclick="fecharModalRelatorios()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Entrada paga: conferir os Pix que os cantores avisaram -->
+<div class="modal-overlay" id="modalPagamentos">
+  <div class="modal-box" style="width:min(640px,96vw);">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+      <h2 style="margin:0;flex:1;">💰 Ingresso da noite</h2>
+      <span id="pagamentosTotais" style="font-size:.85rem;color:var(--mudo);"></span>
+    </div>
+    <div id="pagamentosCorpo" style="margin-top:12px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="fecharModalPagamentos()">Fechar</button>
     </div>
   </div>
 </div>
@@ -1138,6 +1185,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../volume.js"></script>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
+<script src="../entrada.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -1172,6 +1220,13 @@ https://www.youtube.com/@canal/videos"></textarea>
   let currentSong      = null;
   let filaData         = [];
   let presencasData    = [];
+  // Ingresso da noite (ver o bloco "Entrada paga"). Declarados aqui em cima:
+  // funcoes que rodam na carga da tela ja leem estes nomes.
+  let cobrancaSessao   = null;
+  let pagamentosData   = [];
+  let _pagamentosUnsub = null;
+  let _avisadosVistos  = null;
+  let _previaTimer     = null;
   let horarioInicioShow = null;   // epoch ms do horário marcado
   let showIniciado      = false;  // KJ deu play → show começou
   let timerCountdownHost = null;
@@ -1348,6 +1403,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           escutarPresencas();
           escutarConfirmacoes();
           escutarHistorico();
+          escutarPagamentos();
           escutarSessaoDoc();
           return;
         }
@@ -1432,15 +1488,22 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('sessaoNomeCasa').value       = dadosSessaoAtual.nomeCasa || '';
     document.getElementById('sessaoHorarioInicio').value  = paraInput(dadosSessaoAtual.inicio);
     document.getElementById('sessaoHorarioTermino').value = paraInput(dadosSessaoAtual.termino);
+    popularCobranca(VoxlyEntrada.cobrancaAtiva({ cobranca: cobrancaSessao })
+      ? { ativa: true, valor: cobrancaSessao.valor } : { ativa: false });
     document.getElementById('modalSessao').classList.add('open');
     document.getElementById('sessaoNomeCasa').focus();
   }
 
-  async function salvarEdicaoSessao(dados) {
+  async function salvarEdicaoSessao(dados, ingresso) {
+    // Ligar o ingresso no meio da noite vale para os pedidos novos; desligar
+    // libera todo mundo na hora.
+    const cobranca = await cobrancaParaSessao(sessaoCodigo, ingresso);
+    if (cobranca.erro) throw new Error('Ingresso: ' + cobranca.erro);
     await db.collection('sessoes').doc(SESSAO_ID).update({
       nomeCasa:        dados.nomeCasa,
       horarioInicio:   firebase.firestore.Timestamp.fromMillis(dados.inicio),
       horarioTermino:  firebase.firestore.Timestamp.fromMillis(dados.termino),
+      cobranca,
     });
     dadosSessaoAtual = { ...dadosSessaoAtual, ...dados };
     atualizarBadgeSessao();
@@ -1466,6 +1529,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('sessaoHorarioInicio').value   = paraInput(inicio);
     document.getElementById('sessaoHorarioTermino').value  = paraInput(termino);
     document.getElementById('sessaoErro').style.display    = 'none';
+    // Toda noite nova comeca SEM cobrar: ligar e uma decisao daquela noite.
+    popularCobranca({ ativa: false });
     document.getElementById('modalSessao').classList.add('open');
     document.getElementById('sessaoNomeCasa').focus();
     mostrarAvisoSessaoUnica();
@@ -1537,25 +1602,43 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!inicio || !termino)  return mostrarErro('Informe o início e o término da sessão.');
     if (termino <= inicio)    return mostrarErro('O término precisa ser depois do início.');
 
+    // Ingresso ligado com chave torta: avisa aqui, com a janela aberta, em vez
+    // de abrir a noite sem cobrar.
+    const ingresso = lerCamposCobranca();
+    if (ingresso.ativa) {
+      const teste = await cobrancaParaSessao('TESTE', ingresso);
+      if (teste.erro) return mostrarErro('Ingresso: ' + teste.erro + '.');
+    }
+    guardarCobrancaCfg(ingresso);
+
     erro.style.display = 'none';
     fecharModalSessao();
     if (_editandoSessao) {
       _editandoSessao = false;
-      try { await salvarEdicaoSessao({ nomeCasa, inicio, termino }); }
+      try { await salvarEdicaoSessao({ nomeCasa, inicio, termino }, ingresso); }
       catch (e) { mostrarToast('❌ ' + e.message, 8000); }
       return;
     }
     // A licenca so e consultada AQUI, na hora de abrir a noite. Nunca durante
     // o show: sessao em andamento nao para por causa de cobranca.
     if (!(await licencaLiberaSessao())) return;
-    await iniciarSessao({ nomeCasa, inicio, termino });
+    await iniciarSessao({ nomeCasa, inicio, termino, ingresso });
   }
 
   async function iniciarSessao(dados) {
-    await expurgarSessoesAnteriores();
     const codigo   = gerarCodigo();
     const sessaoId = `${new Date().toISOString().slice(0,10)}-${codigo}`;
 
+    // Com entrada ligada e chave com defeito, a noite nao abre: abrir sem
+    // cobrar seria perder a entrada de todo mundo sem ninguem perceber. Vem
+    // ANTES de expurgar as anteriores, para nao derrubar nada a toa.
+    const cobranca = await cobrancaParaSessao(codigo, dados.ingresso);
+    if (cobranca.erro) {
+      mostrarToast('❌ Ingresso: ' + cobranca.erro + '. Confira a chave Pix ou desligue a cobrança.', 10000);
+      return;
+    }
+
+    await expurgarSessoesAnteriores();
     const usuario = await authPronta;
 
     await db.collection('sessoes').doc(sessaoId).set({
@@ -1571,6 +1654,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       status:      'ativa',
       filaAberta:  true,
       regras,
+      cobranca,
       cicloAtual:  1,
       // Contagem regressiva do show ja comeca valendo o inicio declarado; o KJ
       // ainda pode reajustar pelo controle de "Horario do Show".
@@ -1592,6 +1676,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     escutarPresencas();
     escutarConfirmacoes();
     escutarHistorico();
+    escutarPagamentos();
     escutarSessaoDoc();
 
     // Notifica player
@@ -1681,6 +1766,8 @@ https://www.youtube.com/@canal/videos"></textarea>
       SESSAO_ID = null;
       sessaoCodigo = null;
       dadosSessaoAtual = null;
+
+      pararEntradaPaga();
       desativarInterfaceSessao();
       mostrarToast(`💥 ${snap.size} sessão(ões) derrubada(s)`, 6000);
     } catch (e) {
@@ -1689,7 +1776,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function finalizarSessao() {
-    if (!confirm('Finalizar a sessão? Todos os cantores serão desconectados.')) return;
+    if (!confirm((await avisoDaEntradaAoFinalizar()) + 'Finalizar a sessão? Todos os cantores serão desconectados.')) return;
 
     await db.collection('sessoes').doc(SESSAO_ID).update({
       status:       'encerrada',
@@ -1728,6 +1815,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     SESSAO_ID    = null;
     sessaoCodigo = null;
     dadosSessaoAtual = null;
+    pararEntradaPaga();
     atualizarQrHost();
     modoOffline  = false;
 
@@ -2054,7 +2142,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // apareciam para sempre na lista de sessoes ativas do cantor. Agora, passado
   // o horario de termino declarado pelo KJ, a sessao e apagada com suas
   // subcolecoes.
-  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas'];
+  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos'];
   // A sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila
   // mesmo depois do prazo — quem para de pedir e o cantor.
 
@@ -2070,20 +2158,26 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function resumoDaSessao(ref) {
-    const [sessaoSnap, fila, presencas, historico] = await Promise.all([
+    const [sessaoSnap, fila, presencas, historico, pagamentos] = await Promise.all([
       ref.get(),
       ref.collection('fila').get(),
       ref.collection('presencas').get(),
       ref.collection('historico').get(),
+      ref.collection('pagamentos').get().catch(() => ({ docs: [] })),
     ]);
     if (!sessaoSnap.exists) return null;
     const dados = x => x.docs.map(d => ({ id: d.id, ...d.data() }));
-    return VoxlyRelatorio.resumirSessao({
-      sessao:    { id: ref.id, ...sessaoSnap.data() },
-      fila:      dados(fila),
-      presencas: dados(presencas),
-      historico: dados(historico),
-    });
+    const sessao = { id: ref.id, ...sessaoSnap.data() };
+    return {
+      ...VoxlyRelatorio.resumirSessao({
+        sessao,
+        fila:      dados(fila),
+        presencas: dados(presencas),
+        historico: dados(historico),
+      }),
+      // Dinheiro da noite: a sessao e apagada na faxina, o relatorio fica.
+      entrada: VoxlyEntrada.resumoDaEntrada(sessao, dados(pagamentos)),
+    };
   }
 
   // `exigirRelatorio`: na faxina automatica, sem relatorio salvo nao apaga — a
@@ -2568,6 +2662,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     // que so acontece quando a espera passou do limite do host. Antes o ☕
     // aparecia em todo mundo que ainda nao tinha cantado, com fila curta ou nao.
     const comPrioridade = new Set(filaData.filter(d => d.tipo === 'prioridade').map(d => d.cantorUid));
+    const pagamentoDe = new Map(pagamentosData.map(p => [p.id, p]));
+    const cores = { ok: 'var(--ok)', aviso: 'var(--ambar)', ruim: 'var(--perigo)' };
     el.innerHTML = presencasData.map((u, i) => {
       const prioridade = comPrioridade.has(u.id || u.uid);
       // Sessoes abertas antes do contador so tem o sim/nao: vale como 1.
@@ -2584,7 +2680,10 @@ https://www.youtube.com/@canal/videos"></textarea>
         ${avatarHtml}
         <div style="flex:1;">
           <div class="user-name">${escHtml(u.nomeArtistico||'-')} ${prioridade ? '☕' : ''}</div>
-          <div class="user-status">🎤 ${rotuloCantadas}</div>
+          <div class="user-status">🎤 ${rotuloCantadas}</div>${(() => {
+            const m = VoxlyEntrada.marcaDoIngresso({ cobranca: cobrancaSessao }, pagamentoDe.get(u.id), u.id);
+            return m ? `<div class="user-status" style="color:${cores[m.tom]};cursor:pointer;white-space:nowrap;" onclick="abrirModalPagamentos()" title="Abrir o painel de ingresso">${m.icone} ${escHtml(m.texto)}</div>` : '';
+          })()}
         </div>
         <button class="btn btn-secondary btn-sm" onclick="abrirModalMusicaIdx(${i})" title="Adicionar música" style="min-width:30px;">🎵</button>
         <button class="btn btn-danger btn-sm" onclick="abrirModalExpulsarCantor(${i})" title="Expulsar da sessão" style="min-width:30px;">✕</button>
@@ -2914,7 +3013,9 @@ https://www.youtube.com/@canal/videos"></textarea>
           db.collection('sessoes').doc(SESSAO_ID).collection('historico').add({
             cantorUid: item.cantorUid, nomeArtistico: item.nomeArtistico,
             musica: item.musica, artista: item.artista,
-            duoCom: item.duoNome ? { nomeArtistico: item.duoNome } : null,
+            // uid do parceiro: e por ele que a entrada paga sabe que o duo cantou.
+            duoCom: item.duoNome ? { nomeArtistico: item.duoNome,
+                                     uid: (item.duoUid && !item.duoPendente) ? item.duoUid : null } : null,
             status: 'cantada', horario: firebase.firestore.FieldValue.serverTimestamp()
           }),
         ]).catch(e => console.error('[HOST] Erro histórico:', e));
@@ -4440,6 +4541,9 @@ https://www.youtube.com/@canal/videos"></textarea>
           : null;
         showIniciado      = !!d.showIniciado;
         horarioInicioShow = showIniciado ? null : hor;
+        cobrancaSessao    = d.cobranca || null;
+        pintarBotaoPagamentos();
+        renderUsers();
         if (showIniciado) {
           clearInterval(timerCountdownHost);
           const cd = document.getElementById('countdown-host');
@@ -4980,6 +5084,249 @@ https://www.youtube.com/@canal/videos"></textarea>
     });
   }
 
+  // ── Entrada paga (Pix direto na chave do KJ) ─────────────
+  // Configuracao guardada nesta maquina (a chave nao muda de noite para noite).
+  // Na sessao vai so o que o celular do cantor precisa: valor, o copia-e-cola
+  // e o QR ja desenhado. Quem trava o pedido de quem nao pagou e o banco
+  // (firestore.rules); aqui e o painel do KJ.
+
+  function cobrancaCfg() {
+    try { return JSON.parse(localStorage.getItem('voxly_cobranca') || '{}') || {}; } catch (_) { return {}; }
+  }
+
+  // `daNoite`: { ativa, valor? } — o que vale para a sessao sendo aberta ou
+  // editada. Chave, nome e cidade vem do que ficou guardado nesta maquina; o
+  // valor sugerido e o ultimo usado, comecando em R$ 10,00.
+  function popularCobranca(daNoite) {
+    daNoite = daNoite || {};
+    const c = cobrancaCfg();
+    const valor = daNoite.valor != null ? daNoite.valor : (c.valor || '10,00');
+    document.getElementById('cobranca-ativa').checked = !!daNoite.ativa;
+    document.getElementById('cobranca-valor').value   =
+      typeof valor === 'number' ? valor.toFixed(2).replace('.', ',') : valor;
+    document.getElementById('cobranca-chave').value   = c.chave || '';
+    document.getElementById('cobranca-nome').value    = c.nome || '';
+    document.getElementById('cobranca-cidade').value  = c.cidade || '';
+    toggleCobranca();
+  }
+
+  function lerCamposCobranca() {
+    return {
+      ativa:  document.getElementById('cobranca-ativa').checked,
+      valor:  document.getElementById('cobranca-valor').value.trim(),
+      chave:  document.getElementById('cobranca-chave').value.trim(),
+      nome:   document.getElementById('cobranca-nome').value.trim(),
+      cidade: document.getElementById('cobranca-cidade').value.trim(),
+    };
+  }
+
+  // Guarda os dados do Pix e o ultimo valor. NAO guarda o "cobrar": cada noite
+  // decide de novo, e ela comeca desligada.
+  function guardarCobrancaCfg(c) {
+    const { chave, nome, cidade, valor } = c || lerCamposCobranca();
+    const antes = cobrancaCfg();
+    localStorage.setItem('voxly_cobranca', JSON.stringify({
+      chave:  chave  || antes.chave  || '',
+      nome:   nome   || antes.nome   || '',
+      cidade: cidade || antes.cidade || '',
+      valor:  valor  || antes.valor  || '10,00',
+    }));
+  }
+
+  function toggleCobranca() {
+    document.getElementById('cobranca-campos').style.display =
+      document.getElementById('cobranca-ativa').checked ? '' : 'none';
+    previaCobranca();
+  }
+
+  // Mostra ao KJ o que o QR vai cobrar de verdade, lido de volta do codigo.
+  function previaCobranca() {
+    clearTimeout(_previaTimer);
+    _previaTimer = setTimeout(async () => {
+      const el = document.getElementById('cobranca-previa');
+      const c = lerCamposCobranca();
+      if (!c.ativa || !window.electronAPI) { el.textContent = ''; return; }
+      if (!c.valor || !c.chave || !c.nome) { el.textContent = 'Preencha valor, chave e nome.'; return; }
+      const r = await window.electronAPI.pixGerar({ ...c, txid: 'VOXLY' });
+      if (r.erro) { el.innerHTML = `<span style="color:var(--perigo)">⚠️ ${escHtml(r.erro)}</span>`; return; }
+      const tipos = { cpf: 'CPF', cnpj: 'CNPJ', email: 'e-mail', telefone: 'celular', aleatoria: 'chave aleatória' };
+      el.innerHTML = `✓ O QR cobra <strong>${escHtml(VoxlyEntrada.emReais(r.lido.valor))}</strong> para
+        <strong>${escHtml(r.lido.nome)}</strong> · chave ${escHtml(tipos[r.tipo] || r.tipo)} ${escHtml(r.lido.chave)}`;
+    }, 250);
+  }
+
+  // O objeto `cobranca` da sessao. { erro } quando os dados do Pix nao prestam.
+  async function cobrancaParaSessao(codigo, ingresso) {
+    const c = ingresso || { ativa: false };
+    if (!c.ativa) return { ativa: false };
+    if (!window.electronAPI || !window.electronAPI.pixGerar) return { erro: 'gerador de Pix indisponível' };
+    const r = await window.electronAPI.pixGerar({ ...c, txid: 'VOXLY' + (codigo || '') });
+    if (r.erro) return { erro: r.erro };
+    return {
+      ativa: true,
+      valor: r.lido.valor,
+      brcode: r.brcode,
+      qr: r.qr,
+      recebedor: r.lido.nome,
+    };
+  }
+
+  function escutarPagamentos() {
+    if (!SESSAO_ID || modoOffline) return;
+    if (_pagamentosUnsub) _pagamentosUnsub();
+    _avisadosVistos = null;
+    _pagamentosUnsub = db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos')
+      .onSnapshot(snap => {
+        pagamentosData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const aguardando = VoxlyEntrada.paraConferir(pagamentosData);
+        const ids = new Set(aguardando.map(p => p.id + ':' + (p.avisadoEm && p.avisadoEm.toMillis ? p.avisadoEm.toMillis() : '')));
+        if (_avisadosVistos) {
+          const novos = aguardando.filter(p => !_avisadosVistos.has(p.id + ':' + (p.avisadoEm && p.avisadoEm.toMillis ? p.avisadoEm.toMillis() : '')));
+          if (novos.length) mostrarToast(`💰 ${novos.map(p => p.nomeArtistico).join(', ')} avisou que pagou o ingresso`, 7000);
+        }
+        _avisadosVistos = ids;
+        pintarBotaoPagamentos();
+        renderUsers();
+        if (document.getElementById('modalPagamentos').classList.contains('open')) desenharPagamentos();
+      }, e => console.warn('[PAGAMENTOS]', e.message));
+  }
+
+  function pintarBotaoPagamentos() {
+    const btn = document.getElementById('btnPagamentos');
+    if (!btn) return;
+    if (!SESSAO_ID || !VoxlyEntrada.cobrancaAtiva({ cobranca: cobrancaSessao })) { btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    const n = VoxlyEntrada.paraConferir(pagamentosData).length;
+    btn.textContent = n ? `💰 ${n} para conferir` : '💰 Pix';
+    btn.className = 'btn btn-sm ' + (n ? 'btn-secondary' : 'btn-ghost');
+  }
+
+  function abrirModalPagamentos() {
+    document.getElementById('modalPagamentos').classList.add('open');
+    desenharPagamentos();
+  }
+  function fecharModalPagamentos() {
+    document.getElementById('modalPagamentos').classList.remove('open');
+  }
+
+  function desenharPagamentos() {
+    const sessao = { cobranca: cobrancaSessao };
+    const resumo = VoxlyEntrada.resumoDaEntrada(sessao, pagamentosData)
+      || { valor: 0, pagantes: 0, cortesias: 0, total: 0, semConferir: 0 };
+    document.getElementById('pagamentosTotais').textContent =
+      `${VoxlyEntrada.emReais(resumo.valor)} · ${resumo.pagantes} pago${resumo.pagantes === 1 ? '' : 's'} · ${VoxlyEntrada.emReais(resumo.total)}`
+      + (resumo.cortesias ? ` · ${resumo.cortesias} cortesia${resumo.cortesias === 1 ? '' : 's'}` : '');
+
+    const hora = p => {
+      const ms = p.avisadoEm && p.avisadoEm.toMillis ? p.avisadoEm.toMillis() : null;
+      return ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    };
+    const conferir = VoxlyEntrada.paraConferir(pagamentosData);
+    const pagos = pagamentosData.filter(p => p.status === 'pago');
+    // Quem ja avisou que pagou esta em "para conferir"; nao aparece de novo
+    // como "sem ingresso".
+    const comEntrada = new Set([...pagos, ...conferir].map(p => p.id));
+    const semEntrada = presencasData.filter(p => !comEntrada.has(p.id) && !String(p.id).startsWith('manual_'));
+
+    const secao = (titulo, conteudo) => `
+      <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:14px 0 6px;">${titulo}</div>${conteudo}`;
+    const linha = (esq, dir, destaque) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;margin-bottom:6px;
+                  background:${destaque ? 'rgba(255,180,84,.08)' : 'rgba(255,255,255,.03)'};border:1px solid ${destaque ? 'rgba(255,180,84,.35)' : 'var(--linha)'};">
+        <div style="flex:1;min-width:0;">${esq}</div><div style="display:flex;gap:6px;flex-shrink:0;">${dir}</div>
+      </div>`;
+
+    let html = secao('Para conferir no extrato', conferir.length ? conferir.map(p => linha(
+      `<div style="font-weight:700;">${escHtml(p.nomeArtistico || '—')}</div>
+       <div style="font-size:.78rem;color:var(--mudo);">pagou como <strong style="color:var(--texto)">${escHtml(p.nomePagador || '—')}</strong> · ${escHtml(VoxlyEntrada.emReais(p.valor))} · avisou ${escHtml(hora(p))}</div>`,
+      `<button class="btn btn-ok btn-sm" data-pag="confirmar" data-uid="${escHtml(p.id)}">✓ Caiu</button>
+       <button class="btn btn-ghost btn-sm" data-pag="naocaiu" data-uid="${escHtml(p.id)}">✗ Não caiu</button>`, true)).join('')
+      : '<div style="font-size:.82rem;color:var(--mudo);">Ninguém esperando confirmação.</div>');
+
+    if (semEntrada.length) html += secao('Na sessão, sem ingresso', semEntrada.map(p => linha(
+      `<div>${escHtml(p.nomeArtistico || '—')}</div>`,
+      `<button class="btn btn-ghost btn-sm" data-pag="cortesia" data-uid="${escHtml(p.id)}" title="Libera sem pagar">🎁 Liberar grátis</button>`)).join(''));
+
+    if (pagos.length) html += secao(`Liberados (${pagos.length})`, pagos.map(p => linha(
+      `<div>${escHtml(p.nomeArtistico || '—')} <span style="font-size:.75rem;color:var(--mudo);">${p.cortesia ? '🎁 cortesia' : escHtml((p.nomePagador || '') + ' · ' + VoxlyEntrada.emReais(p.valor))}</span></div>`,
+      `<button class="btn btn-ghost btn-sm" data-pag="desfazer" data-uid="${escHtml(p.id)}" title="Marcou errado? Volta para não pago">Desfazer</button>`)).join(''));
+
+    const corpo = document.getElementById('pagamentosCorpo');
+    corpo.innerHTML = html;
+    corpo.onclick = ev => {
+      const b = ev.target.closest('[data-pag]');
+      if (!b) return;
+      const uid = b.dataset.uid;
+      if (b.dataset.pag === 'confirmar') confirmarPagamento(uid);
+      else if (b.dataset.pag === 'naocaiu') recusarPagamento(uid);
+      else if (b.dataset.pag === 'cortesia') liberarCortesia(uid);
+      else if (b.dataset.pag === 'desfazer') desfazerPagamento(uid);
+    };
+  }
+
+  function refPagamento(uid) {
+    return db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').doc(uid);
+  }
+
+  async function confirmarPagamento(uid) {
+    const u = await authPronta;
+    await refPagamento(uid).update({
+      status: 'pago', cortesia: false,
+      confirmadoEm: firebase.firestore.FieldValue.serverTimestamp(), confirmadoPor: u ? u.uid : null,
+    }).catch(e => mostrarToast('❌ Não consegui confirmar: ' + e.message, 6000));
+  }
+
+  async function recusarPagamento(uid) {
+    await refPagamento(uid).update({ status: 'nao-caiu' })
+      .catch(e => mostrarToast('❌ ' + e.message, 6000));
+  }
+
+  async function liberarCortesia(uid) {
+    const p = presencasData.find(x => x.id === uid);
+    if (!confirm(`Liberar ${p ? p.nomeArtistico : 'este cantor'} sem pagar?`)) return;
+    const u = await authPronta;
+    await refPagamento(uid).set({
+      status: 'pago', cortesia: true, valor: 0,
+      nomeArtistico: (p && p.nomeArtistico) || '—', nomePagador: '',
+      confirmadoEm: firebase.firestore.FieldValue.serverTimestamp(), confirmadoPor: u ? u.uid : null,
+    }).catch(e => mostrarToast('❌ ' + e.message, 6000));
+  }
+
+  async function desfazerPagamento(uid) {
+    const p = pagamentosData.find(x => x.id === uid);
+    if (!confirm(`Voltar ${p ? p.nomeArtistico : 'este cantor'} para "não pago"? Ele não consegue pedir música até pagar de novo.`)) return;
+    await refPagamento(uid).update({ status: 'nao-caiu', cortesia: false })
+      .catch(e => mostrarToast('❌ ' + e.message, 6000));
+  }
+
+  function pararEntradaPaga() {
+    if (_pagamentosUnsub) { _pagamentosUnsub(); _pagamentosUnsub = null; }
+    cobrancaSessao = null;
+    pagamentosData = [];
+    pintarBotaoPagamentos();
+  }
+
+  // Texto que entra no confirm do Finalizar. Vazio quando nao ha o que avisar.
+  async function avisoDaEntradaAoFinalizar() {
+    if (!SESSAO_ID || !VoxlyEntrada.cobrancaAtiva({ cobranca: cobrancaSessao })) return '';
+    try {
+      const ref = db.collection('sessoes').doc(SESSAO_ID);
+      const [pags, hist] = await Promise.all([ref.collection('pagamentos').get(), ref.collection('historico').get()]);
+      const dados = s => s.docs.map(d => ({ id: d.id, ...d.data() }));
+      const lista = VoxlyEntrada.pagaramENaoCantaram(dados(pags), dados(hist));
+      const semConferir = VoxlyEntrada.paraConferir(dados(pags));
+      let txt = '';
+      if (lista.length) {
+        txt += `💰 Pagaram o ingresso e NÃO cantaram (devolva pelo app do banco, se for o caso):\n`
+          + lista.map(p => `  • ${p.nome}${p.nomePagador ? ' (' + p.nomePagador + ')' : ''} — ${VoxlyEntrada.emReais(p.valor)}`).join('\n') + '\n\n';
+      }
+      if (semConferir.length) {
+        txt += `⚠️ ${semConferir.length} Pix ainda sem conferir: ${semConferir.map(p => p.nomeArtistico).join(', ')}\n\n`;
+      }
+      return txt;
+    } catch (_) { return ''; }
+  }
+
   // ── Licença ──────────────────────────────────────────────
   // Esta tela não decide nada sobre licença: ela pergunta ao processo
   // principal, que é quem tem a chave pública para conferir a assinatura. Aqui
@@ -5173,6 +5520,8 @@ https://www.youtube.com/@canal/videos"></textarea>
       'iniciarSessao','salvarEdicaoSessao','expurgarSessoesAnteriores','apagarSessao','preservarSessao',
       'limparSessoesVencidas','marcarCantada','promoverEspera','iniciarConfirmacaoProxima','avancarCicloSeVazio',
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
+      // entrada paga
+      'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
     ];
     for (const nome of NOMES) {
       const original = window[nome];
