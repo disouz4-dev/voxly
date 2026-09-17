@@ -79,8 +79,11 @@ service cloud.firestore {
         // ligada, o pedido do cantor so entra depois de o KJ confirmar o Pix.
         allow create: if logado() && (souDono(sid)
                                       || (request.resource.data.cantorUid == eu() && entradaPaga(sid)));
+        // O parceiro de dueto aceita o convite mexendo so nos campos do duo — e
+        // tambem precisa de ingresso: sem isto, quem nao pagou aceitava um
+        // convite (so com o id do pedido) e subia ao palco de graca.
         allow update: if logado() && (souDono(sid) || resource.data.cantorUid == eu()
-                                      || (resource.data.duoUid == eu()
+                                      || (resource.data.duoUid == eu() && entradaPaga(sid)
                                           && soMudou(['duoPendente', 'duoNomeConfirmado', 'duoPhotoURL', 'duoUid', 'duoNome'])));
         allow delete: if logado() && (souDono(sid) || resource.data.cantorUid == eu());
       }

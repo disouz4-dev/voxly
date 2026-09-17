@@ -255,6 +255,18 @@ await naoDeve("o estranho", "pedir música sem pagar, com o Caio pago", () => pe
 await deve("a dona", "liberar o estranho de cortesia", () =>
   setDoc(pagamento(dono.bd, estranho.uid), { status: "pago", cortesia: true, valor: 0, nomeArtistico: "Estranho" }));
 await deve("o estranho", "pedir música com cortesia", () => pedidoDe(estranho, "estranho_2"));
+// Dueto sem ingresso: aceitar o convite e cantar de graca era a brecha.
+await deve("a dona", "pôr um pedido do Caio com a Ana como parceira", () => setDoc(item(dono.bd, "caio_duo"), {
+  cantorUid: caio.uid, nomeArtistico: "Caio", musica: "Zombie", artista: "The Cranberries",
+  status: "aguardando", slot: "ativa", duoUid: ana.uid, duoNome: "Ana", duoPendente: true,
+}));
+await naoDeve("a Ana (sem ingresso)", "aceitar o convite de dueto", () =>
+  updateDoc(item(ana.bd, "caio_duo"), { duoPendente: false, duoNomeConfirmado: "Ana" }));
+await deve("a dona", "confirmar o ingresso da Ana", () =>
+  setDoc(pagamento(dono.bd, ana.uid), { status: "pago", nomeArtistico: "Ana", valor: 15 }));
+await deve("a Ana (com ingresso)", "aceitar o convite de dueto", () =>
+  updateDoc(item(ana.bd, "caio_duo"), { duoPendente: false, duoNomeConfirmado: "Ana" }));
+
 await deve("a dona", "desligar a entrada", () => updateDoc(sessao(dono.bd), { "cobranca.ativa": false }));
 await deve("a Ana", "pedir música com a entrada desligada", () => pedidoDe(ana, "ana_1"));
 await deve("a Ana", "ver a fila com o ingresso desligado, sem pagamento nenhum", () => getDocs(collection(ana.bd, "sessoes", SID, "fila")));

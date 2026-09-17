@@ -1384,16 +1384,37 @@ function escutarFila() {
     let _situacaoEntradaAntes = null;
 
     let _pagamentoCarregado = false;
+    let _pararPagamento = null;
+
+    // Fecha a porta e esquece a noite: chamado ao sair da sessao e antes de
+    // entrar noutra. O ouvinte antigo ficava vivo, e um Pix confirmado com
+    // atraso na casa anterior abria a porta da casa nova.
+    function esquecerIngresso() {
+      if (_pararPagamento) { _pararPagamento(); _pararPagamento = null; }
+      meuPagamento = null;
+      sessaoAtualDoc = null;
+      _pagamentoCarregado = false;
+      _situacaoEntradaAntes = null;
+      const sec = document.getElementById('entradaSection');
+      const card = document.getElementById('entradaCard');
+      if (sec) sec.style.display = 'none';
+      if (card) card.innerHTML = '';
+    }
+
     function escutarMeuPagamento() {
       if (!currentUser) return;
       if (modoOffline) { _pagamentoCarregado = true; return; }
-      db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').doc(currentUser.uid)
+      const daSessao = SESSAO_ID;
+      if (_pararPagamento) _pararPagamento();
+      _pararPagamento = db.collection('sessoes').doc(daSessao).collection('pagamentos').doc(currentUser.uid)
         .onSnapshot(snap => {
+          if (daSessao !== SESSAO_ID) return;   // resposta de uma sessao que ja passou
           meuPagamento = snap.exists ? snap.data() : null;
           _pagamentoCarregado = true;
           desenharEntrada();
         }, e => {
           console.warn('[entrada]', e.message);
+          if (daSessao !== SESSAO_ID) return;
           _pagamentoCarregado = true;   // sem isto o celular ficava em "Conferindo" para sempre
           desenharEntrada();
         });
@@ -2122,6 +2143,9 @@ function escutarFila() {
 
       const conteudo = document.getElementById('sessao-conteudo');
       if (conteudo) conteudo.style.display = 'none';
+      // A porta do ingresso tambem sai: sem isto ela ficava na tela com o QR da
+      // noite encerrada, e "Ja paguei" gravava numa sessao que nao existe mais.
+      esquecerIngresso();
       const entrada = document.getElementById('sessao-entrada');
       if (entrada) entrada.style.display = '';
 
@@ -2191,6 +2215,7 @@ function escutarFila() {
 
     // ── Ativar conteúdo após entrar na sessão ────────────────
     async function ativarConteudoSessao() {
+      esquecerIngresso();
       document.getElementById('sessao-entrada').style.display  = 'none';
       // O conteudo so aparece depois de decidir se esta sessao cobra ingresso.
       document.getElementById('sessao-conteudo').style.display = 'none';

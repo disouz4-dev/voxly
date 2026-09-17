@@ -1,10 +1,12 @@
 // Roteiro de show automatizado: uma noite de ~30 min de clássicos dos anos
 // 2000, com cantores fictícios, rodando no Voxly de verdade.
 //
-// O roteiro faz o papel do KJ (Play, arrastar, trocar música, pular) e dos
-// cantores (pedir, confirmar, recusar, chegar atrasado, dueto). O humano só
-// escolhe as versões do YouTube. A cada 3 s ele confere as regras da casa e
-// grava toda violação — no terminal, em roteiro-show.log e no diário do Voxly.
+// O roteiro faz o papel do KJ (Play, arrastar, trocar música, pular, conferir
+// os Pix do ingresso) e dos cantores (pedir, confirmar, recusar, chegar
+// atrasado, dueto, pedir para cantar junto). Só usa músicas que já estão no
+// acervo, então roda sozinho, sem download e sem ninguém escolher versão. A
+// cada 3 s confere as regras da casa e grava toda violação — no terminal, em
+// roteiro-show.log e no diário do Voxly.
 //
 // Uso: abra o app com   npx electron . --remote-debugging-port=9222
 //      e rode           node test/roteiro-show.mjs [pasta-do-relatorio]
@@ -49,20 +51,41 @@ async function violacao(regra, detalhe) {
 
 // ── Elenco e repertório ─────────────────────────────────────
 const LIMITE_CAFE = 12;   // minutos: com 7 pedidos na fila (~28 min) os atrasados viram café com leite
+// Ingresso da noite: o KJ cobra R$ 10 por Pix. A chave é de teste; o dinheiro
+// do roteiro não existe, o que se testa é o painel, as marcas e os totais.
+const INGRESSO = { ativa: true, valor: 10, chave: "teste@voxly.app", nome: "Teste Voxly", cidade: "Sao Paulo" };
+
+// Tudo que o elenco canta já está no acervo (videoId do arquivo em disco): o
+// roteiro não depende de download nem de ninguém escolher versão.
 const ELENCO = [
-  { uid: "rot_rafa", nome: "Rafa Grave",   musica: "Chop Suey!",                      artista: "System of a Down" },
-  { uid: "rot_bia",  nome: "Bia Riff",     musica: "In the End",                      artista: "Linkin Park" },
-  { uid: "rot_duda", nome: "Duda Punk",    musica: "All the Small Things",            artista: "Blink-182", recusaUmaVez: true },
-  { uid: "rot_leo",  nome: "Léo Emo",      musica: "I Hate Everything About You",     artista: "Three Days Grace" },
-  { uid: "rot_mari", nome: "Mari Scream",  musica: "The Kill (Bury Me)",              artista: "Thirty Seconds to Mars" },
-  { uid: "rot_tuca", nome: "Tuca Power",   musica: "I Miss You",                      artista: "Blink-182" },
-  { uid: "rot_nina", nome: "Nina Drop",    musica: "Helena",                          artista: "My Chemical Romance", naoResponde: true },
+  { uid: "rot_rafa", nome: "Rafa Grave",   musica: "Chop Suey!",                  artista: "System of a Down",      videoId: "CC2m-1ksl3M" },
+  { uid: "rot_bia",  nome: "Bia Riff",     musica: "In the End",                  artista: "Linkin Park",           videoId: "O7xFdFjW0nQ" },
+  { uid: "rot_duda", nome: "Duda Punk",    musica: "All the Small Things",        artista: "Blink-182",             videoId: "CbIRqEVUU2w", recusaUmaVez: true },
+  { uid: "rot_leo",  nome: "Léo Emo",      musica: "I Hate Everything About You", artista: "Three Days Grace",      videoId: "iWeAlb2zAyU" },
+  { uid: "rot_mari", nome: "Mari Scream",  musica: "The Kill (bury Me)",          artista: "Thirty Seconds To Mars", videoId: "U4RB0Waf5_I" },
+  { uid: "rot_tuca", nome: "Tuca Power",   musica: "I Miss You",                  artista: "Blink 182",             videoId: "8sAOYg6yo-A" },
+  { uid: "rot_nina", nome: "Nina Drop",    musica: "Helena",                      artista: "My Chemical Romance",   videoId: "wIb3M-vLbPg", naoResponde: true },
 ];
 const ATRASADOS = [
-  { uid: "rot_juca", nome: "Juca Metal",     musica: "Bring Me to Life", artista: "Evanescence", duoCom: "rot_mari" },
-  { uid: "rot_ze",   nome: "Zé Distorção",   musica: "Mr. Brightside",   artista: "The Killers" },
+  { uid: "rot_juca", nome: "Juca Metal",   musica: "Bring Me To Life",            artista: "Evanescence",           videoId: "i_nMPqJxjmg", duoCom: "rot_mari" },
+  // O Zé chega, avisa que pagou e só entra na fila depois de o KJ conferir o
+  // Pix no painel — o caminho de verdade de quem paga no meio da noite.
+  { uid: "rot_ze",   nome: "Zé Distorção", musica: "Mr. Brightside",              artista: "The Killers",           videoId: "NvZyU7ij_bs", esperaConferencia: true },
 ];
-const TROCA = { de: "rot_tuca", musica: "Lonely Day", artista: "System of a Down" };
+// Paga e nunca é conferido: deixa o painel do KJ com pendência até o fim, e
+// entra no aviso de "pagaram e não cantaram" ao finalizar.
+const SO_AVISOU = { uid: "rot_sam", nome: "Sam Espera" };
+const TROCA = { de: "rot_tuca", musica: "Lonely Day", artista: "System of a Down", videoId: "60PyGZHTRn0" };
+// Quem chega e pede para cantar na música de outro (o caminho novo do app).
+const PEDE_JUNTO = { uid: "rot_kell", nome: "Kell Grito", alvo: "rot_leo" };
+
+// Quem pagou o ingresso, e como. O "aguardando" fica de propósito sem
+// conferir: é o que o KJ vê como pendente no painel até o fim.
+const PAGAMENTOS = {
+  rot_rafa: "pago", rot_bia: "pago", rot_duda: "pago", rot_leo: "pago",
+  rot_mari: "pago", rot_tuca: "pago", rot_nina: "cortesia",
+  rot_juca: "pago", rot_ze: "aguardando", rot_kell: "pago", rot_sam: "aguardando",
+};
 
 // ── Montagem ─────────────────────────────────────────────────
 async function prepararSessao() {
@@ -74,10 +97,12 @@ async function prepararSessao() {
   // O roteiro confere a ordem no Publico: a tela precisa estar aberta.
   await g(`(async () => { if (!(await window.electronAPI.getAudienceState())) await window.electronAPI.toggleAudience(); })()`);
   await esperar(4000);
-  await acao("abrindo a sessão de teste");
+  await acao("abrindo a sessão de teste, com ingresso de R$ 10 por Pix");
   await g(`(async () => {
     const agora = Date.now();
-    await iniciarSessao({ nomeCasa: 'Teste de show — anos 2000', inicio: agora - 5 * 60e3, termino: agora + 3 * 3600e3 });
+    localStorage.setItem('voxly_cobranca', ${JSON.stringify(JSON.stringify(INGRESSO))});
+    await iniciarSessao({ nomeCasa: 'Teste de show — anos 2000', inicio: agora - 5 * 60e3, termino: agora + 3 * 3600e3,
+                          ingresso: ${JSON.stringify(INGRESSO)} });
     document.getElementById('prioridade-ativa').checked = true;
     document.getElementById('prioridade-minutos').value = ${LIMITE_CAFE};
     document.getElementById('permitir-duo').checked = true;
@@ -86,6 +111,28 @@ async function prepararSessao() {
     return SESSAO_ID;
   })()`);
   await acao(`regras: café com leite acima de ${LIMITE_CAFE} min, duo liberado`);
+
+  const cobranca = await g("JSON.stringify(cobrancaSessao)");
+  const c = JSON.parse(cobranca || "null");
+  if (!c || c.ativa !== true || c.valor !== INGRESSO.valor || !c.brcode || !c.qr) {
+    await violacao("ingresso não entrou na sessão", c);
+  } else {
+    await acao(`ingresso ligado: ${c.valor} para ${c.recebedor}, com QR de ${Math.round(c.qr.length / 1024)} KB`);
+  }
+}
+
+// O ingresso de cada um, do jeito que a Gerência grava ao conferir o Pix.
+async function pagarIngresso(c) {
+  const como = PAGAMENTOS[c.uid];
+  if (!como) return;
+  await g(`db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').doc(${JSON.stringify(c.uid)}).set({
+    status: ${JSON.stringify(como === "aguardando" ? "aguardando" : "pago")},
+    cortesia: ${como === "cortesia"},
+    nomeArtistico: ${JSON.stringify(c.nome)},
+    nomePagador: ${JSON.stringify(como === "cortesia" ? "" : c.nome + " (conta teste)")},
+    valor: ${como === "cortesia" ? 0 : INGRESSO.valor},
+    avisadoEm: firebase.firestore.FieldValue.serverTimestamp() })`);
+  await acao(`${c.nome}: ingresso ${como}`);
 }
 
 // Pedido do jeito que o app do cantor faz (profile.html enviarPedido): mesma
@@ -105,7 +152,9 @@ async function cantorPede(c) {
     await ref.collection('fila').doc('pedido_' + ${JSON.stringify(c.uid)}).set({
       cantorUid: ${JSON.stringify(c.uid)}, nomeArtistico: ${JSON.stringify(c.nome)}, photoURL: null,
       musica: ${JSON.stringify(c.musica)}, artista: ${JSON.stringify(c.artista)},
-      catalogoId: null, disponivel: false, videoId: null, videoUrl: null,
+      catalogoId: null, disponivel: true,
+      videoId: ${JSON.stringify(c.videoId || null)},
+      videoUrl: ${JSON.stringify(c.videoId ? "https://www.youtube.com/watch?v=" + c.videoId : null)},
       duoUid: duo, duoNome: duoPres ? duoPres.nomeArtistico : null, duoPhotoURL: null, duoPendente: !!duo,
       slot: 'ativa', status: 'aguardando', tipo, semitons: 0,
       ordemFila: VoxlyOrdem.ordemParaNovo(fila, { prioridade: tipo === 'prioridade' }),
@@ -129,10 +178,16 @@ async function lerEstado() {
       tipo: d.tipo, ordemFila: d.ordemFila, disponivel: !!d.disponivel, statusDownload: d.statusDownload || null,
       duoUid: d.duoUid || null, duoPendente: !!d.duoPendente, confirmandoAte: d.confirmandoAte || null,
       recusas: d.confirmacoesRecusadas || 0 }));
+    const pg = await db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').get();
+    const cv = await db.collection('sessoes').doc(SESSAO_ID).collection('convites').get();
     return {
       sessao: SESSAO_ID,
       tocando: currentSong ? currentSong.id : null,
       banco,
+      pagamentos: pg.docs.map(d => ({ id: d.id, ...d.data() })).map(p => ({ id: p.id, nome: p.nomeArtistico, status: p.status, cortesia: !!p.cortesia, valor: p.valor || 0 })),
+      convites: cv.docs.map(d => ({ id: d.id, ...d.data() })).map(c => ({ id: c.id, tipo: c.tipo || 'convite', status: c.status, filaItemId: c.filaItemId || null })),
+      ingresso: VoxlyEntrada.resumoDaEntrada({ cobranca: cobrancaSessao }, pg.docs.map(d => ({ id: d.id, ...d.data() }))),
+      botaoPix: (document.getElementById('btnPagamentos') || {}).textContent || null,
       tela: filaData.map(d => d.id),
       // Como o Publico escreve: com o parceiro do dueto.
       telaNomes: filaData.filter(d => d.status !== 'tocando' && d.slot !== 'espera').slice(0, 6).map(d => d.nomeArtistico + (d.duoNome ? ' & ' + d.duoNome : '')),
@@ -184,6 +239,28 @@ async function conferir(e) {
       if (esperando[i].tipo === "prioridade" && esperando[i - 1].tipo === "prioridade" && restoNormal) {
         await violacao("dois cafés com leite seguidos com fila normal esperando", esperando.slice(i - 1, i + 1).map(d => d.nome));
       }
+    }
+  }
+  // 6b. Ingresso: ninguém entra na fila sem ingresso liberado.
+  const liberados = new Set(e.pagamentos.filter(p => p.status === "pago").map(p => p.id));
+  for (const d of e.banco) {
+    if (!liberados.has(d.uid) && ["aguardando", "confirmando", "confirmado", "pronto", "tocando"].includes(d.status)) {
+      await violacao("pedido na fila sem ingresso pago", { nome: d.nome, uid: d.uid });
+    }
+  }
+  // 6c. O painel do KJ conta o dinheiro certo.
+  if (e.ingresso) {
+    const pagos = e.pagamentos.filter(p => p.status === "pago" && !p.cortesia);
+    if (e.ingresso.pagantes !== pagos.length || e.ingresso.total !== pagos.length * INGRESSO.valor) {
+      await violacao("conta do ingresso errada", { painel: e.ingresso, pagos: pagos.length });
+    }
+  }
+  // 6d. Pedido para cantar junto aceito não deixa outro pendente na mesma música.
+  const pedidosPendentes = e.convites.filter(c => c.tipo === "pedido" && c.status === "pendente");
+  for (const p of pedidosPendentes) {
+    const item = porId.get(p.filaItemId);
+    if (item && item.duoUid && !item.duoPendente) {
+      await violacao("pedido para cantar junto continuou pendente numa música que já tem parceiro", p);
     }
   }
   // 6. Quem já cantou não pode estar marcado como café com leite.
@@ -244,7 +321,33 @@ async function kjDaPlay(e) {
 
 // Momentos da noite, contados a partir do primeiro Play.
 const ROTEIRO = [
-  { aos: 4 * 60, feito: false, faz: async () => { for (const c of ATRASADOS) { await cantorPede(c); await esperar(1500); } } },
+  { aos: 4 * 60, feito: false, faz: async () => {
+      await pagarIngresso(SO_AVISOU);
+      for (const c of ATRASADOS) {
+        await pagarIngresso(c);
+        if (c.esperaConferencia) { await acao(`${c.nome} avisou que pagou e espera a conferência do KJ`); continue; }
+        await cantorPede(c);
+        await esperar(1500);
+      }
+  } },
+  { aos: 5 * 60 + 20, feito: false, faz: async () => {
+      // KJ confere o Pix no painel de verdade (botão "✓ Caiu"), e só então o
+      // Zé consegue entrar na fila.
+      const ze = ATRASADOS.find(c => c.esperaConferencia);
+      const ok = await g(`(async () => {
+        if (!document.getElementById('modalPagamentos').classList.contains('open')) abrirModalPagamentos();
+        await new Promise(r => setTimeout(r, 300));
+        const b = document.querySelector('[data-pag=confirmar][data-uid=${ze.uid}]');
+        if (!b) return false;
+        b.click();
+        await new Promise(r => setTimeout(r, 1500));
+        fecharModalPagamentos();
+        return (pagamentosData.find(p => p.id === '${ze.uid}') || {}).status === 'pago';
+      })()`);
+      if (!ok) return violacao("KJ não conseguiu confirmar o Pix pelo painel", { uid: ze.uid });
+      await acao(`KJ conferiu o Pix do ${ze.nome} no painel (✓ Caiu)`);
+      await cantorPede(ze);
+  } },
   { aos: 5 * 60, feito: false, faz: async (e) => {
       const convite = await g(`db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc('convite_rot_juca').get().then(d => d.exists && d.data().status)`);
       if (convite === "pendente") {
@@ -264,6 +367,35 @@ const ROTEIRO = [
       ordemManual = true;
       await g(`(async () => { arrastando = ${JSON.stringify(ids[0])}; await onDrop({ preventDefault() {}, currentTarget: { classList: { remove() {} } } }, ${JSON.stringify(ids[1])}); })()`);
       await acao("KJ arrastou Nina Drop para a 2ª posição da fila");
+  } },
+  { aos: 6 * 60, feito: false, faz: async () => {
+      // Kell chega e pede para cantar na música do Léo (caminho novo do app).
+      await pagarIngresso(PEDE_JUNTO);
+      await g(`(async () => {
+        const ref = db.collection('sessoes').doc(SESSAO_ID);
+        await ref.collection('presencas').doc('rot_kell').set({ uid: 'rot_kell', nomeArtistico: 'Kell Grito',
+          status: 'aqui', entrouEm: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        await ref.collection('convites').doc(VoxlyChat.idDoPedidoParaCantar('pedido_rot_leo', 'rot_kell')).set({
+          tipo: 'pedido', deUid: 'rot_kell', deNome: 'Kell Grito', paraUid: 'rot_leo', paraNome: 'Léo Emo',
+          filaItemId: 'pedido_rot_leo', musica: 'I Hate Everything About You', artista: 'Three Days Grace',
+          status: 'pendente', criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+      })()`);
+      await acao("Kell Grito pediu para cantar junto na música do Léo Emo");
+  } },
+  { aos: 7 * 60 + 30, feito: false, faz: async (e) => {
+      // Léo aceita: o mesmo que o app do cantor grava em aceitarPedidoParaCantar.
+      const alvo = e.banco.find(d => d.id === "pedido_rot_leo");
+      if (!alvo || !["aguardando", "pronto"].includes(alvo.status)) return;
+      await g(`(async () => {
+        const ref = db.collection('sessoes').doc(SESSAO_ID);
+        const id = VoxlyChat.idDoPedidoParaCantar('pedido_rot_leo', 'rot_kell');
+        const lote = db.batch();
+        lote.update(ref.collection('fila').doc('pedido_rot_leo'), { duoUid: 'rot_kell', duoNome: 'Kell Grito',
+          duoPhotoURL: null, duoPendente: false, duoNomeConfirmado: 'Kell Grito' });
+        lote.update(ref.collection('convites').doc(id), { status: 'aceito' });
+        await lote.commit();
+      })()`);
+      await acao("Léo Emo aceitou: canta em dueto com Kell Grito");
   } },
   { aos: 9 * 60, feito: false, faz: async (e) => {
       const alvo = e.banco.find(d => d.uid === TROCA.de && d.status === "aguardando");
@@ -303,10 +435,18 @@ async function relatorio(e) {
   const porEvento = {};
   for (const l of linhas) porEvento[l.evento] = (porEvento[l.evento] || 0) + 1;
   const erros = linhas.filter(l => l.nivel === "erro").map(l => `${l.hora} ${l.origem} ${l.evento} ${JSON.stringify(l.dados).slice(0, 200)}`);
+  const aviso = await g("avisoDaEntradaAoFinalizar()").catch(() => "");
+  const ingresso = e && e.ingresso ? [
+    `- valor: ${e.ingresso.valor} · pagantes: ${e.ingresso.pagantes} · cortesias: ${e.ingresso.cortesias}`
+      + ` · total: ${e.ingresso.total} · sem conferir: ${e.ingresso.semConferir}`,
+    `- botão do KJ: ${e.botaoPix}`,
+    ...(aviso ? ["- aviso ao finalizar: " + String(aviso).replace(/\n+/g, " | ").trim()] : []),
+  ] : ["- ingresso desligado"];
   const texto = [
     "# Relatório do roteiro de show", "",
     `Duração: ${relogio()} · músicas cantadas: ${cantadas.length} · violações: ${violacoes.length}`, "",
     "## Cantadas", ...cantadas.map(c => "- " + c), "",
+    "## Ingresso da noite", ...ingresso, "",
     "## Violações das regras da casa", ...(violacoes.length ? violacoes.map(v => `- [${v.t}] ${v.regra}: ${JSON.stringify(v.detalhe)}`) : ["- nenhuma"]), "",
     "## Erros no diário", ...(erros.length ? erros.map(x => "- " + x) : ["- nenhum"]), "",
     "## Eventos do diário durante o roteiro", ...Object.entries(porEvento).sort((a, b) => b[1] - a[1]).map(([k, v]) => `- ${k}: ${v}`), "",
@@ -321,8 +461,8 @@ async function relatorio(e) {
 fs.writeFileSync(LOG, "");
 escrever("INÍCIO", "roteiro de show — anos 2000");
 await prepararSessao();
-for (const c of ELENCO) { await cantorPede(c); await esperar(2500); }
-escrever("AGUARDO", "escolha as versões das músicas que precisam de download (botão de versões em cada pedido)");
+for (const c of ELENCO) { await pagarIngresso(c); await cantorPede(c); await esperar(2500); }
+escrever("SEM PAUSA", "todas as músicas já estão no acervo: o roteiro toca sozinho, sem escolher versão");
 
 let ultimo = null;
 let ociosoDesde = 0;
