@@ -106,3 +106,54 @@ test("conversa nasce so de convite aceito, e so para quem esta no convite", () =
   assert.equal(chat.conversaDoConvite({ ...convite, status: "recusado" }, "b"), null);
   assert.equal(chat.conversaDoConvite(convite, "intruso"), null);
 });
+
+// ── Pedir para cantar junto ────────────────────────────────
+
+const musica = { id: "f1", cantorUid: "rafa", status: "aguardando", duoUid: null };
+const regras = { permitirDuo: true };
+
+test("pedir para cantar junto: na musica dos outros que espera e nao tem parceiro", () => {
+  assert.equal(chat.podePedirParaCantar(musica, "bia", regras, new Set()), true);
+});
+
+test("nao pede na propria musica, com duo desligado, nem em musica ja com parceiro", () => {
+  assert.equal(chat.podePedirParaCantar(musica, "rafa", regras, new Set()), false);
+  assert.equal(chat.podePedirParaCantar(musica, "bia", { permitirDuo: false }, new Set()), false);
+  assert.equal(chat.podePedirParaCantar({ ...musica, duoUid: "tuca" }, "bia", regras, new Set()), false);
+  assert.equal(chat.podePedirParaCantar({ ...musica, status: "tocando" }, "bia", regras, new Set()), false);
+  assert.equal(chat.podePedirParaCantar({ ...musica, cantorUid: "manual_x" }, "bia", regras, new Set()), false);
+});
+
+test("quem ja pediu nao pede de novo na mesma musica", () => {
+  assert.equal(chat.podePedirParaCantar(musica, "bia", regras, new Set(["f1"])), false);
+});
+
+test("o pedido tem id proprio, que nao colide com o convite do dono", () => {
+  assert.equal(chat.idDoPedidoParaCantar("f1", "bia"), "f1_pede_bia");
+  assert.notEqual(chat.idDoPedidoParaCantar("f1", "bia"), "f1");
+});
+
+test("aceitou um pedido: os outros pendentes da mesma musica se fecham", () => {
+  const convites = [
+    { id: "f1_pede_bia",  tipo: "pedido", status: "pendente", filaItemId: "f1" },
+    { id: "f1_pede_tuca", tipo: "pedido", status: "pendente", filaItemId: "f1" },
+    { id: "f1_pede_duda", tipo: "pedido", status: "recusado", filaItemId: "f1" },
+    { id: "f2_pede_mari", tipo: "pedido", status: "pendente", filaItemId: "f2" },
+    { id: "f1",           status: "pendente", filaItemId: "f1" },
+  ];
+  assert.deepEqual(chat.pedidosParaFechar(convites, "f1", "f1_pede_bia"), ["f1_pede_tuca"]);
+});
+
+test("texto da resposta para quem pediu ou convidou", () => {
+  assert.match(chat.textoDaResposta({ status: "preenchido" }), /parceiro/);
+  assert.match(chat.textoDaResposta({ status: "aceito", tipo: "pedido" }), /juntos/);
+  assert.equal(chat.textoDaResposta({ status: "recusado", resposta: 1 }), chat.RECUSAS[1]);
+});
+
+test("aceitar convites de dueto vem ligado; so quem desligou nao recebe", () => {
+  assert.equal(chat.aceitaDueto({}), true);
+  assert.equal(chat.aceitaDueto({ aceitaDueto: true }), true);
+  assert.equal(chat.aceitaDueto({ aceitaDueto: false }), false);
+  assert.equal(chat.aceitaDueto(null), false, "sem perfil nao da para convidar");
+  assert.match(chat.AVISO_SEM_DUETO, /não tem habilitado convites para cantar/);
+});

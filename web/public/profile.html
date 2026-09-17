@@ -251,7 +251,11 @@
     <div class="hero-name" id="nomeArtistico">—</div>
     <div class="hero-fullname" id="nomeCompleto">—</div>
     <div class="hero-genres" id="genresList"></div>
-    <label class="pref-chat" id="prefChatLinha" style="display:none;">
+    <label class="pref-chat" id="prefDuetoLinha" style="display:none;">
+      <input type="checkbox" id="prefDueto" onchange="mudarPreferenciaDueto(this.checked)">
+      🎤 Aceitar convites para cantar
+    </label>
+    <label class="pref-chat" id="prefChatLinha" style="display:none;margin-top:6px;">
       <input type="checkbox" id="prefChat" onchange="mudarPreferenciaChat(this.checked)">
       💬 Receber conversas de dueto
     </label>
@@ -313,12 +317,12 @@
       </div>
 
       <div class="section" id="convitesSection" style="display:none;">
-        <div class="section-title">📩 Convites de Duo</div>
+        <div class="section-title">📩 Convites e pedidos de dueto</div>
         <div class="card" id="convitesList"></div>
       </div>
 
       <div class="section" id="respostasSection" style="display:none;">
-        <div class="section-title">📨 Respostas aos seus convites</div>
+        <div class="section-title">📨 Respostas aos seus convites e pedidos</div>
         <div class="card" id="respostasList"></div>
       </div>
 
@@ -430,7 +434,7 @@
 
       <div id="duoContainer" style="display:none;">
         <label class="modal-label">🎤 Cantar em duo com (opcional)</label>
-        <select class="modal-input" id="selectDuo" style="background:var(--surface2);color:var(--text);border:1px solid #ffffff20;border-radius:8px;padding:10px 12px;width:100%;">
+        <select class="modal-input" id="selectDuo" onchange="conferirDuoEscolhido(this)" style="background:var(--surface2);color:var(--text);border:1px solid #ffffff20;border-radius:8px;padding:10px 12px;width:100%;">
           <option value="">— Sem parceiro —</option>
         </select>
         <div id="duoLimiteAviso" style="display:none;font-size:0.75rem;color:var(--warn);margin-top:4px;"></div>
@@ -733,7 +737,8 @@ function escutarFila() {
               <div style="min-width:0;">
                 <div class="fila-musica">${escHtml(item.musica)}</div>
                 <div class="fila-artista">${escHtml(item.artista)}</div>
-                ${item.duoNome ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px;">🎵 Duo: ${escHtml(item.duoNome)}</div>` : ''}
+                ${item.duoNome && !item.duoPendente ? `<div style="font-size:0.72rem;color:var(--accent);margin-top:2px;">🎵 Duo: ${escHtml(item.duoNome)}</div>` : ''}
+                ${item.duoNome && item.duoPendente ? `<div style="font-size:0.72rem;color:var(--muted);margin-top:2px;">⏳ Convite para ${escHtml(item.duoNome)}</div>` : ''}
               </div>
               ${posicaoNaFila.get(item.id) ? `<div class="fila-pos" style="flex-shrink:0;">#${posicaoNaFila.get(item.id)}</div>` : ''}
             </div>
@@ -745,6 +750,8 @@ function escutarFila() {
                 <span id="pitch-${item.id}" data-semitons="${sem}" style="font-size:0.75rem;font-weight:700;color:var(--accent);min-width:52px;text-align:center;">${semLabel}</span>
                 <button onclick="ajustarPitchSlot('${item.id}',+1)" style="background:none;border:none;color:var(--text);font-size:1.1rem;cursor:pointer;padding:0 5px;line-height:1;">+</button>
               </div>` : ''}
+              ${podeTrocar && sessaoRegras.permitirDuo && !item.duoUid ? `<button onclick="abrirConvidar('${slot}')" style="background:none;border:1px solid var(--accent);color:var(--accent);font-size:0.75rem;font-weight:700;cursor:pointer;padding:4px 10px;border-radius:6px;white-space:nowrap;">🎤 Convidar</button>` : ''}
+              ${podeTrocar && item.duoPendente ? `<button onclick="cancelarConvite('${slot}')" style="background:none;border:1px solid #ffffff30;color:var(--muted);font-size:0.75rem;cursor:pointer;padding:4px 10px;border-radius:6px;white-space:nowrap;">Cancelar convite</button>` : ''}
               <button onclick="removerDaFila('${item.id}')" style="background:none;border:none;color:#ff5555;font-size:0.82rem;cursor:pointer;padding:3px 4px;white-space:nowrap;">✕ Remover</button>
             </div>
           </div>`;
@@ -833,6 +840,19 @@ function escutarFila() {
 
       document.getElementById('modalOverlay').classList.add('open');
       document.getElementById('inputBusca').focus();
+    }
+
+    // Escolheu o parceiro no pedido: avisa ja se ele nao aceita convites.
+    async function conferirDuoEscolhido(sel) {
+      const aviso = document.getElementById('duoLimiteAviso');
+      aviso.style.display = 'none';
+      if (!sel.value) return;
+      const uid = sel.value;
+      if (!(await aceitaConviteParaCantar(uid))) {
+        if (sel.value === uid) sel.value = '';
+        aviso.textContent = '🔕 ' + VoxlyChat.AVISO_SEM_DUETO;
+        aviso.style.display = 'block';
+      }
     }
 
     function fecharModal() {
@@ -1089,6 +1109,12 @@ function escutarFila() {
         const duoUid  = selDuo?.value || '';
         const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
         const temDuo  = !!duoUid;
+        if (temDuo && !(await aceitaConviteParaCantar(duoUid))) {
+          errEl.textContent = VoxlyChat.AVISO_SEM_DUETO;
+          btn.disabled = false;
+          btn.textContent = 'Confirmar';
+          return;
+        }
         const duoFoto = temDuo ? (presencasSessao.find(p => p.id === duoUid)?.photoURL || null) : null;
         const musica  = escolhida.musica.replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, '').trim();
         const sessaoRef = db.collection('sessoes').doc(SESSAO_ID);
@@ -1267,16 +1293,19 @@ function escutarFila() {
         .where('status', '==', 'pendente')
         .onSnapshot(snap => {
           const convites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          _convitesPendentes = convites;
           const sec = document.getElementById('convitesSection');
           const el  = document.getElementById('convitesList');
-          if (!convites.length) { sec.style.display = 'none'; return; }
+          if (!convites.length) { sec.style.display = 'none'; el.innerHTML = ''; return; }
           sec.style.display = 'block';
           // Os ids e o nome de quem convida vem de outro cantor: dentro de um
           // onclick montado a mao, eles executavam codigo neste celular. Aqui
           // o botao so carrega a posicao do convite; o resto vem da lista.
           el.innerHTML = convites.map((c, i) => `
             <div style="padding:12px;border-radius:8px;background:var(--surface2);margin-bottom:8px;border:1px solid var(--accent);">
-              <div style="font-size:0.85rem;font-weight:700;margin-bottom:4px;">🎤 Convite de duo de <strong>${escHtml(c.deNome)}</strong></div>
+              <div style="font-size:0.85rem;font-weight:700;margin-bottom:4px;">${c.tipo === 'pedido'
+                ? `🙋 <strong>${escHtml(c.deNome)}</strong> quer cantar com você`
+                : `🎤 Convite de duo de <strong>${escHtml(c.deNome)}</strong>`}</div>
               <div style="font-size:0.8rem;color:var(--muted);">${escHtml(c.musica)} — ${escHtml(c.artista)}</div>
               <div style="display:flex;gap:8px;margin-top:10px;">
                 <button data-convite="${i}" data-acao="aceitar"
@@ -1289,10 +1318,51 @@ function escutarFila() {
             const b = ev.target.closest('[data-convite]');
             const c = b && convites[Number(b.dataset.convite)];
             if (!c) return;
-            if (b.dataset.acao === 'aceitar') aceitarConvite(c);
+            if (b.dataset.acao === 'aceitar') (c.tipo === 'pedido' ? aceitarPedidoParaCantar(c) : aceitarConvite(c));
             else abrirRecusa(c);
           };
         });
+    }
+
+    let _convitesPendentes = [];
+
+    // Aceitar alguem que pediu para entrar na minha musica: ele vira o duo ja
+    // confirmado. Se eu tinha convidado outra pessoa, esse convite e cancelado;
+    // os outros pedidos para a mesma musica recebem "ja tem parceiro".
+    async function aceitarPedidoParaCantar(c) {
+      const item = [filhaAtiva, filhaEspera].find(x => x && x.id === c.filaItemId);
+      const ref = db.collection('sessoes').doc(SESSAO_ID);
+      if (!item || item.status !== 'aguardando') {
+        await ref.collection('convites').doc(c.id).update({ status: 'preenchido' }).catch(() => {});
+        return mostrarToast('Essa música não está mais esperando na fila.', 4000);
+      }
+      if (item.duoUid && !item.duoPendente) {
+        await ref.collection('convites').doc(c.id).update({ status: 'preenchido' }).catch(() => {});
+        return mostrarToast('Essa música já tem parceiro.', 4000);
+      }
+      let foto = null;
+      try {
+        const perfil = await db.collection('cantores').doc(c.deUid).get();
+        foto = perfil.exists ? (perfil.data().photoURL || null) : null;
+      } catch (_) {}
+
+      const lote = db.batch();
+      lote.update(ref.collection('fila').doc(item.id), {
+        duoUid: c.deUid, duoNome: c.deNome || '', duoPhotoURL: foto,
+        duoPendente: false, duoNomeConfirmado: c.deNome || '',
+      });
+      lote.update(ref.collection('convites').doc(c.id), { status: 'aceito' });
+      if (item.duoPendente) lote.update(ref.collection('convites').doc(item.id), { status: 'cancelado' });
+      for (const outro of VoxlyChat.pedidosParaFechar(_convitesPendentes, item.id, c.id)) {
+        lote.update(ref.collection('convites').doc(outro), { status: 'preenchido' });
+      }
+      try {
+        await lote.commit();
+      } catch (e) {
+        console.error('[pedido] aceitar falhou:', e);
+        return mostrarToast('Não consegui aceitar agora. Tente de novo.', 5000);
+      }
+      oferecerConversa({ ...c, status: 'aceito' });
     }
 
     async function aceitarConvite(c) {
@@ -1452,6 +1522,97 @@ function escutarFila() {
       }
     }
 
+    // ── Convidar depois de pedir ───────────────────────────────
+    // Antes o convite so existia dentro do pedido: quem pediu sozinho e depois
+    // quis chamar alguem tinha que trocar a musica. Agora o cartao da musica na
+    // fila convida. O convite tem o mesmo id do pedido (como no pedido com duo),
+    // entao convidar de novo depois de uma recusa reaproveita o mesmo convite.
+    let _convidarSlot = null;
+    let _convidaveis  = [];
+
+    async function abrirConvidar(slot) {
+      const item = slot === 'ativa' ? filhaAtiva : filhaEspera;
+      if (!item) return;
+      _convidarSlot = slot;
+      document.getElementById('convidarMusica').textContent = `${item.musica} — ${item.artista}`;
+      const lista = document.getElementById('convidarLista');
+      lista.innerHTML = '<div class="loading">Procurando quem está na sessão…</div>';
+      document.getElementById('modalConvidar').classList.add('open');
+      try {
+        const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('presencas')
+          .where('status', '==', 'aqui').get();
+        _convidaveis = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .filter(p => p.id !== currentUser.uid && p.modo !== 'manual' && !String(p.id).startsWith('manual_'))
+          .sort((a, b) => String(a.nomeArtistico || '').localeCompare(String(b.nomeArtistico || ''), 'pt-BR'));
+      } catch (e) {
+        _convidaveis = [];
+      }
+      if (!_convidaveis.length) {
+        lista.innerHTML = '<div class="empty">Ninguém mais na sessão agora.</div>';
+        return;
+      }
+      lista.innerHTML = _convidaveis.map((p, i) =>
+        `<button class="recusa-opcao" data-convidar="${i}">${escHtml(p.nomeArtistico || '—')}</button>`).join('');
+      lista.onclick = ev => {
+        const b = ev.target.closest('[data-convidar]');
+        if (b) convidarParaMinhaMusica(_convidaveis[Number(b.dataset.convidar)]);
+      };
+    }
+
+    function fecharConvidar() {
+      _convidarSlot = null;
+      document.getElementById('modalConvidar').classList.remove('open');
+    }
+
+    async function convidarParaMinhaMusica(pessoa) {
+      const item = _convidarSlot === 'ativa' ? filhaAtiva : filhaEspera;
+      if (!item || !pessoa) return fecharConvidar();
+      if (!(await aceitaConviteParaCantar(pessoa.id))) {
+        return mostrarToast(`🔕 ${VoxlyChat.AVISO_SEM_DUETO}`, 5000);
+      }
+      fecharConvidar();
+      const ref = db.collection('sessoes').doc(SESSAO_ID);
+      const lote = db.batch();
+      lote.update(ref.collection('fila').doc(item.id), {
+        duoUid: pessoa.id, duoNome: pessoa.nomeArtistico || '', duoPhotoURL: pessoa.photoURL || null, duoPendente: true,
+      });
+      lote.set(ref.collection('convites').doc(item.id), {
+        deUid:      currentUser.uid,
+        deNome:     perfilData.nomeArtistico,
+        paraUid:    pessoa.id,
+        paraNome:   pessoa.nomeArtistico || '',
+        filaItemId: item.id,
+        musica:     item.musica,
+        artista:    item.artista,
+        status:     'pendente',
+        criadoEm:   firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      try {
+        await lote.commit();
+        mostrarToast(`📩 Convite enviado para ${pessoa.nomeArtistico}`, 3500);
+      } catch (e) {
+        console.error('[convite] falhou:', e);
+        mostrarToast('Não consegui enviar o convite. Tente de novo.', 5000);
+      }
+    }
+
+    async function cancelarConvite(slot) {
+      const item = slot === 'ativa' ? filhaAtiva : filhaEspera;
+      if (!item || !item.duoPendente) return;
+      const ref = db.collection('sessoes').doc(SESSAO_ID);
+      const lote = db.batch();
+      lote.update(ref.collection('fila').doc(item.id), {
+        duoUid: null, duoNome: null, duoPhotoURL: null, duoPendente: false,
+      });
+      lote.update(ref.collection('convites').doc(item.id), { status: 'cancelado' });
+      try {
+        await lote.commit();
+        mostrarToast('Convite cancelado.', 3000);
+      } catch (e) {
+        mostrarToast('Não consegui cancelar agora.', 4000);
+      }
+    }
+
     // ── Recusa com resposta pronta ─────────────────────────────
     // O convite guarda so o numero da resposta (VoxlyChat.RECUSAS). Quem
     // convidou le o texto do mesmo arquivo; as regras do banco recusam
@@ -1461,7 +1622,7 @@ function escutarFila() {
     function abrirRecusa(c) {
       _recusando = c;
       document.getElementById('recusaQuem').textContent =
-        `Escolha como responder a ${c.deNome || 'quem convidou'}:`;
+        `Escolha como responder a ${c.deNome || (c.tipo === 'pedido' ? 'quem pediu' : 'quem convidou')}:`;
       const el = document.getElementById('recusaOpcoes');
       el.innerHTML = VoxlyChat.RECUSAS.map((r, i) =>
         `<button class="recusa-opcao" data-resposta="${i}">${escHtml(r)}</button>`).join('');
@@ -1483,9 +1644,12 @@ function escutarFila() {
       try {
         await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(c.id)
           .update({ status: 'recusado', resposta });
-        await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(c.filaItemId)
-          .update({ duoPendente: false, duoUid: null, duoNome: null, duoPhotoURL: null });
-        mostrarToast('Convite recusado. Sua resposta foi enviada.', 4000);
+        // Pedido para cantar junto: a musica e minha e nunca teve o duo gravado.
+        if (c.tipo !== 'pedido') {
+          await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(c.filaItemId)
+            .update({ duoPendente: false, duoUid: null, duoNome: null, duoPhotoURL: null });
+        }
+        mostrarToast(c.tipo === 'pedido' ? 'Pedido recusado. Sua resposta foi enviada.' : 'Convite recusado. Sua resposta foi enviada.', 4000);
       } catch (e) {
         console.error('[convite] recusa falhou:', e);
         mostrarToast('Não consegui recusar agora. Tente de novo.', 5000);
@@ -1498,16 +1662,20 @@ function escutarFila() {
       db.collection('sessoes').doc(SESSAO_ID).collection('convites')
         .where('deUid', '==', currentUser.uid)
         .onSnapshot(snap => {
-          const recusas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-            .filter(c => c.status === 'recusado' && !c.respostaVista);
+          const meus = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          _meusPedidosParaCantar = new Set(meus
+            .filter(c => c.tipo === 'pedido' && c.status === 'pendente').map(c => c.filaItemId));
+          desenharFilaEvento();
+          const recusas = meus.filter(c => !c.respostaVista && (
+            c.status === 'recusado' || c.status === 'preenchido' || (c.status === 'aceito' && c.tipo === 'pedido')));
           const sec = document.getElementById('respostasSection');
           const el  = document.getElementById('respostasList');
           if (!recusas.length) { sec.style.display = 'none'; el.innerHTML = ''; return; }
           sec.style.display = 'block';
           el.innerHTML = recusas.map((c, i) => `
             <div style="padding:12px;border-radius:8px;background:var(--surface2);margin-bottom:8px;border:1px solid #ffffff15;">
-              <div style="font-size:.8rem;color:var(--muted);">${escHtml(c.paraNome || 'Seu convidado')} · ${escHtml(c.musica || '')}</div>
-              <div style="font-size:.9rem;margin:6px 0 10px;line-height:1.4;">“${escHtml(VoxlyChat.respostaDaRecusa(c.resposta))}”</div>
+              <div style="font-size:.8rem;color:var(--muted);">${c.tipo === 'pedido' ? '🙋 ' : ''}${escHtml(c.paraNome || 'Seu convidado')} · ${escHtml(c.musica || '')}</div>
+              <div style="font-size:.9rem;margin:6px 0 10px;line-height:1.4;${c.status === 'aceito' ? 'color:var(--ok);' : ''}">${c.status === 'recusado' ? '“' : ''}${escHtml(VoxlyChat.textoDaResposta(c))}${c.status === 'recusado' ? '”' : ''}</div>
               <button data-vista="${i}" style="padding:6px 14px;background:none;border:1px solid #ffffff25;border-radius:8px;color:inherit;font-size:.8rem;cursor:pointer;">Ok</button>
             </div>`).join('');
           el.onclick = ev => {
@@ -1533,6 +1701,31 @@ function escutarFila() {
       if (!linha) return;
       linha.style.display = modoOffline ? 'none' : '';
       document.getElementById('prefChat').checked = VoxlyChat.aceitaConversa(perfilData);
+      const dueto = document.getElementById('prefDuetoLinha');
+      if (dueto) {
+        dueto.style.display = modoOffline ? 'none' : '';
+        document.getElementById('prefDueto').checked = VoxlyChat.aceitaDueto(perfilData);
+      }
+    }
+
+    async function mudarPreferenciaDueto(ligado) {
+      try {
+        await db.collection('cantores').doc(currentUser.uid).update({ aceitaDueto: !!ligado });
+        perfilData.aceitaDueto = !!ligado;
+        mostrarToast(ligado ? '🎤 Você aceita convites para cantar.' : '🔕 Ninguém consegue te convidar para cantar.', 3500);
+      } catch (e) {
+        document.getElementById('prefDueto').checked = !ligado;
+        mostrarToast('Não consegui salvar agora. Tente de novo.', 5000);
+      }
+    }
+
+    // Antes de convidar ou pedir: a pessoa aceita convites para cantar? Sem
+    // conseguir ler o perfil, deixa seguir — o banco confere de novo.
+    async function aceitaConviteParaCantar(uid) {
+      try {
+        const snap = await db.collection('cantores').doc(uid).get();
+        return !snap.exists || VoxlyChat.aceitaDueto(snap.data());
+      } catch (_) { return true; }
     }
 
     async function mudarPreferenciaChat(ligado) {
@@ -1749,6 +1942,17 @@ function escutarFila() {
             .filter(d => d.slot !== 'espera'));
           posicaoNaFila = new Map(items.map((d, i) => [d.id, i + 1]));
           renderFila();
+          _itensEvento = items;
+          desenharFilaEvento();
+        });
+    }
+
+    let _itensEvento = [];
+    let _meusPedidosParaCantar = new Set();   // filaItemId dos meus pedidos pendentes
+
+    function desenharFilaEvento() {
+          const el = document.getElementById('filaEventoList');
+          const items = _itensEvento;
           if (items.length === 0) { el.innerHTML = '<div class="empty">Fila vazia.</div>'; return; }
           el.innerHTML = items.map((d, i) => {
             const isMinha   = d.cantorUid === currentUser.uid;
@@ -1770,12 +1974,47 @@ function escutarFila() {
               ${avatarHtml}
               <div class="evento-info">
                 <div class="evento-musica">${escHtml(d.musica)}</div>
-                <div class="evento-cantor">${escHtml(d.nomeArtistico)}${d.duoNome ? ' & ' + escHtml(d.duoNome) : ''}</div>
+                <div class="evento-cantor">${escHtml(d.nomeArtistico)}${d.duoNome && !d.duoPendente ? ' & ' + escHtml(d.duoNome) : ''}</div>
+                ${!modoOffline && VoxlyChat.podePedirParaCantar(d, currentUser.uid, sessaoRegras, _meusPedidosParaCantar)
+                  ? `<button data-pedir-cantar="${i}" style="margin-top:6px;background:none;border:1px solid var(--accent);color:var(--accent);font-family:inherit;font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:6px;cursor:pointer;">🙋 Pedir para cantar junto</button>`
+                  : (_meusPedidosParaCantar.has(d.id) ? `<div style="margin-top:4px;font-size:.72rem;color:var(--muted);">⏳ Pedido enviado</div>` : '')}
               </div>
               ${badge}
             </div>`;
           }).join('');
+          el.onclick = ev => {
+            const b = ev.target.closest('[data-pedir-cantar]');
+            if (b) pedirParaCantarJunto(_itensEvento[Number(b.dataset.pedirCantar)]);
+          };
+    }
+
+    async function pedirParaCantarJunto(item) {
+      if (!item || !VoxlyChat.podePedirParaCantar(item, currentUser.uid, sessaoRegras, _meusPedidosParaCantar)) return;
+      if (!(await aceitaConviteParaCantar(item.cantorUid))) {
+        return mostrarToast(`🔕 ${VoxlyChat.AVISO_SEM_DUETO}`, 5000);
+      }
+      const id = VoxlyChat.idDoPedidoParaCantar(item.id, currentUser.uid);
+      _meusPedidosParaCantar.add(item.id);      // o botao some ja, sem esperar a rede
+      desenharFilaEvento();
+      try {
+        await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(id).set({
+          tipo:       'pedido',
+          deUid:      currentUser.uid,
+          deNome:     perfilData.nomeArtistico,
+          paraUid:    item.cantorUid,
+          paraNome:   item.nomeArtistico || '',
+          filaItemId: item.id,
+          musica:     item.musica,
+          artista:    item.artista,
+          status:     'pendente',
+          criadoEm:   firebase.firestore.FieldValue.serverTimestamp(),
         });
+        mostrarToast(`🙋 Pedido enviado para ${item.nomeArtistico}`, 3500);
+      } catch (e) {
+        _meusPedidosParaCantar.delete(item.id);
+        desenharFilaEvento();
+        mostrarToast('Não consegui enviar o pedido. Tente de novo.', 5000);
+      }
     }
 
     // ── Confirmação de presença ──────────────────────────
@@ -2554,10 +2793,20 @@ function escutarFila() {
       } catch(e) { return null; }
     }
   </script>
+  <!-- Convidar alguem para a musica que ja esta na fila -->
+  <div class="modal-overlay" id="modalConvidar" onclick="if(event.target===this)fecharConvidar()">
+    <div class="modal">
+      <div class="modal-title">🎤 Convidar para cantar</div>
+      <p id="convidarMusica" style="font-size:.85rem;color:var(--muted);margin:0 0 14px;"></p>
+      <div id="convidarLista"></div>
+      <button onclick="fecharConvidar()" style="width:100%;padding:10px;background:none;border:none;color:var(--muted);font-size:.85rem;cursor:pointer;">Voltar</button>
+    </div>
+  </div>
+
   <!-- Recusar convite: so respostas prontas -->
   <div class="modal-overlay" id="modalRecusa" onclick="if(event.target===this)fecharRecusa()">
     <div class="modal">
-      <div class="modal-title">Recusar convite</div>
+      <div class="modal-title">Recusar</div>
       <p id="recusaQuem" style="font-size:.85rem;color:var(--muted);margin:0 0 14px;"></p>
       <div id="recusaOpcoes"></div>
       <button onclick="fecharRecusa()" style="width:100%;padding:10px;background:none;border:none;color:var(--muted);font-size:.85rem;cursor:pointer;">Voltar</button>

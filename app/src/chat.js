@@ -41,6 +41,14 @@ function respostaDaRecusa(indice) {
   return Number.isInteger(i) && i >= 0 && i < RECUSAS.length ? RECUSAS[i] : "O convite foi recusado.";
 }
 
+// Aceitar convites e pedidos de dueto. Tambem ligado por padrao. Desligado,
+// ninguem convida a pessoa nem pede para cantar na musica dela — e quem tenta
+// e avisado, em vez de ficar esperando uma resposta que nunca vem.
+const AVISO_SEM_DUETO = "Esse cantor não tem habilitado convites para cantar.";
+function aceitaDueto(perfil) {
+  return !!perfil && perfil.aceitaDueto !== false;
+}
+
 // Ligado por padrao: so quem desligou de proposito deixa de receber.
 function aceitaConversa(perfil) {
   return !!perfil && perfil.aceitaChat !== false;
@@ -117,10 +125,49 @@ function conversaDoConvite(convite, meuUid) {
   };
 }
 
+// ── Pedir para cantar junto ────────────────────────────────
+// O caminho inverso do convite: quem esta na sessao pede para entrar na musica
+// de outra pessoa, e o dono aceita ou recusa. E um convite com tipo "pedido":
+// deUid e quem pede, paraUid e o dono da musica.
+
+// Id proprio, diferente do convite que o dono faz (que usa o id do pedido da
+// fila): os dois caminhos convivem sem um sobrescrever o outro.
+function idDoPedidoParaCantar(itemId, uid) {
+  return `${itemId}_pede_${uid}`;
+}
+
+// Mostra "Pedir para cantar junto" na musica dos outros que ainda espera,
+// ainda nao tem parceiro, e para a qual eu ainda nao pedi.
+function podePedirParaCantar(item, meuUid, regras, jaPedi) {
+  if (!item || !meuUid) return false;
+  if (!regras || regras.permitirDuo === false) return false;
+  if (item.cantorUid === meuUid || item.duoUid === meuUid) return false;
+  if (String(item.cantorUid || "").startsWith("manual_")) return false;
+  if (item.status !== "aguardando" || item.duoUid) return false;
+  return !(jaPedi && jaPedi.has && jaPedi.has(item.id));
+}
+
+// Aceitou um: os outros pedidos pendentes para a mesma musica se fecham.
+function pedidosParaFechar(convites, filaItemId, aceitoId) {
+  return (Array.isArray(convites) ? convites : [])
+    .filter(c => c && c.tipo === "pedido" && c.status === "pendente"
+      && c.filaItemId === filaItemId && c.id !== aceitoId)
+    .map(c => c.id);
+}
+
+// O que aparece para quem pediu ou convidou, quando vem a resposta.
+function textoDaResposta(c) {
+  if (!c) return "";
+  if (c.status === "preenchido") return "Essa música já ganhou um parceiro. Fica pra próxima!";
+  if (c.status === "aceito") return c.tipo === "pedido" ? "Aceitou! Vocês cantam juntos." : "Aceitou o convite!";
+  return respostaDaRecusa(c.resposta);
+}
+
 const api = {
-  LIMITE_TEXTO, LIMITE_MENSAGENS, LIMITE_NOME, RAJADA, RECUSAS,
+  LIMITE_TEXTO, LIMITE_MENSAGENS, LIMITE_NOME, RAJADA, RECUSAS, AVISO_SEM_DUETO, aceitaDueto,
   respostaDaRecusa, aceitaConversa, podeOferecerConversa, limparTexto, novaMensagem,
   podeEnviar, conversaCheia, conversaAberta, outroParticipante, naoLidas, conversaDoConvite,
+  idDoPedidoParaCantar, podePedirParaCantar, pedidosParaFechar, textoDaResposta,
 };
 
 if (typeof module !== "undefined" && module.exports) module.exports = api;

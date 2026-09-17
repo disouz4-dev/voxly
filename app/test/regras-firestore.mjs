@@ -188,6 +188,24 @@ await deve("a Ana", "desligar as conversas", () => updateDoc(doc(ana.bd, "cantor
 await deve("o Beto", "aceitar o convite", () => updateDoc(convite(beto.bd, "c3"), { status: "aceito" }));
 await naoDeve("o Beto", "abrir conversa com quem desligou", () => setDoc(conversa(beto.bd, "c3"), novaConversa));
 
+console.log("\n── Pedir para cantar junto e quem não aceita convites ──");
+await deve("o Beto", "pedir para cantar na música da Ana", () => setDoc(convite(beto.bd, "m1_pede_beto"), {
+  tipo: "pedido", deUid: beto.uid, deNome: "Beto", paraUid: ana.uid, paraNome: "Ana", filaItemId: "m1", musica: "Zombie", status: "pendente",
+}));
+await deve("a Ana", "aceitar o pedido do Beto", () => updateDoc(convite(ana.bd, "m1_pede_beto"), { status: "aceito" }));
+await naoDeve("o estranho", "aceitar pedido feito para a Ana", () => updateDoc(convite(estranho.bd, "m1_pede_beto"), { status: "recusado", resposta: 0 }));
+await deve("o Beto", "desligar convites para cantar", () => updateDoc(doc(beto.bd, "cantores", beto.uid), { aceitaDueto: false }));
+await naoDeve("a Ana", "convidar quem desligou convites", () => setDoc(convite(ana.bd, "c9"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Creep", status: "pendente",
+}));
+await naoDeve("a Ana", "pedir para cantar na música de quem desligou", () => setDoc(convite(ana.bd, "m2_pede_ana"), {
+  tipo: "pedido", deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", filaItemId: "m2", musica: "Creep", status: "pendente",
+}));
+await deve("o Beto", "religar convites para cantar", () => updateDoc(doc(beto.bd, "cantores", beto.uid), { aceitaDueto: true }));
+await deve("a Ana", "convidar o Beto de novo", () => setDoc(convite(ana.bd, "c9"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Creep", status: "pendente",
+}));
+
 await deve("a Gerência dona", "apagar a conversa na faxina, sem ler", () => deleteDoc(conversa(dono.bd, "c1")));
 await deleteDoc(doc(ana.bd, "cantores", ana.uid)).catch(() => {});
 await deleteDoc(doc(beto.bd, "cantores", beto.uid)).catch(() => {});

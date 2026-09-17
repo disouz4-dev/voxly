@@ -92,9 +92,16 @@ service cloud.firestore {
         allow write: if logado() && (souDono(sid) || uid == eu());
       }
 
+      // Quem desligou "aceitar convites para cantar" nao recebe convite nem
+      // pedido de dueto (cantores/{uid}.aceitaDueto, ligado quando ausente).
       match /convites/{id} {
+        function aceitaDueto(uid) {
+          let perfil = /databases/$(database)/documents/cantores/$(uid);
+          return !exists(perfil) || get(perfil).data.get('aceitaDueto', true) != false;
+        }
         allow read:   if podeVerSessao(sid);
-        allow create: if logado() && (souDono(sid) || request.resource.data.deUid == eu());
+        allow create: if logado() && (souDono(sid) || (request.resource.data.deUid == eu()
+                                                       && aceitaDueto(request.resource.data.paraUid)));
         // A recusa guarda o NUMERO de uma das respostas prontas (chat.js), nunca
         // texto: senao recusar virava jeito de mandar qualquer coisa a quem
         // convidou, inclusive quem desligou as conversas.
