@@ -112,7 +112,10 @@ async function prepararSessao() {
   })()`);
   await acao(`regras: café com leite acima de ${LIMITE_CAFE} min, duo liberado`);
 
-  const cobranca = await g("JSON.stringify(cobrancaSessao)");
+  const cobranca = await g(`(async () => {
+    const pub = await db.collection('sessoes').doc(SESSAO_ID).collection('cobranca').doc('publico').get();
+    return JSON.stringify({ ...(cobrancaSessao || {}), ...(pub.exists ? pub.data() : {}) });
+  })()`);
   const c = JSON.parse(cobranca || "null");
   if (!c || c.ativa !== true || c.valor !== INGRESSO.valor || !c.brcode || !c.qr) {
     await violacao("ingresso não entrou na sessão", c);
@@ -175,7 +178,7 @@ async function lerEstado() {
     const f = await db.collection('sessoes').doc(SESSAO_ID).collection('fila').get();
     const banco = f.docs.map(d => ({ id: d.id, ...d.data() })).map(d => ({
       id: d.id, nome: d.nomeArtistico, uid: d.cantorUid, musica: d.musica, status: d.status, slot: d.slot,
-      tipo: d.tipo, ordemFila: d.ordemFila, disponivel: !!d.disponivel, statusDownload: d.statusDownload || null,
+      tipo: d.tipo, ordemFila: d.ordemFila, fixado: !!d.fixado, disponivel: !!d.disponivel, statusDownload: d.statusDownload || null,
       duoUid: d.duoUid || null, duoPendente: !!d.duoPendente, confirmandoAte: d.confirmandoAte || null,
       recusas: d.confirmacoesRecusadas || 0 }));
     const pg = await db.collection('sessoes').doc(SESSAO_ID).collection('pagamentos').get();
@@ -375,7 +378,7 @@ const ROTEIRO = [
         const ref = db.collection('sessoes').doc(SESSAO_ID);
         await ref.collection('presencas').doc('rot_kell').set({ uid: 'rot_kell', nomeArtistico: 'Kell Grito',
           status: 'aqui', entrouEm: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-        await ref.collection('convites').doc(VoxlyChat.idDoPedidoParaCantar('pedido_rot_leo', 'rot_kell')).set({
+        await ref.collection('convites').doc('pedido_rot_leo_pede_rot_kell').set({
           tipo: 'pedido', deUid: 'rot_kell', deNome: 'Kell Grito', paraUid: 'rot_leo', paraNome: 'Léo Emo',
           filaItemId: 'pedido_rot_leo', musica: 'I Hate Everything About You', artista: 'Three Days Grace',
           status: 'pendente', criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
@@ -388,7 +391,7 @@ const ROTEIRO = [
       if (!alvo || !["aguardando", "pronto"].includes(alvo.status)) return;
       await g(`(async () => {
         const ref = db.collection('sessoes').doc(SESSAO_ID);
-        const id = VoxlyChat.idDoPedidoParaCantar('pedido_rot_leo', 'rot_kell');
+        const id = 'pedido_rot_leo_pede_rot_kell';
         const lote = db.batch();
         lote.update(ref.collection('fila').doc('pedido_rot_leo'), { duoUid: 'rot_kell', duoNome: 'Kell Grito',
           duoPhotoURL: null, duoPendente: false, duoNomeConfirmado: 'Kell Grito' });

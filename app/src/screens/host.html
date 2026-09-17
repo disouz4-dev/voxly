@@ -907,7 +907,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         <label class="modal-label">Valor do ingresso (R$)</label>
         <input class="modal-input" type="text" id="cobranca-valor" inputmode="decimal" placeholder="10,00" oninput="previaCobranca()">
         <label class="modal-label">Chave Pix que recebe (Nubank, Ton, qualquer banco)</label>
-        <input class="modal-input" type="text" id="cobranca-chave" placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória" oninput="previaCobranca()">
+        <input class="modal-input" type="text" id="cobranca-chave" placeholder="Chave aleatória, e-mail, celular, CPF ou CNPJ" oninput="previaCobranca()">
+          <div style="font-size:.7rem;color:var(--mudo);line-height:1.4;margin-top:2px;">Prefira a chave aleatória do seu banco: quem paga vê a chave, e CPF ou celular é o seu dado pessoal.</div>
         <div style="display:flex;gap:8px;">
           <div style="flex:2;">
             <label class="modal-label">Nome de quem recebe</label>
@@ -1503,8 +1504,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       nomeCasa:        dados.nomeCasa,
       horarioInicio:   firebase.firestore.Timestamp.fromMillis(dados.inicio),
       horarioTermino:  firebase.firestore.Timestamp.fromMillis(dados.termino),
-      cobranca,
+      cobranca:        cobrancaDaSessao(cobranca),
     });
+    await gravarCobrancaPublica(cobranca);
     dadosSessaoAtual = { ...dadosSessaoAtual, ...dados };
     atualizarBadgeSessao();
     // As telas mostram nome da casa e horarios: sem reenviar, elas ficariam
@@ -1651,10 +1653,13 @@ https://www.youtube.com/@canal/videos"></textarea>
       // Gerencia. So a dona manda nela; enquanto ela marcar presenca, ninguem
       // de fora derruba a noite (firestore.rules).
       donoUid:         usuario ? usuario.uid : null,
+      // Presenca ja na criacao: enquanto este campo nao existia, a sessao
+      // contava como abandonada (firestore.rules) por uma ida ao banco.
+      hostVivoEm:      firebase.firestore.FieldValue.serverTimestamp(),
       status:      'ativa',
       filaAberta:  true,
       regras,
-      cobranca,
+      cobranca: cobrancaDaSessao(cobranca),
       cicloAtual:  1,
       // Contagem regressiva do show ja comeca valendo o inicio declarado; o KJ
       // ainda pode reajustar pelo controle de "Horario do Show".
@@ -1665,6 +1670,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     horarioInicioShow = dados.inicio;
 
     SESSAO_ID    = sessaoId;
+    await gravarCobrancaPublica(cobranca);
     sessaoCodigo = codigo;
     dadosSessaoAtual = { nomeCasa: dados.nomeCasa, inicio: dados.inicio, termino: dados.termino };
     localStorage.setItem('voxly_sessao_id', sessaoId);
@@ -2142,7 +2148,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // apareciam para sempre na lista de sessoes ativas do cantor. Agora, passado
   // o horario de termino declarado pelo KJ, a sessao e apagada com suas
   // subcolecoes.
-  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos'];
+  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos', 'cobranca'];
   // A sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila
   // mesmo depois do prazo — quem para de pedir e o cantor.
 
@@ -5162,13 +5168,29 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!window.electronAPI || !window.electronAPI.pixGerar) return { erro: 'gerador de Pix indisponível' };
     const r = await window.electronAPI.pixGerar({ ...c, txid: 'VOXLY' + (codigo || '') });
     if (r.erro) return { erro: r.erro };
+    // No documento da sessao vai so o que pode ser publico (que a noite cobra
+    // e quanto). O QR, o copia-e-cola e o nome de quem recebe vao para
+    // sessoes/{sid}/cobranca/publico, que so quem esta na porta le.
     return {
       ativa: true,
       valor: r.lido.valor,
-      brcode: r.brcode,
-      qr: r.qr,
       recebedor: r.lido.nome,
+      publico: { brcode: r.brcode, qr: r.qr, recebedor: r.lido.nome, valor: r.lido.valor },
     };
+  }
+
+  // Grava (ou apaga) o QR da noite. Separado da sessao de proposito.
+  async function gravarCobrancaPublica(cobranca) {
+    if (!SESSAO_ID) return;
+    const ref = db.collection('sessoes').doc(SESSAO_ID).collection('cobranca').doc('publico');
+    if (cobranca && cobranca.publico) await ref.set(cobranca.publico);
+    else await ref.delete().catch(() => {});
+  }
+
+  // O que vai dentro do documento da sessao, sem o QR.
+  function cobrancaDaSessao(cobranca) {
+    if (!cobranca || !cobranca.ativa) return { ativa: false };
+    return { ativa: true, valor: cobranca.valor, recebedor: cobranca.recebedor || '' };
   }
 
   function escutarPagamentos() {

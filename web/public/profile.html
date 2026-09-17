@@ -1381,10 +1381,24 @@ function escutarFila() {
     // verdade esta no banco: sem "pago", o pedido nao entra na fila.
     let sessaoAtualDoc = null;
     let meuPagamento   = null;
+    let _cobrancaPublica = null;
     let _situacaoEntradaAntes = null;
 
     let _pagamentoCarregado = false;
     let _pararPagamento = null;
+
+    async function carregarCobrancaPublica() {
+      if (modoOffline || !SESSAO_ID) return;
+      if (!VoxlyEntrada.cobrancaAtiva(sessaoAtualDoc)) { _cobrancaPublica = null; return; }
+      try {
+        const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('cobranca').doc('publico').get();
+        _cobrancaPublica = snap.exists ? snap.data() : null;
+      } catch (e) {
+        console.warn('[ingresso] QR:', e.message);
+        _cobrancaPublica = null;
+      }
+      desenharEntrada();
+    }
 
     // Fecha a porta e esquece a noite: chamado ao sair da sessao e antes de
     // entrar noutra. O ouvinte antigo ficava vivo, e um Pix confirmado com
@@ -1395,6 +1409,7 @@ function escutarFila() {
       sessaoAtualDoc = null;
       _pagamentoCarregado = false;
       _situacaoEntradaAntes = null;
+      _cobrancaPublica = null;
       const sec = document.getElementById('entradaSection');
       const card = document.getElementById('entradaCard');
       if (sec) sec.style.display = 'none';
@@ -1470,8 +1485,8 @@ function escutarFila() {
       }
       document.getElementById('entradaCasa').textContent = (sessaoAtualDoc && sessaoAtualDoc.nomeCasa) || '';
 
-      const c = sessaoAtualDoc.cobranca;
-      const valor = VoxlyEntrada.emReais(c.valor);
+      const c = { ...(sessaoAtualDoc.cobranca || {}), ...(_cobrancaPublica || {}) };
+      const valor = VoxlyEntrada.emReais(sessaoAtualDoc.cobranca.valor);
 
       if (s === 'aguardando') {
         card.innerHTML = `
@@ -1486,6 +1501,12 @@ function escutarFila() {
         return;
       }
 
+      if (!c.brcode) {
+        // O QR ainda nao chegou (ou o KJ acabou de mudar o valor).
+        card.innerHTML = '<div class="loading">Carregando o Pix do ingresso…</div>';
+        carregarCobrancaPublica();
+        return;
+      }
       // Qualquer outra coisa que nao seja um QR de verdade nao vira <img>.
       const qr = VoxlySeguro.urlDeImagem(c.qr);
       const qrOk = qr && qr.startsWith('data:image/');
@@ -2163,7 +2184,12 @@ function escutarFila() {
           return;
         }
         const data = snap.data();
+        const valorAntes = _cobrancaPublica && _cobrancaPublica.valor;
         sessaoAtualDoc = data;
+        if (VoxlyEntrada.cobrancaAtiva(data) && valorAntes !== undefined && valorAntes !== data.cobranca.valor) {
+          _cobrancaPublica = null;   // o KJ mudou o valor: o QR antigo nao serve
+          carregarCobrancaPublica();
+        }
         desenharEntrada();
         // Regras e termino acompanham a sessao: lidos so na entrada, o KJ
         // desligava o cafe com leite (ou mudava o limite, ou o horario) e os
@@ -2229,6 +2255,10 @@ function escutarFila() {
       } catch(e) {}
       // Presenca vale mesmo sem ingresso: e como o KJ ve quem esta na porta.
       await registrarPresenca();
+      // O QR do ingresso nao mora no documento da sessao (que todo mundo
+      // lista): vem de sessoes/{sid}/cobranca/publico, que so quem marcou
+      // presenca le. Por isso vem depois de registrarPresenca.
+      await carregarCobrancaPublica();
       escutarSessao();
       escutarMeuPagamento();
       ativarPresencaOnDisconnect();

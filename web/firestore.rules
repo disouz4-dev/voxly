@@ -45,6 +45,11 @@ service cloud.firestore {
     // ingresso ligado, quem nao pagou nao acessa: so ve o documento da sessao,
     // que traz o preco e o QR. A Gerencia dona ve tudo; sessao abandonada
     // tambem abre, para a faxina de outra maquina guardar o relatorio.
+    function aceitaDueto(uid) {
+      let perfil = /databases/$(database)/documents/cantores/$(uid);
+      return !exists(perfil) || get(perfil).data.get('aceitaDueto', true) != false;
+    }
+
     function podeVerSessao(sid) {
       return logado() && (souDono(sid) || entradaPaga(sid) || abandonada(dadosDaSessao(sid)));
     }
@@ -67,8 +72,14 @@ service cloud.firestore {
                                     || request.resource.data.donoUid == eu());
       // A dona manda; sessao abandonada ou antiga, qualquer Gerencia resolve; e
       // o cantor so consegue mandar o pedido de tocar (campo "comando").
-      allow update: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
-                                    || semDono(resource.data) || soMudou(['comando']));
+      // Sessao abandonada ou antiga continua administravel por outra Gerencia
+      // (encerrar, apagar), mas NINGUEM reescreve o dono: sem isto, dez minutos
+      // sem sinal — KJ em modo offline, notebook dormindo — e qualquer pessoa
+      // logada se carimbava dona da noite, liberava ingresso de graca, lia os
+      // pagantes e trancava o KJ de verdade para fora.
+      allow update: if logado() && (resource.data.donoUid == eu() || soMudou(['comando'])
+                                    || ((abandonada(resource.data) || semDono(resource.data))
+                                        && request.resource.data.get('donoUid', '') == resource.data.get('donoUid', '')));
       allow delete: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
                                     || semDono(resource.data));
 
@@ -98,22 +109,40 @@ service cloud.firestore {
       // Quem desligou "aceitar convites para cantar" nao recebe convite nem
       // pedido de dueto (cantores/{uid}.aceitaDueto, ligado quando ausente).
       match /convites/{id} {
-        function aceitaDueto(uid) {
-          let perfil = /databases/$(database)/documents/cantores/$(uid);
-          return !exists(perfil) || get(perfil).data.get('aceitaDueto', true) != false;
-        }
         allow read:   if podeVerSessao(sid);
-        allow create: if logado() && (souDono(sid) || (request.resource.data.deUid == eu()
-                                                       && aceitaDueto(request.resource.data.paraUid)));
+        // Nasce sempre PENDENTE: deixar o proprio convidador escolher o status
+        // era abrir conversa com quem nunca aceitou (o chat confia neste campo).
+        // E so quem esta na noite convida.
+        allow create: if logado() && (souDono(sid)
+                                      || (request.resource.data.deUid == eu()
+                                          && podeVerSessao(sid)
+                                          && request.resource.data.status == 'pendente'
+                                          && aceitaDueto(request.resource.data.paraUid)));
+        // Quem responde e quem recebeu: so ele aceita, recusa ou diz que a
+        // musica ja tem parceiro. Quem convidou so cancela e marca a resposta
+        // como vista. Ninguem troca deUid/paraUid depois — trocar o paraUid
+        // furava o "nao aceito convites" de quem tinha desligado.
         // A recusa guarda o NUMERO de uma das respostas prontas (chat.js), nunca
         // texto: senao recusar virava jeito de mandar qualquer coisa a quem
         // convidou, inclusive quem desligou as conversas.
-        allow update: if logado() && (souDono(sid) || resource.data.paraUid == eu()
-                                      || resource.data.deUid == eu())
-                      && (!('resposta' in request.resource.data)
-                          || (request.resource.data.resposta is int
-                              && request.resource.data.resposta >= 0
-                              && request.resource.data.resposta <= 4));
+        allow update: if logado() && (souDono(sid)
+          || (resource.data.paraUid == eu()
+              && soMudou(['status', 'resposta'])
+              && request.resource.data.status in ['aceito', 'recusado', 'preenchido'])
+          || (resource.data.deUid == eu()
+              && (soMudou(['respostaVista'])
+                  || (soMudou(['status']) && request.resource.data.status == 'cancelado')
+                  // Convidar de novo a mesma musica (o app reusa o id do
+                  // pedido), inclusive outra pessoa: o convite renasce
+                  // PENDENTE. Convite ja aceito nao volta atras por aqui.
+                  || (resource.data.status != 'aceito'
+                      && request.resource.data.status == 'pendente'
+                      && request.resource.data.deUid == eu()
+                      && aceitaDueto(request.resource.data.paraUid)))))
+          && (!('resposta' in request.resource.data)
+              || (request.resource.data.resposta is int
+                  && request.resource.data.resposta >= 0
+                  && request.resource.data.resposta <= 4));
         allow delete: if logado() && (souDono(sid) || resource.data.paraUid == eu()
                                       || resource.data.deUid == eu());
       }
@@ -140,6 +169,9 @@ service cloud.firestore {
         allow read: if logado() && participo() && podeVerSessao(sid);
 
         allow create: if logado()
+          && podeVerSessao(sid)
+          && aceitaDueto(convite().paraUid)
+          && request.resource.data.nomes.keys().hasOnly([convite().deUid, convite().paraUid])
           && convite().status == 'aceito'
           && eu() in [convite().deUid, convite().paraUid]
           && request.resource.data.participantes.size() == 2
@@ -203,6 +235,16 @@ service cloud.firestore {
                                           && avisoBom(request.resource.data)));
         allow delete: if logado() && (souDono(sid) || abandonada(dadosDaSessao(sid))
                                       || semDono(dadosDaSessao(sid)));
+      }
+
+      // O QR e o copia-e-cola do ingresso. Ficavam no documento da sessao, que
+      // qualquer pessoa logada consegue LISTAR: dava para varrer o banco e
+      // colher a chave Pix (as vezes um CPF) e o nome de todas as casas. Agora
+      // so ve quem esta na porta — quem marcou presenca — ou a Gerencia dona.
+      match /cobranca/{doc} {
+        allow read:  if logado() && (souDono(sid)
+                                     || exists(/databases/$(database)/documents/sessoes/$(sid)/presencas/$(eu())));
+        allow write: if souDono(sid);
       }
 
       match /historico/{id} { allow read: if podeVerSessao(sid); allow write: if souDono(sid); }

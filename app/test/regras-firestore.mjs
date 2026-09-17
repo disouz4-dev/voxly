@@ -133,9 +133,25 @@ await deve("a Ana", "convidar o Beto para um dueto", () => setDoc(convite(ana.bd
   deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Zombie", status: "pendente",
 }));
 
-const novaConversa = { participantes: [ana.uid, beto.uid], nomes: {}, status: "aberto", mensagens: [], vistoEm: {} };
+const novaConversa = { participantes: [ana.uid, beto.uid], nomes: { [ana.uid]: "Ana", [beto.uid]: "Beto" }, status: "aberto", mensagens: [], vistoEm: {} };
+await naoDeve("a Ana", "criar convite já nascido aceito", () => setDoc(convite(ana.bd, "c_falso"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "X", status: "aceito",
+}));
+await naoDeve("a Ana", "aceitar sozinha o convite que ela mandou", () => updateDoc(convite(ana.bd, "c1"), { status: "aceito" }));
+// Trocar o destinatario de um convite AINDA PENDENTE e o mesmo que cancelar e
+// convidar outra pessoa — e a conferencia de quem desligou convites vale nos dois.
+await deve("a Ana", "convidar outra pessoa para a mesma música", () =>
+  updateDoc(convite(ana.bd, "c1"), { paraUid: estranho.uid, paraNome: "Estranho", status: "pendente" }));
+await deve("a Ana", "voltar a convidar o Beto", () =>
+  updateDoc(convite(ana.bd, "c1"), { paraUid: beto.uid, paraNome: "Beto", status: "pendente" }));
+await deve("a Ana", "cancelar o convite que ela mandou", () => updateDoc(convite(ana.bd, "c1"), { status: "cancelado" }));
+await deve("a Ana", "convidar de novo (pendente)", () => setDoc(convite(ana.bd, "c1"), {
+  deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Zombie", artista: "The Cranberries", status: "pendente",
+}));
 await naoDeve("o Beto", "abrir conversa antes de aceitar o convite", () => setDoc(conversa(beto.bd, "c1"), novaConversa));
 await deve("o Beto", "aceitar o convite", () => updateDoc(convite(beto.bd, "c1"), { status: "aceito" }));
+await naoDeve("a Ana", "mexer no convite depois de aceito", () =>
+  updateDoc(convite(ana.bd, "c1"), { paraUid: estranho.uid, status: "pendente" }));
 await naoDeve("o estranho", "abrir a conversa do dueto dos outros", () => setDoc(conversa(estranho.bd, "c1"), novaConversa));
 await naoDeve("o Beto", "abrir conversa pondo um terceiro dentro", () =>
   setDoc(conversa(beto.bd, "c1"), { ...novaConversa, participantes: [beto.uid, estranho.uid] }));
@@ -227,6 +243,17 @@ await naoDeve("o Caio", "pedir música sem pagar", () => pedidoDe(caio, "caio_1"
 await deve("o Caio", "ver o preço e o QR (documento da sessão)", () => getDoc(sessao(caio.bd)));
 await deve("o Caio", "marcar presença na porta, sem pagar", () =>
   setDoc(doc(caio.bd, "sessoes", SID, "presencas", caio.uid), { nomeArtistico: "Caio", status: "aqui" }));
+console.log("\n── QR do ingresso só para quem está na porta ──");
+const qrDaNoite = (bd) => doc(bd, "sessoes", SID, "cobranca", "publico");
+await deve("a dona", "gravar o QR do ingresso", () =>
+  setDoc(qrDaNoite(dono.bd), { brcode: "000201...", qr: "", recebedor: "DIEGO", valor: 15 }));
+await deve("a dona", "ler o QR que gravou", () => getDoc(qrDaNoite(dono.bd)));
+await deve("o Caio", "marcar presença na porta", () =>
+  setDoc(doc(caio.bd, "sessoes", SID, "presencas", caio.uid), { nomeArtistico: "Caio", status: "aqui" }));
+await deve("o Caio (marcou presença)", "ler o QR para pagar", () => getDoc(qrDaNoite(caio.bd)));
+await naoDeve("o Beto (fora da noite)", "ler o QR", () => getDoc(qrDaNoite(beto.bd)));
+await naoDeve("o Caio", "trocar o QR pelo dele", () => setDoc(qrDaNoite(caio.bd), { brcode: "meu-pix" }));
+
 await naoDeve("o Caio", "ver a fila sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "fila")));
 await naoDeve("o Caio", "ver quem está na sessão sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "presencas")));
 await naoDeve("o Caio", "ver os convites sem pagar", () => getDocs(collection(caio.bd, "sessoes", SID, "convites")));
