@@ -6,6 +6,11 @@
 //   src/assets/icons/icon.png   1024x1024 — Mac (Dock, app, .dmg) e Linux
 //   src/assets/icons/icon.ico   Windows, com 16 a 256 px dentro
 //   src/assets/icons/tray.png   32x32
+//   ../web/public/assets/icons/ app-192, app-512 e apple-touch-icon (180):
+//                               o app do cantor instalado na tela do celular.
+//                               Quadrado cheio, sem cantos: o Android e o iOS
+//                               recortam do jeito deles, e a logo fica dentro
+//                               da zona segura (80% do centro).
 //
 // Roda no proprio Electron, desenhando numa janela invisivel: nao depende de
 // nenhuma ferramenta de imagem instalada. Quando a logo mudar:
@@ -21,6 +26,7 @@ const path = require("path");
 
 const ORIGEM = path.resolve(process.argv[process.argv.length - 1]);
 const DESTINO = path.join(__dirname, "..", "src", "assets", "icons");
+const DESTINO_WEB = path.join(__dirname, "..", "..", "web", "public", "assets", "icons");
 
 // Um .ico e um indice seguido das imagens; desde o Vista cada imagem pode ser
 // um PNG inteiro, entao basta empacotar os PNGs de cada tamanho.
@@ -67,7 +73,15 @@ const DESENHO = `(async (src) => {
     const c = document.createElement('canvas');
     c.width = c.height = lado;
     const k = c.getContext('2d');
-    if (comFundo) {
+    if (comFundo === 'cheio') {
+      const grad = k.createLinearGradient(0, 0, 0, lado);
+      grad.addColorStop(0, '#1b2030'); grad.addColorStop(1, '#0b0c11');
+      k.fillStyle = grad; k.fillRect(0, 0, lado, lado);
+      const escala = Math.min(lado * 0.62 / larg, lado * 0.62 / alt);
+      const w = larg * escala, h = alt * escala;
+      k.imageSmoothingEnabled = true; k.imageSmoothingQuality = 'high';
+      k.drawImage(base, x0, y0, larg, alt, (lado - w) / 2, (lado - h) / 2, w, h);
+    } else if (comFundo) {
       // Grade do macOS: quadrado de 824/1024 com margem, cantos de ~22%.
       const q = lado * 824 / 1024, m = (lado - q) / 2, raio = q * 0.2237;
       const grad = k.createLinearGradient(0, m, 0, m + q);
@@ -94,6 +108,7 @@ const DESENHO = `(async (src) => {
   const saida = {};
   for (const lado of [1024, 256, 128, 64, 48, 32, 24, 16]) saida['i' + lado] = icone(lado, true);
   saida.tray = icone(32, true);
+  for (const lado of [512, 192, 180]) saida['web' + lado] = icone(lado, 'cheio');
   saida.recorte = { x0, y0, larg, alt };
   return saida;
 })`;
@@ -108,6 +123,10 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(DESTINO, "tray.png"), bin(r.tray));
   fs.writeFileSync(path.join(DESTINO, "icon.ico"),
     montarIco([16, 24, 32, 48, 64, 128, 256].map(lado => ({ lado, dados: bin(r["i" + lado]) }))));
+  fs.mkdirSync(DESTINO_WEB, { recursive: true });
+  fs.writeFileSync(path.join(DESTINO_WEB, "app-512.png"), bin(r.web512));
+  fs.writeFileSync(path.join(DESTINO_WEB, "app-192.png"), bin(r.web192));
+  fs.writeFileSync(path.join(DESTINO_WEB, "apple-touch-icon.png"), bin(r.web180));
   console.log("simbolo recortado:", JSON.stringify(r.recorte));
   console.log("icones gravados em", DESTINO);
   app.quit();
