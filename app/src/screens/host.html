@@ -566,6 +566,13 @@ footer strong { color:var(--ambar); font-weight:700; }
           <button class="btn btn-ghost btn-sm" onclick="ajustarTom(+1)" style="padding:2px 10px;font-size:1rem;">+</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <span style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Velocidade:</span>
+          <button class="btn btn-ghost btn-sm" onclick="ajustarVelocidade(-0.05)" style="padding:2px 10px;font-size:1rem;" title="Mais devagar, no mesmo tom">−</button>
+          <span id="velocidade-display" onclick="ajustarVelocidade(0, true)" title="Clique para voltar ao normal"
+                style="font-size:.85rem;font-weight:700;color:var(--accent);min-width:60px;text-align:center;cursor:pointer;">Normal</span>
+          <button class="btn btn-ghost btn-sm" onclick="ajustarVelocidade(+0.05)" style="padding:2px 10px;font-size:1rem;" title="Mais rápido, no mesmo tom">+</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
           <label for="fader-volume" style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Volume:</label>
           <input type="range" id="fader-volume" min="0" max="100" step="1"
                  oninput="mudarVolume(this.value)" style="flex:1;accent-color:var(--accent);"
@@ -1270,6 +1277,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   let timerConfirmacao   = null;
   let modoOffline        = false;
   let tomAtual           = 0; // semitons em relação ao original
+  // Velocidade da musica tocando (1 = normal) e a memoria por musica: a
+  // proxima vez que ela tocar, vem no andamento que o KJ deixou (pedido do
+  // dono, 17/09).
+  let velocidadeAtual    = 1;
+  const CHAVE_ANDAMENTOS = 'voxly_andamentos';
 
   // ── Helpers ───────────────────────────────────────────────
   // Escapa aspas tambem: o antigo (textContent/innerHTML) nao escapava, e todo
@@ -2908,6 +2920,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     marcarShowComecou();
 
     const semitons = item.semitons || 0;
+    velocidadeAtual = andamentoDe(item);
+    desenharVelocidade();
     currentSong = { ...item, id: itemId, filePath, iniciadoEm: Date.now() };
     _jaGerenciouMusica = true;
     mostrarNoPainel(item);
@@ -2921,7 +2935,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     // jeito e o banco acerta quando puder.
     if (window.electronAPI) {
       window.electronAPI.playerCommand(JSON.stringify({
-        cmd: 'play-confirmed', filePath, semitons,
+        cmd: 'play-confirmed', filePath, semitons, velocidade: velocidadeAtual,
         musica: item.musica, artista: item.artista,
         cantor: item.nomeArtistico, duo: item.duoNome || null,
         photoURL: item.photoURL || null, duoPhotoURL: item.duoPhotoURL || null
@@ -4480,6 +4494,36 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // ── Velocidade (andamento), lembrada por musica ────────────
+  function andamentos() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_ANDAMENTOS) || '{}') || {}; } catch (_) { return {}; }
+  }
+  function andamentoDe(item) {
+    const v = item ? andamentos()[VoxlyTrava.chaveDeMusica(item.musica, item.artista)] : null;
+    return typeof v === 'number' && v >= 0.5 && v <= 1.5 ? v : 1;
+  }
+  function desenharVelocidade() {
+    const el = document.getElementById('velocidade-display');
+    if (!el) return;
+    const pct = Math.round(velocidadeAtual * 100);
+    el.textContent = pct === 100 ? 'Normal' : pct + '%';
+  }
+  // -20% a +10%, de 5 em 5. `normal`: volta a 100%.
+  function ajustarVelocidade(delta, normal) {
+    velocidadeAtual = normal ? 1 : Math.round(Math.min(1.1, Math.max(0.8, velocidadeAtual + delta)) * 100) / 100;
+    desenharVelocidade();
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand(JSON.stringify({ cmd: 'set-velocidade', valor: velocidadeAtual }));
+    }
+    if (currentSong) {
+      const mapa = andamentos();
+      const chave = VoxlyTrava.chaveDeMusica(currentSong.musica, currentSong.artista);
+      if (velocidadeAtual === 1) delete mapa[chave]; else mapa[chave] = velocidadeAtual;
+      try { localStorage.setItem(CHAVE_ANDAMENTOS, JSON.stringify(mapa)); } catch (_) {}
+      if (velocidadeAtual !== 1) mostrarToast(`🎚 "${currentSong.musica}" fica em ${Math.round(velocidadeAtual * 100)}% nas próximas vezes`, 3500);
+    }
+  }
+
   function resetarTom() {
     tomAtual = 0;
     const el = document.getElementById('tom-display');
@@ -5776,7 +5820,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
-      'cantarNaProxima','esticarSessao',
+      'cantarNaProxima','esticarSessao','ajustarVelocidade',
     ];
     // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
     // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.

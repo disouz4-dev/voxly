@@ -825,11 +825,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const video = document.getElementById("video-player");
   const idle  = document.getElementById("idle-screen");
 
+  let velocidadeAtual = 1;
+  function aplicarVelocidade() {
+    try {
+      video.preservesPitch = true;
+      video.playbackRate = velocidadeAtual;
+    } catch (_) {}
+  }
+
   // Declarados aqui, antes de qualquer handler: onPlayVideo e registrado bem
   // acima do ponto onde estavam e usa os dois. Comando de video chegando
   // antes de o script terminar de carregar caia em zona morta temporal, o
   // handler estourava e a tela ficava sem video.
   let idleAtivo = true;          // true enquanto a idle screen estiver visivel
+  // Velocidade da musica (1 = normal). O Chromium estica o tempo mantendo o
+  // tom (preservesPitch), e o controle de tom do KJ continua por cima, no
+  // rubberband. Vale no Palco e no Publico, que espelha o mesmo video.
   let idleFallbackTimer = null;  // volta para a espera se o preview nao chegar
   const introOverlay  = document.getElementById("intro-overlay");
   const introProgress = document.getElementById("intro-progress");
@@ -1940,6 +1951,18 @@ intervaloDeck = [];
           }, 1000);
         }
 
+        // A velocidade vem junto com a ordem de tocar: cada musica chega com
+        // a dela (a que o KJ deixou lembrada, ou 1).
+        if (dados.cmd === "play-confirmed" || dados.cmd === "play-direct") {
+          velocidadeAtual = typeof dados.velocidade === "number" ? dados.velocidade : 1;
+          aplicarVelocidade();
+        }
+        if (dados.cmd === "set-velocidade") {
+          velocidadeAtual = Math.min(1.5, Math.max(0.5, Number(dados.valor) || 1));
+          aplicarVelocidade();
+          diario('musica.velocidade', { valor: velocidadeAtual });
+          return;
+        }
         if (dados.cmd === "play-confirmed") {
           if (isAudience) {
             // A chamada de 30s fica por cima do video se ninguem a tirar: o
@@ -2158,6 +2181,8 @@ intervaloDeck = [];
     });
   }
   for (const ev of ["pause", "play", "ended", "emptied"]) video.addEventListener(ev, () => contarProgresso(true));
+  // Trocar o arquivo volta a velocidade para 1: reaplica a cada video novo.
+  for (const ev of ["loadedmetadata", "play"]) video.addEventListener(ev, aplicarVelocidade);
   // Recarregou (ou abriu depois da sessao comecar): pede o QR e os dados da
   // casa de volta, senao a tela fica presa no aviso de espera.
   if (window.electronAPI.pedirEstado) window.electronAPI.pedirEstado();
