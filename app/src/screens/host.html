@@ -888,6 +888,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     </div>
     <audio id="monitorAudio" preload="none"></audio>
     <div id="candidatosLista" style="max-height:320px;overflow-y:auto;"></div>
+    <label class="modal-label" for="candidatosLink" style="margin-top:12px;">Já sabe qual versão quer? Cole o link</label>
+    <div style="display:flex;gap:8px;">
+      <input class="modal-input" id="candidatosLink" style="flex:1;margin:0;" placeholder="https://www.youtube.com/watch?v=… ou youtu.be/…"
+             onkeydown="baixarDoLink(event)" autocomplete="off" spellcheck="false">
+      <button class="btn btn-primary btn-sm" onclick="baixarDoLink()">⬇ Baixar</button>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharModalCandidatos()">Cancelar</button>
     </div>
@@ -1208,6 +1214,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../orfaos.js"></script>
 <script src="../entrada.js"></script>
 <script src="../previsao.js"></script>
+<script src="../link-youtube.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -1935,7 +1942,26 @@ https://www.youtube.com/@canal/videos"></textarea>
   async function baixarEscolhido(itemId, indice) {
     const item = filaData.find(i => i.id === itemId);
     if (!item || !item.candidatos || !item.candidatos[indice]) return;
-    const c = item.candidatos[indice];
+    return baixarVersao(item, item.candidatos[indice]);
+  }
+
+  // Link colado na escolha de versoes: a gravacao exata que o KJ quer,
+  // quando a busca nao traz (pedido do dono, 17/09).
+  async function baixarDoLink(ev) {
+    if (ev && ev.key !== 'Enter') return;
+    const modal = document.getElementById('modalCandidatos');
+    const campo = document.getElementById('candidatosLink');
+    const item = filaData.find(i => i.id === modal._itemId);
+    if (!item) return;
+    const id = VoxlyLinkYoutube.idDoVideo(campo.value);
+    if (!id) { mostrarToast('Esse link não é de um vídeo do YouTube'); campo.focus(); return; }
+    await aplicarQualidadePadrao();
+    campo.value = '';
+    return baixarVersao(item, { id, url: VoxlyLinkYoutube.urlDoVideo(id), titulo: 'link colado (' + id + ')' });
+  }
+
+  async function baixarVersao(item, c) {
+    const itemId = item.id;
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
 
     fecharModalCandidatos();
@@ -5820,7 +5846,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
-      'cantarNaProxima','esticarSessao','ajustarVelocidade',
+      'cantarNaProxima','esticarSessao','ajustarVelocidade','baixarDoLink',
     ];
     // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
     // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.
