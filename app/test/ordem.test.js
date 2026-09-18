@@ -313,3 +313,45 @@ test("prioridade desligada: nem a regra nova promove", () => {
   const fila = [pedido("v1", 1), pedido("v2", 2), pedido("novo", 3)];
   assert.deepEqual(promocoesDeCafe(fila, { jaCantou: jaCantouV, cantadas, cederApos: 1, prioridadeAtiva: false }), []);
 });
+
+// ── A fila andando de verdade: a alternancia tem que lembrar quem cantou ──
+// Defeito de 12/09 a 18/09: a intercalacao recomecava "pela fila principal" a
+// cada vez que alguem subia ao palco. Com M1 C1 M2 C2 M3, cantavam M1, M2,
+// M3, C1, C2 — o cafe com leite so entrava quando a fila principal acabava.
+
+function simularNoite(filaInicial, voltas) {
+  let fila = filaInicial.map(i => ({ ...i }));
+  let ultimoFoiCafe = null;
+  const cantaram = [];
+  for (let v = 0; v < voltas; v++) {
+    // quem estava no palco terminou
+    fila = fila.filter(i => i.status !== "tocando");
+    const proxima = ordenarFila(fila, { ultimoFoiCafe }).find(i => i.status === "aguardando");
+    if (!proxima) break;
+    cantaram.push(proxima.id);
+    ultimoFoiCafe = proxima.tipo === "prioridade";
+    fila = fila.map(i => (i.id === proxima.id ? { ...i, status: "tocando" } : i));
+  }
+  return cantaram;
+}
+
+test("a noite andando: uma da fila, uma prioridade, ate acabar", () => {
+  const fila = [pedido("M1", 1), pedido("C1", 2, "prioridade"), pedido("M2", 3), pedido("C2", 4, "prioridade"), pedido("M3", 5)];
+  assert.deepEqual(simularNoite(fila, 5), ["M1", "C1", "M2", "C2", "M3"]);
+});
+
+test("com alguem no palco, a proxima e da outra fila", () => {
+  const fila = [pedido("M1", 1, "normal", { status: "tocando" }), pedido("M2", 2), pedido("C1", 3, "prioridade")];
+  assert.deepEqual(ordemIds(fila), ["M1", "C1", "M2"]);
+});
+
+test("cafe no palco: a proxima e da fila principal", () => {
+  const fila = [pedido("C1", 1, "prioridade", { status: "tocando" }), pedido("C2", 2, "prioridade"), pedido("M1", 3)];
+  assert.deepEqual(ordemIds(fila), ["C1", "M1", "C2"]);
+});
+
+test("entre uma musica e outra (ninguem no palco), vale quem cantou por ultimo", () => {
+  const fila = [pedido("M2", 2), pedido("C1", 3, "prioridade")];
+  assert.deepEqual(ordenarFila(fila, { ultimoFoiCafe: false }).map(i => i.id), ["C1", "M2"]);
+  assert.deepEqual(ordenarFila(fila, { ultimoFoiCafe: true }).map(i => i.id), ["M2", "C1"]);
+});

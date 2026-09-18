@@ -1225,6 +1225,10 @@ https://www.youtube.com/@canal/videos"></textarea>
   // cafe com leite (ordem.js promocoesDeCafe).
   let _cantadasPor     = new Map();   // uid -> musicas cantadas nesta noite (cantor principal)
   let _filaCompleta    = [];          // todos os pedidos pendentes, inclusive os em espera
+  // Se a ultima musica que subiu ao palco era cafe com leite (ordem.js). E o
+  // que faz a alternancia seguir de onde parou; fica tambem na sessao
+  // (alternancia.ultimoFoiCafe) para o app do cantor e para outra maquina.
+  let _ultimoFoiCafe   = null;
   let _promovendoCafe  = false;
   // Ingresso da noite (ver o bloco "Entrada paga"). Declarados aqui em cima:
   // funcoes que rodam na carga da tela ja leem estes nomes.
@@ -2517,7 +2521,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         // Regra unica de ordem (src/ordem.js). A antiga punha toda prioridade
         // na frente a cada atualizacao e desfazia o arrastar do KJ.
         filaData = VoxlyOrdem.ordenarFila(
-          snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'));
+          snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'),
+          { ultimoFoiCafe: _ultimoFoiCafe });
         _filaCompleta = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         promoverCafesPendentes(_filaCompleta);
 
@@ -2729,6 +2734,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       // Decisao do dono (18/09): quem chega entra na vez quando todo mundo da
       // fila ja cantou pelo menos 1.
       cederApos: 1,
+      ultimoFoiCafe: _ultimoFoiCafe,
     });
     if (!ids.length) return;
     _promovendoCafe = true;
@@ -2821,6 +2827,14 @@ https://www.youtube.com/@canal/videos"></textarea>
       }
     }
     batch.update(fila.doc(itemId), { status: 'tocando' });
+    // A alternancia segue daqui: a proxima e da outra fila.
+    const subiu = filaData.find(d => d.id === itemId);
+    if (subiu) {
+      _ultimoFoiCafe = subiu.tipo === 'prioridade';
+      batch.update(db.collection('sessoes').doc(SESSAO_ID), {
+        alternancia: { ultimoFoiCafe: _ultimoFoiCafe, em: firebase.firestore.FieldValue.serverTimestamp() },
+      });
+    }
     batch.commit().catch(e => {
       diario('kj.tocar-nao-gravou', { id: itemId, erro: e.message }, 'erro');
       mostrarToast('⚠️ A música está tocando, mas a fila não foi gravada no servidor', 6000);
@@ -3190,7 +3204,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     // Usa filaData em memória (já sincronizada) — elimina o round-trip do Firestore
     // O proximo chamado segue a MESMA ordem que o KJ ve na tela. Com a regra
     // antiga ele escolhia pela prioridade e ignorava o arrastar.
-    const items = VoxlyOrdem.ordenarFila(filaData)
+    const items = VoxlyOrdem.ordenarFila(filaData, { ultimoFoiCafe: _ultimoFoiCafe })
       .filter(d => d.slot !== 'espera' && d.status === 'aguardando');
 
     if (items.length === 0) { avancarCicloSeVazio(); return; }
@@ -4639,6 +4653,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         showIniciado      = !!d.showIniciado;
         horarioInicioShow = showIniciado ? null : hor;
         cobrancaSessao    = d.cobranca || null;
+        if (d.alternancia && typeof d.alternancia.ultimoFoiCafe === 'boolean') _ultimoFoiCafe = d.alternancia.ultimoFoiCafe;
         pintarBotaoPagamentos();
         renderUsers();
         if (showIniciado) {

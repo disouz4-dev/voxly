@@ -1978,9 +1978,11 @@ function escutarFila() {
           const el = document.getElementById('filaEventoList');
           // Mesma ordem da Gerencia (ordem.js). A daqui punha toda prioridade na
           // frente e o cantor via uma posicao diferente da que o KJ via.
+          const alt = sessaoAtualDoc && sessaoAtualDoc.alternancia;
           const items = VoxlyOrdem.ordenarFila(snap.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(d => d.slot !== 'espera'));
+            .filter(d => d.slot !== 'espera'),
+            { ultimoFoiCafe: alt && typeof alt.ultimoFoiCafe === 'boolean' ? alt.ultimoFoiCafe : null });
           posicaoNaFila = new Map(items.map((d, i) => [d.id, i + 1]));
           renderFila();
           _itensEvento = items;

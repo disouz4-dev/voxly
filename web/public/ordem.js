@@ -40,7 +40,15 @@ const ehCafe = i => !!i && i.tipo === "prioridade";
 // chamado, ou guardado na vaga de espera, fica onde esta.
 const entraNaAlternancia = i => !!i && i.status === "aguardando" && i.slot !== "espera";
 
-function ordenarFila(itens) {
+// `ultimoFoiCafe`: se a ultima musica que SAIU da fila (a que esta no palco
+// ou a que acabou de ser cantada) era cafe com leite. Sem isto a alternancia
+// recomecava "pela fila principal" toda vez que alguem subia ao palco, e o
+// cafe so entrava quando a fila principal acabava: com M1 C1 M2 C2 M3,
+// cantavam M1 M2 M3 C1 C2 (de 12/09 a 18/09). Quem esta no palco ou sendo
+// chamado ja diz isso sozinho; o parametro cobre o intervalo entre uma
+// musica e outra, quando ninguem esta no palco. A Gerencia guarda esse dado
+// na sessao (alternancia.ultimoFoiCafe).
+function ordenarFila(itens, { ultimoFoiCafe = null } = {}) {
   const ordenada = [...(Array.isArray(itens) ? itens : [])]
     .map((item, idx) => ({ item, idx }))
     .sort((a, b) =>
@@ -53,14 +61,21 @@ function ordenarFila(itens) {
   const posicoes = [];
   ordenada.forEach((item, i) => { if (entraNaAlternancia(item)) posicoes.push(i); });
   const esperando = posicoes.map(i => ordenada[i]);
-  intercalar(esperando).forEach((item, k) => { ordenada[posicoes[k]] = item; });
+
+  // O ultimo a sair da fila: quem vai ao palco por ultimo entre os que ja
+  // estao tocando, prontos ou sendo chamados; sem ninguem, o que foi cantado.
+  const saindo = ordenada.filter(i => i && i.status in PESO);
+  const inicio = saindo.length ? ehCafe(saindo[saindo.length - 1]) : ultimoFoiCafe;
+
+  intercalar(esperando, inicio).forEach((item, k) => { ordenada[posicoes[k]] = item; });
   return ordenada;
 }
 
-// Um da fila principal, um cafe com leite, um da fila... Comeca pela fila
-// principal: ela nunca pode parar de andar. Quem o KJ arrastou (`fixado`) fica
-// na posicao em que ele pos, e os outros se acomodam em volta.
-function intercalar(esperando) {
+// Um da fila principal, um cafe com leite, um da fila... Sem saber quem saiu
+// por ultimo, comeca pela fila principal: ela nunca pode parar de andar. Quem
+// o KJ arrastou (`fixado`) fica na posicao em que ele pos, e os outros se
+// acomodam em volta.
+function intercalar(esperando, inicio = null) {
   const cravados = new Map();
   esperando.forEach((item, i) => { if (item && item.fixado) cravados.set(i, item); });
 
@@ -69,7 +84,7 @@ function intercalar(esperando) {
   const cafes = livres.filter(i => ehCafe(i));
 
   const saida = [];
-  let ultimoFoiCafe = null;   // null = ninguem ainda; a fila principal comeca
+  let ultimoFoiCafe = inicio;   // null = ninguem ainda; a fila principal comeca
   for (let i = 0; i < esperando.length; i++) {
     const escolhido = cravados.has(i) ? cravados.get(i)
       : (ultimoFoiCafe === false ? (cafes.shift() || daFila.shift())
@@ -108,7 +123,7 @@ function ordemParaNovo(fila) {
 //
 // `jaCantou(uid)` diz se a pessoa ja cantou nesta noite; `cantadas(uid)`,
 // quantas.
-function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeAtiva = true } = {}) {
+function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeAtiva = true, ultimoFoiCafe = null } = {}) {
   if (prioridadeAtiva === false) return [];
   const lista = (Array.isArray(itens) ? itens : []).filter(Boolean);
   const esperando = i => i.status === "aguardando" && i.slot !== "espera";
@@ -132,7 +147,7 @@ function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeA
     .filter(i => (vistos.has(i.cantorUid) ? false : (vistos.add(i.cantorUid), true)));
 
   let atual = lista.map(i => ({ ...i }));
-  const posicao = (fila, id) => ordenarFila(fila).filter(esperando).findIndex(i => i.id === id);
+  const posicao = (fila, id) => ordenarFila(fila, { ultimoFoiCafe }).filter(esperando).findIndex(i => i.id === id);
   const promovidos = [];
   for (const c of candidatos) {
     const antes = posicao(atual, c.id);
