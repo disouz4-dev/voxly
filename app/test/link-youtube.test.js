@@ -36,3 +36,8 @@ test("recusa o que nao e um video do YouTube", () => {
 test("devolve o endereco canonico, o mesmo que a busca grava", () => {
   assert.strictEqual(urlDoVideo(ID), `https://www.youtube.com/watch?v=${ID}`);
 });
+
+test("playlist embutida e endereco que nao e web nao passam", () => {
+  assert.strictEqual(idDoVideo("https://www.youtube.com/embed/videoseries?list=PLabc"), null);
+  assert.strictEqual(idDoVideo("ftp://youtube.com/watch?v=dQw4w9WgXcQ"), null);
+});

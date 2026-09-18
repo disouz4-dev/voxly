@@ -1258,6 +1258,12 @@ https://www.youtube.com/@canal/videos"></textarea>
   // que faz a alternancia seguir de onde parou; fica tambem na sessao
   // (alternancia.ultimoFoiCafe) para o app do cantor e para outra maquina.
   let _ultimoFoiCafe   = null;
+  let _ultimoFoiCafeAntes = null;     // para desfazer, se quem subiu for adiado
+  // A promocao de cafe so decide depois que presencas, historico e o documento
+  // da sessao chegaram pelo menos uma vez. Abrindo a Gerencia no meio da noite
+  // a fila chega primeiro, e com o resto vazio todo mundo parecia "nunca
+  // cantou" — veteranos viravam cafe e passavam na frente (QA da 1.1.28).
+  const _carregado = { presencas: false, historico: false, sessao: false };
   // Onde esta a musica no Palco (progresso-musica), e quanto dura cada musica
   // que ja tocou — e com isso que a fila mostra a hora prevista (previsao.js).
   let _progresso       = { atual: 0, total: 0, pausado: true };
@@ -1879,16 +1885,18 @@ https://www.youtube.com/@canal/videos"></textarea>
     filaSnap.forEach(d => batch2.update(d.ref, { status: 'cancelada' }));
     await batch2.commit();
 
+    // Palco para ja; o relatorio (varias leituras) vem depois, sem segurar a
+    // musica tocando no Wi-Fi lento.
+    if (window.electronAPI) {
+      window.electronAPI.playerCommand('stop');
+      window.electronAPI.playerCommand('sessao-encerrada');
+    }
+
     // O relatorio da noite era guardado so quando a sessao era apagada (na
     // faxina ou ao abrir a proxima noite). Finalizou, ja guarda.
     await preservarSessao(db.collection('sessoes').doc(SESSAO_ID))
       .then(() => mostrarToast('📊 Relatório da noite guardado', 4000))
       .catch(e => diario('relatorio.nao-guardou', { erro: e.message }, 'aviso'));
-
-    if (window.electronAPI) {
-      window.electronAPI.playerCommand('stop');
-      window.electronAPI.playerCommand('sessao-encerrada');
-    }
 
     desativarInterfaceSessao();
   }
@@ -2060,6 +2068,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   async function abrirVersoesLocais(itemId) {
     const item = filaData.find(i => i.id === itemId);
     if (!item) return;
+    document.getElementById('candidatosLink').value = '';
     const versoes = await window.electronAPI.versoesLocais({ musica: item.musica, artista: item.artista });
 
     if (!versoes.length) {
@@ -2133,6 +2142,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
     await aplicarQualidadePadrao();
     document.getElementById('modalCandidatos')._itemId = itemId;
+    document.getElementById('candidatosLink').value = '';
     document.getElementById('candidatosTitulo').textContent = `${item.artista} — ${item.musica}`;
     document.getElementById('candidatosSubtitulo').textContent =
       'Versões de karaokê encontradas no YouTube. Clique para baixar.';
@@ -2635,6 +2645,9 @@ https://www.youtube.com/@canal/videos"></textarea>
           const tocandoItem = filaData.find(d => d.status === 'tocando');
           if (tocandoItem && !currentSong) {
             currentSong = { ...tocandoItem };
+            // O Palco seguiu na velocidade lembrada; o painel mostra a mesma.
+            velocidadeAtual = andamentoDe(tocandoItem);
+            desenharVelocidade();
             _jaGerenciouMusica = true;
             mostrarNoPainel(tocandoItem);
           }
@@ -2669,8 +2682,10 @@ https://www.youtube.com/@canal/videos"></textarea>
   function duracoesGuardadas() {
     try { return JSON.parse(localStorage.getItem(CHAVE_DURACOES) || '{}') || {}; } catch (_) { return {}; }
   }
+  // Em tempo de relogio: musica a 80% dura 1/0,8 do arquivo.
   function duracaoDe(item) {
-    return duracoesGuardadas()[VoxlyTrava.chaveDeMusica(item.musica, item.artista)] || null;
+    const s = duracoesGuardadas()[VoxlyTrava.chaveDeMusica(item.musica, item.artista)];
+    return s ? s / andamentoDe(item) : null;
   }
   // Aprende quanto a musica dura na primeira vez que ela toca.
   function guardarDuracao(item, segundos) {
@@ -2694,11 +2709,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('progresso-atual').textContent = VoxlyPrevisao.minutosESegundos(atual);
     document.getElementById('progresso-total').textContent = VoxlyPrevisao.minutosESegundos(total);
     document.getElementById('progresso-falta').textContent =
-      (_progresso.pausado ? '⏸ ' : '') + 'faltam ' + VoxlyPrevisao.minutosESegundos(total - atual);
+      (_progresso.pausado ? '⏸ ' : '') + 'faltam ' + VoxlyPrevisao.minutosESegundos((total - atual) / (velocidadeAtual || 1));
   }
 
   function atualizarHorasDaFila() {
-    const restanteS = currentSong && _progresso.total > 0 ? Math.max(0, _progresso.total - _progresso.atual) : 0;
+    const restanteS = currentSong && _progresso.total > 0
+      ? Math.max(0, _progresso.total - _progresso.atual) / (velocidadeAtual || 1) : 0;
     const previsto = VoxlyPrevisao.horariosPrevistos({ fila: filaData, agora: Date.now(), restanteS, duracaoDe });
     document.querySelectorAll('[data-previsto]').forEach(el => {
       const ms = previsto.get(el.dataset.previsto);
@@ -2819,8 +2835,10 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // ── Presenças ─────────────────────────────────────────────
   function escutarPresencas() {
+    _carregado.presencas = false;
     db.collection('sessoes').doc(SESSAO_ID).collection('presencas')
       .onSnapshot(snap => {
+        _carregado.presencas = true;
         presencasData = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(d => d.status !== 'offline');
@@ -2876,6 +2894,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // dona grava a promocao, para todas as telas verem igual.
   async function promoverCafesPendentes(itens) {
     if (!SESSAO_ID || modoOffline || _promovendoCafe) return;
+    if (!_carregado.presencas || !_carregado.historico || !_carregado.sessao) return;
     const cantadas = uid => {
       const p = presencasData.find(x => x.id === uid || x.uid === uid);
       const daPresenca = p ? (p.musicasCantadas || (p.primeiraMusicaCantada ? 1 : 0)) : 0;
@@ -2986,6 +3005,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     // A alternancia segue daqui: a proxima e da outra fila.
     const subiu = filaData.find(d => d.id === itemId);
     if (subiu) {
+      _ultimoFoiCafeAntes = _ultimoFoiCafe;
       _ultimoFoiCafe = subiu.tipo === 'prioridade';
       batch.update(db.collection('sessoes').doc(SESSAO_ID), {
         alternancia: { ultimoFoiCafe: _ultimoFoiCafe, em: firebase.firestore.FieldValue.serverTimestamp() },
@@ -3019,7 +3039,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     // Exibe animação de intro e toca do início
     setTimeout(() => {
       window.electronAPI.playerCommand(JSON.stringify({
-        cmd: 'play-confirmed', filePath, semitons: tomAtual,
+        cmd: 'play-confirmed', filePath, semitons: tomAtual, velocidade: velocidadeAtual,
         musica: currentSong.musica, artista: currentSong.artista,
         cantor: currentSong.nomeArtistico, duo: currentSong.duoNome || null,
         photoURL: currentSong.photoURL || null, duoPhotoURL: currentSong.duoPhotoURL || null
@@ -3086,6 +3106,14 @@ https://www.youtube.com/@canal/videos"></textarea>
       document.getElementById('np-singer').textContent = '—';
     }
 
+    // Quem ja tinha subido e foi adiado nao cantou: a alternancia volta ao
+    // que era antes dele, senao a outra fila ganhava uma vez a mais.
+    if (item.status === 'tocando') {
+      _ultimoFoiCafe = _ultimoFoiCafeAntes;
+      db.collection('sessoes').doc(SESSAO_ID).update({
+        alternancia: { ultimoFoiCafe: _ultimoFoiCafe, em: firebase.firestore.FieldValue.serverTimestamp() },
+      }).catch(() => {});
+    }
     const novaOrdem = VoxlyOrdem.ordemParaCantarNaProxima(itens, itemId);
     await filaRef.doc(itemId).update({
       status: 'aguardando', ordemFila: novaOrdem, fixado: false,
@@ -4555,12 +4583,15 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (window.electronAPI) {
       window.electronAPI.playerCommand(JSON.stringify({ cmd: 'set-velocidade', valor: velocidadeAtual }));
     }
-    if (currentSong) {
+    // Durante a chamada ainda nao ha musica tocando: vale para a chamada, que
+    // e a que vai subir (senao o Play desfazia o ajuste).
+    const alvo = currentSong || proximaConfirmando;
+    if (alvo) {
       const mapa = andamentos();
-      const chave = VoxlyTrava.chaveDeMusica(currentSong.musica, currentSong.artista);
+      const chave = VoxlyTrava.chaveDeMusica(alvo.musica, alvo.artista);
       if (velocidadeAtual === 1) delete mapa[chave]; else mapa[chave] = velocidadeAtual;
       try { localStorage.setItem(CHAVE_ANDAMENTOS, JSON.stringify(mapa)); } catch (_) {}
-      if (velocidadeAtual !== 1) mostrarToast(`🎚 "${currentSong.musica}" fica em ${Math.round(velocidadeAtual * 100)}% nas próximas vezes`, 3500);
+      if (velocidadeAtual !== 1) mostrarToast(`🎚 "${alvo.musica}" fica em ${Math.round(velocidadeAtual * 100)}% nas próximas vezes`, 3500);
     }
   }
 
@@ -4684,6 +4715,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       // fica so com o painel e o aviso de espera.
       if (currentSong && currentSong.filePath) {
         window.electronAPI.sincronizarPublico(currentSong.filePath, tempoAtualDoPalco());
+        // A tela nova nasce em 100%: com o Palco em outra velocidade ela
+        // corrigia a posicao a cada segundo e o video engasgava.
+        if (velocidadeAtual !== 1) {
+          window.electronAPI.playerCommand(JSON.stringify({ cmd: 'set-velocidade', valor: velocidadeAtual }));
+        }
       }
 
       // Sem isto, a tela aberta (ou recarregada) depois de o KJ marcar a hora
@@ -4843,9 +4879,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   function escutarSessaoDoc() {
     if (!SESSAO_ID) return;
     if (escutarSessaoDocUnsub) escutarSessaoDocUnsub();
+    _carregado.sessao = false;
     escutarSessaoDocUnsub = db.collection('sessoes').doc(SESSAO_ID)
       .onSnapshot(doc => {
         if (!doc.exists) return;
+        _carregado.sessao = true;
         const d = doc.data();
         const hor = d.horarioInicioShow
           ? (d.horarioInicioShow.toDate ? d.horarioInicioShow.toDate().getTime() : d.horarioInicioShow)
@@ -4883,10 +4921,12 @@ https://www.youtube.com/@canal/videos"></textarea>
   // ── Histórico da sessão ───────────────────────────────────
   function escutarHistorico() {
     if (!SESSAO_ID) return;
+    _carregado.historico = false;
     db.collection('sessoes').doc(SESSAO_ID).collection('historico')
       .onSnapshot(snap => {
-        // So o cantor principal conta como "ja cantou": o parceiro de dueto
-        // continua podendo ser cafe com leite, como na regra de sempre.
+        _carregado.historico = true;
+        // Aqui so o cantor principal; o parceiro de dueto conta pela presenca
+        // (musicasCantadas, somada ao fim da musica) — dueto conta como cantou.
         _cantadasPor = new Map();
         for (const h of snap.docs.map(d => d.data())) {
           if (!h || h.status === 'pulada' || !h.cantorUid) continue;
@@ -5860,7 +5900,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
-      'cantarNaProxima','esticarSessao','ajustarVelocidade','baixarDoLink',
+      'cantarNaProxima','esticarSessao','ajustarVelocidade',
     ];
     // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
     // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.

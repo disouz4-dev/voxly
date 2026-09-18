@@ -355,3 +355,80 @@ test("entre uma musica e outra (ninguem no palco), vale quem cantou por ultimo",
   assert.deepEqual(ordenarFila(fila, { ultimoFoiCafe: false }).map(i => i.id), ["C1", "M2"]);
   assert.deepEqual(ordenarFila(fila, { ultimoFoiCafe: true }).map(i => i.id), ["M2", "C1"]);
 });
+
+// ── QA da 1.1.28: quem chega depois nunca passa quem nao cantou e chegou antes ──
+test("quem chega depois de varios cafes entra como cafe, atras deles", () => {
+  const cantou = new Set(["v1"]);
+  const itens = [
+    { id: "V1", cantorUid: "v1", status: "aguardando", ordemFila: 1 },
+    { id: "N1", cantorUid: "n1", status: "aguardando", ordemFila: 2, tipo: "prioridade" },
+    { id: "N2", cantorUid: "n2", status: "aguardando", ordemFila: 3, tipo: "prioridade" },
+    { id: "N3", cantorUid: "n3", status: "aguardando", ordemFila: 4, tipo: "prioridade" },
+    { id: "X",  cantorUid: "x",  status: "aguardando", ordemFila: 5 },
+  ];
+  const ids = promocoesDeCafe(itens, { jaCantou: u => cantou.has(u), cederApos: 1 });
+  assert.deepStrictEqual(ids, ["X"]);
+  const depois = itens.map(i => (ids.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+  assert.deepStrictEqual(ordenarFila(depois).map(i => i.id), ["V1", "N1", "N2", "N3", "X"]);
+});
+
+test("sem veterano esperando, o recem-chegado nao canta antes dos cafes", () => {
+  const itens = [
+    { id: "N1", cantorUid: "n1", status: "aguardando", ordemFila: 1, tipo: "prioridade" },
+    { id: "N2", cantorUid: "n2", status: "aguardando", ordemFila: 2, tipo: "prioridade" },
+    { id: "X",  cantorUid: "x",  status: "aguardando", ordemFila: 3 },
+  ];
+  const ids = promocoesDeCafe(itens, { jaCantou: () => false, cederApos: 1 });
+  const depois = itens.map(i => (ids.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+  assert.deepStrictEqual(ordenarFila(depois).map(i => i.id), ["N1", "N2", "X"]);
+});
+
+test("noites aleatorias: entre quem nao cantou, vale a ordem de chegada", () => {
+  let semente = 7;
+  const aleatorio = () => ((semente = (semente * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let noite = 0; noite < 3000; noite++) {
+    const cantou = new Set();
+    let itens = [];
+    let n = 0;
+    const tamanho = 3 + Math.floor(aleatorio() * 10);
+    for (let k = 0; k < tamanho; k++) {
+      const uid = "u" + k;
+      if (aleatorio() < 0.5) cantou.add(uid);
+      itens.push({ id: "i" + k, cantorUid: uid, status: "aguardando", ordemFila: ++n,
+                   tipo: !cantou.has(uid) && aleatorio() < 0.3 ? "prioridade" : undefined });
+    }
+    const ultimoFoiCafe = [null, true, false][Math.floor(aleatorio() * 3)];
+    const ids = promocoesDeCafe(itens, { jaCantou: u => cantou.has(u), cederApos: 1, ultimoFoiCafe });
+    itens = itens.map(i => (ids.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+    const ordem = ordenarFila(itens, { ultimoFoiCafe });
+    assert.strictEqual(ordem.length, itens.length);
+    const novatos = ordem.filter(i => !cantou.has(i.cantorUid));
+    // So vale quando a fila virou prioridade: sem cafe nenhum, a fila e so chegada.
+    if (!itens.some(i => i.tipo === "prioridade")) continue;
+    for (let a = 1; a < novatos.length; a++) {
+      assert.ok(novatos[a - 1].ordemFila < novatos[a].ordemFila,
+        `noite ${noite}: ${ordem.map(i => i.id + (i.tipo ? "*" : "") + (cantou.has(i.cantorUid) ? "v" : "")).join(" ")}`);
+    }
+  }
+});
+
+test("cantar na proxima com numeros empatados ainda adia", () => {
+  const itens = [
+    { id: "A", status: "tocando", ordemFila: 1 },
+    { id: "B", status: "aguardando", ordemFila: 2 },
+    { id: "C", status: "aguardando", ordemFila: 2 },
+  ];
+  const novo = ordemParaCantarNaProxima(itens, "A");
+  assert.ok(novo > 2 && Number.isFinite(novo));
+});
+
+test("cantar na proxima nunca grava Infinity nem NaN", () => {
+  const itens = [
+    { id: "A", status: "tocando", ordemFila: 1 },
+    { id: "B", status: "aguardando" },
+    { id: "C", status: "aguardando", ordemFila: NaN },
+  ];
+  assert.ok(Number.isFinite(ordemParaCantarNaProxima(itens, "A")));
+  assert.deepStrictEqual(ordenarFila([{ id: "N", status: "aguardando", ordemFila: NaN },
+    { id: "X", status: "aguardando", ordemFila: 1 }]).map(i => i.id), ["X", "N"]);
+});

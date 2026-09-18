@@ -33,13 +33,15 @@ function horariosPrevistos({ fila, agora, restanteS = 0, duracaoDe, folgaS = FOL
 
 // 125 -> "2:05"
 function minutosESegundos(s) {
-  const t = Math.max(0, Math.round(Number(s) || 0));
+  const n = Number(s);
+  const t = Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 }
 
 // Hora do relogio, sem segundos: "23:42".
 function horaCurta(ms) {
   const d = new Date(ms);
+  if (!Number.isFinite(d.getTime())) return "";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 

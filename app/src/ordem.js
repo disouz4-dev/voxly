@@ -33,7 +33,9 @@ const PESO = { tocando: 0, pronto: 1, confirmado: 2, confirmando: 2 };
 const peso = i => (i && i.status in PESO) ? PESO[i.status] : 3;
 
 // Sem ordemFila vai para o fim: "|| 0" jogava registro antigo para o topo.
-const ordemDe = i => (i && typeof i.ordemFila === "number") ? i.ordemFila : Infinity;
+// NaN ou Infinity gravados por engano tambem: NaN nas comparacoes jogava o
+// pedido para o topo.
+const ordemDe = i => (i && Number.isFinite(i.ordemFila)) ? i.ordemFila : Infinity;
 
 const ehCafe = i => !!i && i.tipo === "prioridade";
 // So quem ainda vai ser chamado entra na alternancia. Quem esta no palco, sendo
@@ -117,9 +119,12 @@ function ordemParaNovo(fila) {
 // cantou e estava esperando entra junto. Entre os cafes vale a ordem de
 // chegada, e a intercalacao e uma da fila, uma prioridade.
 //
-// Devolve os ids a promover. So promove quem NAO piora de lugar com isso: quem
-// ja esta perto de cantar pela fila principal fica onde esta. Um cafe por
-// cantor, nunca musica em espera, e nada quando a prioridade esta desligada.
+// Devolve os ids a promover. Quem ja esta perto de cantar pela fila principal
+// fica onde esta (virar cafe o jogaria para tras) — MAS so se, ficando, nao
+// passa na frente de ninguem que tambem nao cantou e pediu antes dele. Antes a
+// primeira condicao bastava, e quem chegava depois de varios cafes ficava na
+// fila principal e cantava antes deles (QA da 1.1.28). Um cafe por cantor,
+// nunca musica em espera, e nada quando a prioridade esta desligada.
 //
 // `jaCantou(uid)` diz se a pessoa ja cantou nesta noite; `cantadas(uid)`,
 // quantas.
@@ -147,12 +152,18 @@ function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeA
     .filter(i => (vistos.has(i.cantorUid) ? false : (vistos.add(i.cantorUid), true)));
 
   let atual = lista.map(i => ({ ...i }));
-  const posicao = (fila, id) => ordenarFila(fila, { ultimoFoiCafe }).filter(esperando).findIndex(i => i.id === id);
+  const ordem = fila => ordenarFila(fila, { ultimoFoiCafe }).filter(esperando);
+  const naoCantou = i => i.cantorUid && !cantou(i.cantorUid);
   const promovidos = [];
   for (const c of candidatos) {
-    const antes = posicao(atual, c.id);
+    const agora = ordem(atual);
+    const antes = agora.findIndex(i => i.id === c.id);
     const tentativa = atual.map(i => (i.id === c.id ? { ...i, tipo: "prioridade" } : i));
-    if (posicao(tentativa, c.id) <= antes) {
+    const depois = ordem(tentativa).findIndex(i => i.id === c.id);
+    // Ficar na fila principal passaria na frente de quem nao cantou e chegou antes?
+    const furaria = agora.slice(antes + 1).some(i =>
+      naoCantou(i) && i.cantorUid !== c.cantorUid && ordemDe(i) < ordemDe(c));
+    if (depois <= antes || furaria) {
       atual = tentativa;
       promovidos.push(c.id);
     }
@@ -177,9 +188,14 @@ function ordemParaCantarNaProxima(itens, id) {
       && !i.fixado && ehCafe(i) === ehCafe(alvo))
     .sort((a, b) => ordemDe(a) - ordemDe(b));
   const numeros = lista.map(ordemDe).filter(Number.isFinite);
-  if (!mesmaFila.length) return (numeros.length ? Math.max(...numeros) : 0) + 1;
+  const noFim = (numeros.length ? Math.max(...numeros) : 0) + 1;
+  if (!mesmaFila.length) return noFim;
   const proximo = ordemDe(mesmaFila[0]);
+  if (!Number.isFinite(proximo)) return noFim;   // vizinho sem numero: vai para o fim
   const seguinte = mesmaFila[1] ? ordemDe(mesmaFila[1]) : proximo + 1;
+  // Empate (dois celulares pediram no mesmo instante e ganharam o mesmo
+  // numero): a media dava o proprio numero e ele nao saia do lugar.
+  if (!Number.isFinite(seguinte) || seguinte <= proximo) return proximo + 0.001;
   return (proximo + seguinte) / 2;
 }
 

@@ -48,3 +48,10 @@ test("nome do arquivo com a casa e o dia, sem caracteres proibidos", () => {
   assert.strictEqual(nomeDoArquivo({ ...noite, nomeCasa: "Bar: A/B?" }), "Voxly - Bar A B - 2026-09-17.pdf");
   assert.strictEqual(nomeDoArquivo({}), "Voxly - noite.pdf");
 });
+
+test("data invalida e nome de casa enorme nao estragam o PDF", () => {
+  const h = paginaDaNoite({ primeiraMusica: NaN, ultimaMusica: NaN, inicioPlanejado: "x" }, { agora: NaN });
+  assert.ok(!h.includes("NaN"));
+  const nome = nomeDoArquivo({ nomeCasa: "Bar ".repeat(100), inicioPlanejado: new Date(2026, 8, 17).getTime() });
+  assert.ok(nome.length < 90, nome);
+});

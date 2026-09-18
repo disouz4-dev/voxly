@@ -72,6 +72,8 @@ function saidaEfetiva({ escolhida = "", fixada = "", dispositivos } = {}) {
     if (existe(escolhida)) return { id: escolhida, motivo: "escolhida" };
     return { id: aparelhoDoPadrao(lista), motivo: "escolhida-sumiu" };
   }
+  // "default" fixado nao fixa nada: e justamente o que segue a TV no AirPlay.
+  if (PADRAO.includes(fixada)) fixada = "";
   if (fixada && existe(fixada)) return { id: fixada, motivo: "fixada" };
   return { id: aparelhoDoPadrao(lista), motivo: fixada ? "fixada-sumiu" : "fixou-agora" };
 }

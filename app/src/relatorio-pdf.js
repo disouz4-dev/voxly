@@ -16,12 +16,12 @@ const dois = n => String(n).padStart(2, "0");
 const DIAS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
 
 function data(ms) {
-  if (ms == null) return "—";
+  if (ms == null || !Number.isFinite(new Date(ms).getTime())) return "—";
   const d = new Date(ms);
   return `${DIAS[d.getDay()]}, ${dois(d.getDate())}/${dois(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 function hora(ms) {
-  if (ms == null) return "—";
+  if (ms == null || !Number.isFinite(new Date(ms).getTime())) return "—";
   const d = new Date(ms);
   return `${dois(d.getHours())}:${dois(d.getMinutes())}`;
 }
@@ -30,9 +30,10 @@ function hora(ms) {
 // recusa em nome de arquivo.
 function nomeDoArquivo(r) {
   const quando = r && (r.inicioPlanejado ?? r.primeiraMusica ?? r.geradoEm);
-  const d = quando != null ? new Date(quando) : null;
+  const d = quando != null && Number.isFinite(new Date(quando).getTime()) ? new Date(quando) : null;
   const dia = d ? `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}` : "noite";
-  const casa = String((r && r.nomeCasa) || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+  const casa = String((r && r.nomeCasa) || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+    .replace(/\s+/g, " ").trim().slice(0, 60).trim();
   return ["Voxly", casa, dia].filter(Boolean).join(" - ") + ".pdf";
 }
 
@@ -108,7 +109,7 @@ ${musicas.length ? `<table>
 <h2>Cantores (${cantores.length})</h2>
 ${cantores.length ? `<table>
   <thead><tr><th>Cantor</th><th class="n">Pediu</th><th class="n">Cantou</th></tr></thead>
-  <tbody>${cantores.map(c => `<tr><td>${escapar(c.nome)}</td><td class="n">${c.pediu || 0}</td><td class="n">${c.cantou || 0}</td></tr>`).join("")}</tbody>
+  <tbody>${cantores.map(c => `<tr><td>${escapar(c.nome)}</td><td class="n">${Number(c.pediu) || 0}</td><td class="n">${Number(c.cantou) || 0}</td></tr>`).join("")}</tbody>
 </table>` : "<p>Ninguém registrado.</p>"}
 
 <footer>Gerado pelo Voxly em ${escapar(data(agora))}, ${hora(agora)}.</footer>

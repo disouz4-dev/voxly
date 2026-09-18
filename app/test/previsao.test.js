@@ -29,3 +29,10 @@ test("formatos da tela", () => {
   assert.equal(minutosESegundos(-3), "0:00");
   assert.equal(horaCurta(agora + 42 * 60e3), "22:42");
 });
+
+test("valores invalidos nao aparecem como NaN nem Infinity", () => {
+  assert.strictEqual(minutosESegundos(Infinity), "0:00");
+  assert.strictEqual(minutosESegundos(NaN), "0:00");
+  assert.strictEqual(horaCurta(NaN), "");
+  assert.strictEqual(horaCurta(undefined), "");
+});

@@ -1017,6 +1017,11 @@ document.addEventListener("DOMContentLoaded", () => {
     normNode = audioCtx.createGain();
     normNode.connect(compNode);
 
+    // O audio da musica nasce agora, depois das conferencias da abertura: elas
+    // ja marcaram a saida como aplicada (so nos <audio>), e sem esquecer isto
+    // o reaplicarSaida saia cedo e a musica ia para o padrao do sistema — a
+    // TV, ao espelhar (QA da 1.1.28).
+    saidaAplicada = null;
     reaplicarSaida();
 
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)

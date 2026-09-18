@@ -324,7 +324,7 @@ await deve("a dona", "marcar o fim da noite para 3 minutos atrás (dentro da fol
 await deve("a Ana", "pedir música na folga de 5 minutos", () => pedidoDe(ana, "ana_folga"));
 
 console.log("\n── Limpeza ──");
-for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta", "pagamentos"]) {
+for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta", "pagamentos", "chats", "cobranca"]) {
   const snap = await getDocs(collection(dono.bd, "sessoes", SID, sub));
   for (const d of snap.docs) await deleteDoc(d.ref).catch(() => {});
 }

@@ -22,7 +22,7 @@ function idDoVideo(texto) {
   let url;
   try { url = new URL(/^[a-z]+:\/\//i.test(bruto) ? bruto : "https://" + bruto); }
   catch (_) { return null; }
-  if (!HOSTS.test(url.hostname)) return null;
+  if (!/^https?:$/i.test(url.protocol) || !HOSTS.test(url.hostname)) return null;
 
   let id = null;
   if (/youtu\.be$/i.test(url.hostname)) id = url.pathname.split("/")[1];
@@ -31,7 +31,8 @@ function idDoVideo(texto) {
     const m = url.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/);
     if (m) id = m[1];
   }
-  return id && ID.test(id) ? id : null;
+  // "videoseries" tem 11 letras, mas e playlist embutida, nao video.
+  return id && ID.test(id) && id !== "videoseries" ? id : null;
 }
 
 function urlDoVideo(id) { return `https://www.youtube.com/watch?v=${id}`; }

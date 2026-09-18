@@ -106,3 +106,10 @@ test("trocar a musica por ela mesma nao e repetir", () => {
 test("slot vazio (null) nao atrapalha", () => {
   assert.equal(pedidoRepetido([null, undefined], { musica: "Plush", artista: "X" }), null);
 });
+
+test("titulos em outros alfabetos nao viram a mesma musica", () => {
+  const { chaveDeMusica } = require("../src/trava");
+  assert.notStrictEqual(chaveDeMusica("Кино", "Группа"), chaveDeMusica("Звезда", "Группа"));
+  assert.notStrictEqual(chaveDeMusica("夜に駆ける", "YOASOBI"), chaveDeMusica("アイドル", "YOASOBI"));
+  assert.strictEqual(chaveDeMusica("Evidências", "Chitãozinho"), chaveDeMusica("evidencias", "CHITAOZINHO"));
+});
