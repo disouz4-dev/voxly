@@ -22,12 +22,11 @@ function cartoesDoGuia(regras) {
     { tipo: "regra", marca: "♪", titulo: "Uma música por vez na fila",
       detalhe: "Cantou a sua, pode pedir a próxima." },
   ];
+  // Sem tempo de fila desde 18/09: quem ainda nao cantou entra intercalado
+  // quando o pessoal da fila ja cantou (ordem.js promocoesDeCafe).
   if (r.prioridadeAtiva === true) {
-    const min = Number(r.prioridadeMinutos);
     cartoes.push({ tipo: "regra", marca: "☕", titulo: "Quem ainda não cantou entra intercalado",
-      detalhe: Number.isFinite(min) && min > 0
-        ? `Quando a espera passa de ${min} min: um da fila, um recém-chegado — a fila nunca para.`
-        : "Um da fila, um recém-chegado — a fila nunca para." });
+      detalhe: "Depois que o pessoal da fila já cantou, quem chega entra na vez: um da fila, um recém-chegado — a fila nunca para." });
   }
   if (r.permitirDuo === true) {
     cartoes.push({ tipo: "regra", marca: "🎤", titulo: "Chame alguém para cantar junto",

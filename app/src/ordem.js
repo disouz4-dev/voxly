@@ -95,21 +95,32 @@ function ordemParaNovo(fila) {
 // depois, ja com a fila grande, entrava como cafe e passava na frente dele —
 // sendo que os dois ainda nao tinham cantado. Visto no show de 17/09.
 //
-// A regra do dono: se a fila virou prioridade, quem ainda nao cantou e ja
-// estava esperando entra junto, e entre os cafes vale a ordem de chegada.
+// A regra do dono (18/09), que substituiu o gatilho por tempo de fila: com a
+// prioridade ligada, quem ainda nao cantou vira cafe com leite quando todo
+// mundo que ja cantou e esta esperando na fila ja cantou pelo menos
+// `cederApos` musicas (ele escolheu 1). E, se a fila ja tem cafe, quem nao
+// cantou e estava esperando entra junto. Entre os cafes vale a ordem de
+// chegada, e a intercalacao e uma da fila, uma prioridade.
 //
 // Devolve os ids a promover. So promove quem NAO piora de lugar com isso: quem
 // ja esta perto de cantar pela fila principal fica onde esta. Um cafe por
 // cantor, nunca musica em espera, e nada quando a prioridade esta desligada.
 //
-// `jaCantou(uid)` diz se a pessoa ja cantou nesta noite.
-function promocoesDeCafe(itens, { jaCantou, prioridadeAtiva = true } = {}) {
+// `jaCantou(uid)` diz se a pessoa ja cantou nesta noite; `cantadas(uid)`,
+// quantas.
+function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeAtiva = true } = {}) {
   if (prioridadeAtiva === false) return [];
   const lista = (Array.isArray(itens) ? itens : []).filter(Boolean);
   const esperando = i => i.status === "aguardando" && i.slot !== "espera";
-  if (!lista.some(i => esperando(i) && ehCafe(i))) return [];   // a fila nao virou prioridade
-
   const cantou = typeof jaCantou === "function" ? jaCantou : () => false;
+  const quantas = typeof cantadas === "function" ? cantadas : (uid => (cantou(uid) ? 1 : 0));
+
+  const jaTemCafe = lista.some(i => esperando(i) && ehCafe(i));
+  const veteranos = lista.filter(i => esperando(i) && i.cantorUid && cantou(i.cantorUid));
+  const todosJaCantaram = cederApos > 0 && veteranos.length > 0
+    && veteranos.every(i => quantas(i.cantorUid) >= cederApos);
+  if (!jaTemCafe && !todosJaCantaram) return [];   // a fila nao virou prioridade
+
   const pendente = new Set(["aguardando", "confirmando", "confirmado", "pronto", "tocando"]);
   const comCafe = new Set(lista.filter(i => ehCafe(i) && pendente.has(i.status)).map(i => i.cantorUid));
 

@@ -50,7 +50,6 @@ async function violacao(regra, detalhe) {
 }
 
 // ── Elenco e repertório ─────────────────────────────────────
-const LIMITE_CAFE = 12;   // minutos: com 7 pedidos na fila (~28 min) os atrasados viram café com leite
 // Ingresso da noite: o KJ cobra R$ 10 por Pix. A chave é de teste; o dinheiro
 // do roteiro não existe, o que se testa é o painel, as marcas e os totais.
 const INGRESSO = { ativa: true, valor: 10, chave: "teste@voxly.app", nome: "Teste Voxly", cidade: "Sao Paulo" };
@@ -104,13 +103,12 @@ async function prepararSessao() {
     await iniciarSessao({ nomeCasa: 'Teste de show — anos 2000', inicio: agora - 5 * 60e3, termino: agora + 3 * 3600e3,
                           ingresso: ${JSON.stringify(INGRESSO)} });
     document.getElementById('prioridade-ativa').checked = true;
-    document.getElementById('prioridade-minutos').value = ${LIMITE_CAFE};
     document.getElementById('permitir-duo').checked = true;
     document.getElementById('duo-ilimitado').checked = true;
     await salvarRegras();
     return SESSAO_ID;
   })()`);
-  await acao(`regras: café com leite acima de ${LIMITE_CAFE} min, duo liberado`);
+  await acao("regras: prioridade ligada (quem não cantou entra intercalado quando a fila já cantou), duo liberado");
 
   const cobranca = await g(`(async () => {
     const pub = await db.collection('sessoes').doc(SESSAO_ID).collection('cobranca').doc('publico').get();
@@ -147,9 +145,9 @@ async function cantorPede(c) {
       uid: ${JSON.stringify(c.uid)}, nomeArtistico: ${JSON.stringify(c.nome)}, status: 'aqui',
       primeiraMusicaCantada: false, entrouEm: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     const fila = (await ref.collection('fila').where('status', '==', 'aguardando').get()).docs.map(d => d.data());
-    const pres = (await ref.collection('presencas').doc(${JSON.stringify(c.uid)}).get()).data() || {};
-    const tipo = VoxlyPrioridade.ehPrioridade({ regras, jaCantou: !!pres.primeiraMusicaCantada, fila,
-      slot: 'ativa', cantorUid: ${JSON.stringify(c.uid)} }) ? 'prioridade' : 'normal';
+    // Como o app do cantor desde 18/09: todo pedido entra normal, e a Gerencia
+    // decide na hora quem vira cafe com leite (promocoesDeCafe).
+    const tipo = 'normal';
     const duo = ${JSON.stringify(c.duoCom || null)};
     const duoPres = duo ? ((await ref.collection('presencas').doc(duo).get()).data() || null) : null;
     await ref.collection('fila').doc('pedido_' + ${JSON.stringify(c.uid)}).set({

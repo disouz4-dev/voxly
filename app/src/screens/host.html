@@ -600,11 +600,10 @@ footer strong { color:var(--ambar); font-weight:700; }
         <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px;">☕ Prioridade (Café com Leite)</div>
         <div class="rule-row">
           <label>Ativar prioridade:</label>
-          <label class="rule-toggle"><input type="checkbox" id="prioridade-ativa" onchange="togglePrioridade()"><span class="rule-slider"></span></label>
+          <label class="rule-toggle"><input type="checkbox" id="prioridade-ativa"><span class="rule-slider"></span></label>
         </div>
-        <div class="rule-row" id="row-prioridade-min">
-          <label>Espera mínima (min):</label>
-          <input type="number" id="prioridade-minutos" class="rule-input" min="0" value="40">
+        <div style="font-size:.7rem;color:var(--mudo);line-height:1.45;margin:-2px 0 4px;">
+          Depois que o pessoal da fila já cantou, quem ainda não cantou entra intercalado: uma da fila, uma prioridade.
         </div>
 
         <div style="font-size:.68rem;color:var(--teal);text-transform:uppercase;letter-spacing:1.2px;margin:12px 0 6px;">🎤 Duo / Participações</div>
@@ -1173,7 +1172,6 @@ https://www.youtube.com/@canal/videos"></textarea>
 
 <script src="../seguro.js"></script>
 <script src="../fila.js"></script>
-<script src="../prioridade.js"></script>
 <script src="../chamada.js"></script>
 <script src="../relatorio.js"></script>
 <script src="../ordem.js"></script>
@@ -1225,7 +1223,8 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Quem ja cantou nesta noite, pelo historico da sessao (a presenca some
   // quando o cantor fica offline; o historico nao). Usado pela promocao de
   // cafe com leite (ordem.js promocoesDeCafe).
-  let _jaCantaram      = new Set();
+  let _cantadasPor     = new Map();   // uid -> musicas cantadas nesta noite (cantor principal)
+  let _filaCompleta    = [];          // todos os pedidos pendentes, inclusive os em espera
   let _promovendoCafe  = false;
   // Ingresso da noite (ver o bloco "Entrada paga"). Declarados aqui em cima:
   // funcoes que rodam na carga da tela ja leem estes nomes.
@@ -1240,7 +1239,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   let escutarSessaoDocUnsub = null;
   let regras           = {
     musicasPorCiclo: 1, duetasPorCiclo: 1, maxFila: 20, segundosConfirmacao: 15,
-    prioridadeAtiva: true, prioridadeMinutos: 40,
+    prioridadeAtiva: true,
     permitirDuo: true, maxParticipacoesDuo: 1
   };
   let cicloAtual       = 1;
@@ -1302,18 +1301,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     // musicasPorCiclo é sempre 1 — gerenciado automaticamente pelo sistema de slots
     document.getElementById('max-queue').value                = regras.maxFila;
     document.getElementById('prioridade-ativa').checked       = regras.prioridadeAtiva !== false;
-    document.getElementById('prioridade-minutos').value       = regras.prioridadeMinutos ?? 40;
     document.getElementById('permitir-duo').checked           = regras.permitirDuo !== false;
     document.getElementById('duo-ilimitado').checked          = regras.maxParticipacoesDuo === 0;
     document.getElementById('max-participacoes-duo').value    = regras.maxParticipacoesDuo || 1;
-    togglePrioridade();
     toggleDuo();
   }
 
-  function togglePrioridade() {
-    const ativa = document.getElementById('prioridade-ativa').checked;
-    document.getElementById('row-prioridade-min').style.display = ativa ? 'flex' : 'none';
-  }
 
   function toggleDuo() {
     const ativo = document.getElementById('permitir-duo').checked;
@@ -2487,7 +2480,16 @@ https://www.youtube.com/@canal/videos"></textarea>
   const resumoPedido = (id, d = {}) => ({ id, cantor: d.nomeArtistico, musica: d.musica, artista: d.artista,
     status: d.status, slot: d.slot, tipo: d.tipo, ordemFila: d.ordemFila, duo: d.duoNome || null });
   const resumoCantor = (id, d = {}) => ({ id, nome: d.nomeArtistico, status: d.status, modo: d.modo || null });
-  const resumoSimples = (id, d = {}) => ({ id, status: d.status, ...(d.musica ? { musica: d.musica } : {}) });
+  // Toda linha do diario diz QUEM (pedido do dono, 18/09): antes o historico
+  // registrava a musica mas nao o cantor, e reconstruir a noite exigia cruzar
+  // tres tipos de evento.
+  const resumoHistorico = (id, d = {}) => ({ id, cantor: d.nomeArtistico || null,
+    duo: (d.duoCom && d.duoCom.nomeArtistico) || null, musica: d.musica, artista: d.artista || null, status: d.status });
+  const resumoConvite = (id, d = {}) => ({ id, tipo: d.tipo || 'convite', de: d.deNome || null, para: d.paraNome || null,
+    musica: d.musica || null, status: d.status, ...(d.resposta != null ? { resposta: d.resposta } : {}) });
+  const resumoBusca = (id, d = {}) => ({ id, termo: d.termo || null, status: d.status });
+  const resumoPagamento = (id, d = {}) => ({ id, cantor: d.nomeArtistico || null, pagador: d.nomePagador || null,
+    valor: d.valor ?? null, status: d.status, cortesia: !!d.cortesia });
   const resumoSessao = (id, d = {}) => ({ id, casa: d.nomeCasa, status: d.status });
 
   // Vigias da sessao aberta: tudo que acontece dentro dela.
@@ -2496,9 +2498,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     const ref = db.collection('sessoes').doc(SESSAO_ID);
     vigiarNoDiario('fila', ref.collection('fila'), resumoPedido);
     vigiarNoDiario('cantor', ref.collection('presencas'), resumoCantor, { ignorar: ['ultimoHeartbeat'] });
-    vigiarNoDiario('convite', ref.collection('convites'), resumoSimples);
-    vigiarNoDiario('busca', ref.collection('buscas'), resumoSimples);
-    vigiarNoDiario('historico', ref.collection('historico'), resumoSimples);
+    vigiarNoDiario('convite', ref.collection('convites'), resumoConvite);
+    vigiarNoDiario('busca', ref.collection('buscas'), resumoBusca);
+    vigiarNoDiario('historico', ref.collection('historico'), resumoHistorico);
+    vigiarNoDiario('ingresso', ref.collection('pagamentos'), resumoPagamento);
   }
   function escutarFila() {
     vigiarSessaoNoDiario();
@@ -2515,7 +2518,8 @@ https://www.youtube.com/@canal/videos"></textarea>
         // na frente a cada atualizacao e desfazia o arrastar do KJ.
         filaData = VoxlyOrdem.ordenarFila(
           snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'));
-        promoverCafesPendentes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        _filaCompleta = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        promoverCafesPendentes(_filaCompleta);
 
         // Restaura currentSong depois de o app reiniciar no meio de uma
         // musica. So enquanto ESTE host ainda nao mexeu na fila: o write de
@@ -2706,17 +2710,25 @@ https://www.youtube.com/@canal/videos"></textarea>
     }).join('');
   }
 
-  // ── Fila virou prioridade: quem nao cantou entra junto ───
+  // ── Prioridade (cafe com leite), decidida na hora ─────────
   // O cafe com leite e carimbado no pedido e congelava: quem pediu com a fila
   // curta ficava como normal, e quem chegou depois, ja como cafe, passava na
   // frente dele (show de 17/09). A regra mora em ordem.js; aqui a Gerencia
   // dona grava a promocao, para todas as telas verem igual.
   async function promoverCafesPendentes(itens) {
     if (!SESSAO_ID || modoOffline || _promovendoCafe) return;
+    const cantadas = uid => {
+      const p = presencasData.find(x => x.id === uid || x.uid === uid);
+      const daPresenca = p ? (p.musicasCantadas || (p.primeiraMusicaCantada ? 1 : 0)) : 0;
+      return Math.max(_cantadasPor.get(uid) || 0, daPresenca);
+    };
     const ids = VoxlyOrdem.promocoesDeCafe(itens, {
       prioridadeAtiva: regras.prioridadeAtiva !== false,
-      jaCantou: uid => _jaCantaram.has(uid) || presencasData.some(p =>
-        (p.id === uid || p.uid === uid) && p.primeiraMusicaCantada),
+      jaCantou: uid => cantadas(uid) > 0,
+      cantadas,
+      // Decisao do dono (18/09): quem chega entra na vez quando todo mundo da
+      // fila ja cantou pelo menos 1.
+      cederApos: 1,
     });
     if (!ids.length) return;
     _promovendoCafe = true;
@@ -3334,10 +3346,6 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   // ── Regras / Config ───────────────────────────────────────
-  function minutosDoCampo(id, padrao) {
-    const n = parseInt(document.getElementById(id).value, 10);
-    return Number.isFinite(n) && n >= 0 ? n : padrao;
-  }
   async function salvarRegras() {
     regras = {
       musicasPorCiclo:     1,
@@ -3345,7 +3353,6 @@ https://www.youtube.com/@canal/videos"></textarea>
       segundosConfirmacao: 15,
       prioridadeAtiva:     document.getElementById('prioridade-ativa').checked,
       // 0 e uma escolha valida (cafe com leite sempre); "|| 40" a apagava.
-      prioridadeMinutos:   minutosDoCampo('prioridade-minutos', 40),
       permitirDuo:         document.getElementById('permitir-duo').checked,
       maxParticipacoesDuo: document.getElementById('duo-ilimitado').checked ? 0 : (parseInt(document.getElementById('max-participacoes-duo').value) || 1),
     };
@@ -4441,7 +4448,6 @@ https://www.youtube.com/@canal/videos"></textarea>
   function enviarRegrasAoPublico() {
     playerCmd(JSON.stringify({ cmd: 'regras-publico', regras: {
       prioridadeAtiva: !!(regras && regras.prioridadeAtiva),
-      prioridadeMinutos: regras && regras.prioridadeMinutos,
       permitirDuo: !!(regras && regras.permitirDuo),
     } }));
   }
@@ -4666,8 +4672,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       .onSnapshot(snap => {
         // So o cantor principal conta como "ja cantou": o parceiro de dueto
         // continua podendo ser cafe com leite, como na regra de sempre.
-        _jaCantaram = new Set(snap.docs.map(d => d.data())
-          .filter(h => h && h.status !== 'pulada' && h.cantorUid).map(h => h.cantorUid));
+        _cantadasPor = new Map();
+        for (const h of snap.docs.map(d => d.data())) {
+          if (!h || h.status === 'pulada' || !h.cantorUid) continue;
+          _cantadasPor.set(h.cantorUid, (_cantadasPor.get(h.cantorUid) || 0) + 1);
+        }
         const el = document.getElementById('historico-sessao-list');
         if (!el) return;
         if (snap.empty) {
@@ -5107,14 +5116,17 @@ https://www.youtube.com/@canal/videos"></textarea>
     const duoUid  = selDuo?.value || '';
     const duoNome = duoUid ? (selDuo.options[selDuo.selectedIndex]?.textContent || '') : null;
 
-    const cantor    = presencasData.find(p => (p.id || p.uid) === uid);
-    // Regra unica, compartilhada com o app do cantor: as duas contas eram
-    // diferentes e nenhuma descontava o slot de espera.
-    const tipo = VoxlyPrioridade.ehPrioridade({
-      regras,
-      jaCantou: !!(cantor && cantor.primeiraMusicaCantada),
-      fila: filaData, slot: 'ativa', cantorUid: uid,
-    }) ? 'prioridade' : 'normal';
+    // Entra normal: quem vira cafe com leite e decidido na hora, pela fila
+    // inteira (promoverCafesPendentes), e nao carimbado no pedido.
+    const tipo = 'normal';
+
+    // O cantor ja tem essa musica pendente? No show de 17/09 a Gerencia
+    // adicionou "Ainda Lembro" que a Lady Lu ja tinha pedido pelo celular, e
+    // a copia ficou 47 min na fila. As vezes e de proposito (trocar a
+    // versao), entao pergunta em vez de proibir.
+    const repetido = VoxlyTrava.pedidoRepetido(_filaCompleta.filter(i => i.cantorUid === uid),
+      { musica: musicaModalSelecionada.musica, artista: musicaModalSelecionada.artista });
+    if (repetido && !confirm(`${nome} já tem "${repetido.musica}" na fila${repetido.slot === 'espera' ? ' (em espera)' : ''}. Adicionar de novo mesmo assim?`)) return;
 
     const item = {
       cantorUid: uid, nomeArtistico: nome,
@@ -5625,7 +5637,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'confirmarExpulsao','confirmarEdicaoManualYt','confirmarDuoFila','baixarEscolhido','atualizarYtDlp',
       'alternarPrevia','adicionarMusicaManual','adicionarFaixaTema','adicionarCantorManual','adicionarArquivoTema',
       'abrirVersoesLocais','abrirModalCandidatos','abrirModalMusicaIdx','abrirModalExpulsar','abrirModalExpulsarCantor',
-      'abrirModalRelatorios','togglePrioridade','toggleDuo','toggleDuoIlimitado','escolherSaida','mudarVolume',
+      'abrirModalRelatorios','toggleDuo','toggleDuoIlimitado','escolherSaida','mudarVolume',
       'ouvirPrevia','onDrop',
       // fluxo da noite
       'iniciarSessao','salvarEdicaoSessao','expurgarSessoesAnteriores','apagarSessao','preservarSessao',
@@ -5635,11 +5647,19 @@ https://www.youtube.com/@canal/videos"></textarea>
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
       'cantarNaProxima',
     ];
+    // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
+    // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.
+    const comQuem = a => {
+      if (typeof a !== 'string') return a;
+      const i = (typeof _filaCompleta !== 'undefined' ? _filaCompleta : []).find(x => x.id === a)
+        || (typeof filaData !== 'undefined' ? filaData : []).find(x => x.id === a);
+      return i ? { id: a, cantor: i.nomeArtistico || null, musica: i.musica || null } : a;
+    };
     for (const nome of NOMES) {
       const original = window[nome];
       if (typeof original !== 'function') continue;
       window[nome] = function (...args) {
-        diario('kj.' + nome, { args: paraDiario(args) });
+        diario('kj.' + nome, { args: paraDiario(args).map(comQuem) });
         try {
           const r = original.apply(this, args);
           if (r && typeof r.then === 'function') {

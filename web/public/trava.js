@@ -41,7 +41,34 @@ function chaveDePedido(uid, agora = Date.now(), sorte = Math.random) {
   return `${dono}_${agora.toString(36)}${acaso}`;
 }
 
-const api = { criarTrava, chaveDePedido };
+// ── A mesma musica duas vezes ─────────────────────────────
+// No show de 17/09 a Lady Lu mandou "Plush" duas vezes em 13 segundos (Wi-Fi
+// lento, achou que o primeiro nao tinha ido): uma foi para a fila e a outra
+// para a espera. Ela cantou a primeira, a da espera subiu e ela foi chamada de
+// novo para a mesma musica. A chave do pedido nao pega isso — sao dois
+// pedidos de verdade, com o modal aberto duas vezes.
+
+// Compara pelo que a pessoa le: sem acento, maiuscula, pontuacao, e sem o
+// sufixo de versao "- [a1b2c3]" que o catalogo poe no nome.
+function chaveDeMusica(musica, artista) {
+  const limpar = s => String(s || "")
+    .replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return limpar(musica) + "|" + limpar(artista);
+}
+
+// O pedido pendente da mesma musica, ou null. `ignorarId`: o pedido que esta
+// sendo trocado (trocar a musica por ela mesma nao e repetir).
+function pedidoRepetido(pendentes, pedido, ignorarId) {
+  const alvo = chaveDeMusica(pedido && pedido.musica, pedido && pedido.artista);
+  const ativos = new Set(["aguardando", "confirmando", "confirmado", "pronto", "tocando"]);
+  return (Array.isArray(pendentes) ? pendentes : []).find(i =>
+    i && i.id !== ignorarId && (!i.status || ativos.has(i.status))
+    && chaveDeMusica(i.musica, i.artista) === alvo) || null;
+}
+
+const api = { criarTrava, chaveDePedido, chaveDeMusica, pedidoRepetido };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyTrava = api;
 

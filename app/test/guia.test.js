@@ -17,20 +17,15 @@ test("sem regras conhecidas: só os passos e as regras que sempre valem", () => 
   assert.ok(!m.includes("🎤"), "dueto também não");
 });
 
-test("prioridade ligada: aparece o café com leite, com o limite do KJ", () => {
-  const c = cartoesDoGuia({ prioridadeAtiva: true, prioridadeMinutos: 25 }).find(x => x.marca === "☕");
+test("prioridade ligada: aparece o café com leite, intercalado e sem tempo de fila", () => {
+  const c = cartoesDoGuia({ prioridadeAtiva: true }).find(x => x.marca === "☕");
   assert.ok(c);
-  assert.match(c.detalhe, /25 min/);
   assert.match(c.titulo + c.detalhe, /intercal/i, "é intercalado com a fila, não 'passa na frente'");
+  assert.doesNotMatch(c.detalhe, /min/, "a regra nao tem mais minutos de espera");
 });
 
 test("prioridade desligada: o cartão some", () => {
-  assert.ok(!titulos({ prioridadeAtiva: false, prioridadeMinutos: 25 }).includes("☕"));
-});
-
-test("limite zero: o café com leite vale sempre", () => {
-  const c = cartoesDoGuia({ prioridadeAtiva: true, prioridadeMinutos: 0 }).find(x => x.marca === "☕");
-  assert.doesNotMatch(c.detalhe, /0 min/);
+  assert.ok(!titulos({ prioridadeAtiva: false }).includes("☕"));
 });
 
 test("dueto ligado: aparece o cartão do dueto", () => {

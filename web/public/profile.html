@@ -453,7 +453,6 @@
   <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
   <script src="/offline-client.js"></script>
   <script src="/sessao-regras.js"></script>
-  <script src="/prioridade.js"></script>
   <script src="/ordem.js"></script>
   <script src="/trava.js"></script>
   <script src="/texto.js"></script>
@@ -538,7 +537,7 @@
     // Sessão vem da URL (?sessao=CODIGO) ou do localStorage
     let SESSAO_ID    = null;
     let sessaoAtiva  = false;
-    let sessaoRegras = { permitirDuo: true, maxParticipacoesDuo: 1, prioridadeAtiva: true, prioridadeMinutos: 40 };
+    let sessaoRegras = { permitirDuo: true, maxParticipacoesDuo: 1, prioridadeAtiva: true };
     let sessaoTermino = null;   // horario que o KJ marcou para acabar
     // O documento da sessao lido ao resolver qual e a sessao: reaproveitado ao
     // entrar, em vez de buscar de novo (era uma ida a mais ao servidor).
@@ -1081,6 +1080,14 @@ function escutarFila() {
       const slot      = slotAtivo;
       const trocando  = itemTrocando;
       if (!escolhida) { errEl.textContent = 'Selecione uma música.'; return; }
+      // A mesma musica duas vezes (show de 17/09: a Lady Lu mandou "Plush" de
+      // novo achando que o primeiro nao tinha ido, e foi chamada duas vezes).
+      const repetido = VoxlyTrava.pedidoRepetido([filhaAtiva, filhaEspera],
+        { musica: escolhida.musica, artista: escolhida.artista }, trocando && trocando.id);
+      if (repetido) {
+        errEl.textContent = `Você já pediu essa música — ela está ${repetido.slot === 'espera' ? 'em espera' : 'na sua fila'}.`;
+        return;
+      }
       if (!modoOffline && !VoxlyEntrada.entradaLiberada(sessaoAtualDoc, meuPagamento)) {
         errEl.textContent = 'Pague o ingresso da noite para pedir música.';
         return;
@@ -1130,21 +1137,12 @@ function escutarFila() {
           ordemFila = trocando.ordemFila;
           tipo      = trocando.tipo || 'normal';
         } else {
-          // As duas leituras sao independentes: em paralelo, uma espera em vez de duas.
-          const [filaSnap, presSnap] = await Promise.all([
-            sessaoRef.collection('fila').where('status','==','aguardando').get(),
-            sessaoRef.collection('presencas').doc(currentUser.uid).get(),
-          ]);
-          // Mesma regra da Gerencia, do mesmo arquivo. A conta daqui contava as
-          // musicas em espera como tempo de fila e promovia gente a toa.
-          tipo = VoxlyPrioridade.ehPrioridade({
-            regras: sessaoRegras,
-            jaCantou: !!(presSnap.exists && presSnap.data().primeiraMusicaCantada),
-            fila: filaSnap.docs.map(d => d.data()),
-            slot, cantorUid: currentUser.uid,
-          }) ? 'prioridade' : 'normal';
-          // A prioridade decide onde entra: intercalado com a fila principal,
-          // nunca na frente de todo mundo (ordem.js).
+          const filaSnap = await sessaoRef.collection('fila').where('status','==','aguardando').get();
+          // Todo pedido entra normal. Quem vira cafe com leite e decidido pela
+          // Gerencia, na hora, olhando a fila inteira (ordem.js
+          // promocoesDeCafe) — carimbar aqui congelava a decisao e passava
+          // gente na frente de quem pediu antes (show de 17/09).
+          tipo = 'normal';
           // Chegada e chegada: quem decide quando ele canta e a intercalacao,
           // feita na hora de montar a fila (ordem.js).
           ordemFila = VoxlyOrdem.ordemParaNovo(filaSnap.docs.map(d => d.data()));

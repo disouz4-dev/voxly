@@ -273,3 +273,43 @@ test("o ultimo da fila so troca com o penultimo", () => {
 test("pedido inexistente nao faz nada", () => {
   assert.equal(ordemParaCantarNaProxima([pedido("bia", 1)], "ninguem"), null);
 });
+
+// ── Regra de 18/09: sem tempo de fila, so "todo mundo ja cantou" ──
+// Com a prioridade ligada, quem ainda nao cantou entra intercalado assim que
+// todo mundo que ja cantou e esta na fila cantou pelo menos 1 (a escolha do
+// dono). No comeco da noite, com ninguem tendo cantado, e ordem de chegada.
+
+const contagem = { v1: 1, v2: 3, v3: 1 };
+const cantadas = uid => contagem[uid] || 0;
+const jaCantouV = uid => cantadas(uid) > 0;
+
+test("todo mundo da fila ja cantou: quem chega entra intercalado", () => {
+  const fila = [pedido("v1", 1), pedido("v2", 2), pedido("v3", 3), pedido("novo", 4)];
+  const promover = promocoesDeCafe(fila, { jaCantou: jaCantouV, cantadas, cederApos: 1 });
+  assert.deepEqual(promover, ["novo"]);
+  const depois = fila.map(i => (promover.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+  assert.deepEqual(ordemIds(depois), ["v1", "novo", "v2", "v3"]);
+});
+
+test("comeco da noite, ninguem cantou: ordem de chegada, sem prioridade", () => {
+  const fila = [pedido("a", 1), pedido("b", 2), pedido("c", 3)];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou: () => false, cantadas: () => 0, cederApos: 1 }), []);
+});
+
+test("dois que chegaram entram os dois, e o que chegou antes canta antes", () => {
+  const fila = [pedido("v1", 1), pedido("v2", 2), pedido("v3", 3), pedido("novo1", 4), pedido("novo2", 5)];
+  const promover = promocoesDeCafe(fila, { jaCantou: jaCantouV, cantadas, cederApos: 1 });
+  assert.deepEqual(promover, ["novo1", "novo2"]);
+  const depois = fila.map(i => (promover.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+  assert.deepEqual(ordemIds(depois), ["v1", "novo1", "v2", "novo2", "v3"]);
+});
+
+test("com o numero em 2, quem so cantou 1 ainda segura a prioridade", () => {
+  const fila = [pedido("v1", 1), pedido("v2", 2), pedido("novo", 3)];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou: jaCantouV, cantadas, cederApos: 2 }), []);
+});
+
+test("prioridade desligada: nem a regra nova promove", () => {
+  const fila = [pedido("v1", 1), pedido("v2", 2), pedido("novo", 3)];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou: jaCantouV, cantadas, cederApos: 1, prioridadeAtiva: false }), []);
+});

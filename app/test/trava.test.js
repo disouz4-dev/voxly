@@ -77,3 +77,32 @@ test("uid ausente ou com barra não produz caminho inválido", () => {
   assert.ok(!chaveDePedido(null, 1, () => 0.3).includes("null"));
   assert.ok(!chaveDePedido("a/b", 1, () => 0.3).includes("/"));
 });
+
+// ── A mesma musica duas vezes ─────────────────────────────
+const { chaveDeMusica, pedidoRepetido } = require("../src/trava");
+
+test("mesma musica mesmo com acento, caixa e sufixo de versao diferentes", () => {
+  assert.equal(chaveDeMusica("Plush - [a1b2c3]", "Stone Temple Pilots"), chaveDeMusica("plush", "STONE TEMPLE PILOTS"));
+  assert.equal(chaveDeMusica("Coração", "Artista"), chaveDeMusica("Coracao", "artista"));
+  assert.notEqual(chaveDeMusica("Plush", "Stone Temple Pilots"), chaveDeMusica("Plush", "Outra Banda"));
+});
+
+test("o caso da Lady Lu: a mesma musica ja pendente e barrada", () => {
+  const meus = [{ id: "p1", musica: "Plush", artista: "Stone Temple Pilots", status: "aguardando", slot: "ativa" }];
+  const r = pedidoRepetido(meus, { musica: "Plush", artista: "Stone Temple Pilots" });
+  assert.equal(r && r.id, "p1");
+});
+
+test("musica ja cantada nao conta como repetida pendente", () => {
+  const meus = [{ id: "p1", musica: "Plush", artista: "Stone Temple Pilots", status: "cantada" }];
+  assert.equal(pedidoRepetido(meus, { musica: "Plush", artista: "Stone Temple Pilots" }), null);
+});
+
+test("trocar a musica por ela mesma nao e repetir", () => {
+  const meus = [{ id: "p1", musica: "Plush", artista: "Stone Temple Pilots", status: "aguardando" }];
+  assert.equal(pedidoRepetido(meus, { musica: "Plush", artista: "Stone Temple Pilots" }, "p1"), null);
+});
+
+test("slot vazio (null) nao atrapalha", () => {
+  assert.equal(pedidoRepetido([null, undefined], { musica: "Plush", artista: "X" }), null);
+});
