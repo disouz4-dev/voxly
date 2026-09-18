@@ -59,6 +59,9 @@
     .nav-btn { flex: 1; padding: 12px 0; background: none; border: none; color: var(--muted); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.5px; transition: color 0.2s; }
     .nav-btn.active { color: var(--accent); }
     .nav-btn span { font-size: 1.3rem; }
+    .nav-btn { position: relative; }
+    .nav-badge { position: absolute; top: 6px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #000; font-size: .65rem; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+    .nav-badge[hidden] { display: none; }
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: flex-end; justify-content: center; }
     .modal-overlay.open { display: flex; }
     #entradaSection { display:none; }
@@ -335,11 +338,6 @@
         <div class="card" id="respostasList"></div>
       </div>
 
-      <div class="section" id="conversasSection" style="display:none;">
-        <div class="section-title">💬 Conversas de dueto</div>
-        <div class="card" id="conversasList"></div>
-      </div>
-
       <div class="section">
         <div class="section-title">🎶 Fila do Evento</div>
         <div class="card" id="filaEventoCard">
@@ -368,6 +366,18 @@
       <div id="cat-lista"><div class="loading">Carregando catálogo...</div></div>
     </div>
 
+    <!-- TAB: CHAT — conversas com quem vai cantar junto (pedido do dono, 17/09) -->
+    <div id="tab-chat" style="display:none;">
+      <div class="section" id="conversasSection">
+        <div class="section-title">💬 Conversas de dueto</div>
+        <div class="card" id="conversasList"></div>
+        <div class="card" id="conversasVazio" style="font-size:.85rem;color:var(--muted);line-height:1.6;">
+          Nenhuma conversa ainda.<br>
+          Quando alguém aceitar cantar com você (ou você aceitar um convite), a conversa aparece aqui.
+        </div>
+      </div>
+    </div>
+
     <!-- TAB: HISTÓRICO -->
     <div id="tab-historico" style="display:none;">
       <div class="section">
@@ -383,6 +393,7 @@
   <div class="bottom-nav">
     <button class="nav-btn active" id="nav-fila"      onclick="mudarTab('fila')"><span>🎤</span>Fila</button>
     <button class="nav-btn"        id="nav-catalogo"  onclick="mudarTab('catalogo')"><span>🎵</span>Catálogo</button>
+    <button class="nav-btn"        id="nav-chat"      onclick="mudarTab('chat')"><span>💬</span>Chat<b class="nav-badge" id="navChatBadge" hidden></b></button>
     <button class="nav-btn"        id="nav-historico" onclick="mudarTab('historico')"><span>📋</span>Histórico</button>
     <button class="nav-btn"                           onclick="sair()"><span>🚪</span>Sair</button>
   </div>
@@ -1822,6 +1833,8 @@ function escutarFila() {
       const linha = document.getElementById('prefChatLinha');
       if (!linha) return;
       linha.style.display = modoOffline ? 'none' : '';
+      // Sem internet (so a rede da casa) nao ha conversa: o botao nem aparece.
+      document.getElementById('nav-chat').style.display = modoOffline ? 'none' : '';
       document.getElementById('prefChat').checked = VoxlyChat.aceitaConversa(perfilData);
       const dueto = document.getElementById('prefDuetoLinha');
       if (dueto) {
@@ -1936,15 +1949,18 @@ function escutarFila() {
     }
 
     function desenharConversas() {
-      const sec = document.getElementById('conversasSection');
       const el  = document.getElementById('conversasList');
-      if (!_conversas.length) { sec.style.display = 'none'; el.innerHTML = ''; return; }
-      sec.style.display = 'block';
+      const badge = document.getElementById('navChatBadge');
+      document.getElementById('conversasVazio').style.display = _conversas.length ? 'none' : '';
+      el.style.display = _conversas.length ? '' : 'none';
+      if (!_conversas.length) { el.innerHTML = ''; badge.hidden = true; return; }
 
       const naoLidas = _conversas.reduce((n, c) =>
         n + (c.id === _conversaAberta ? 0 : VoxlyChat.naoLidas(c, currentUser.uid)), 0);
-      if (naoLidas > _naoLidasAntes) mostrarToast('💬 Nova mensagem de dueto', 3500);
+      if (naoLidas > _naoLidasAntes) mostrarToast('💬 Nova mensagem de dueto — veja em Chat', 3500);
       _naoLidasAntes = naoLidas;
+      badge.textContent = naoLidas > 9 ? '9+' : String(naoLidas);
+      badge.hidden = !naoLidas;
 
       el.innerHTML = _conversas.map((c, i) => {
         const n = VoxlyChat.naoLidas(c, currentUser.uid);
@@ -2490,7 +2506,7 @@ function escutarFila() {
 
     // ── Navegação por tabs ───────────────────────────────────
     function mudarTab(tab) {
-      ['fila','catalogo','historico'].forEach(t => {
+      ['fila','catalogo','chat','historico'].forEach(t => {
         const el = document.getElementById('tab-' + t);
         const btn = document.getElementById('nav-' + t);
         if (el) el.style.display = t === tab ? 'block' : 'none';
