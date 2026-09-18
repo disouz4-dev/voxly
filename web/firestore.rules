@@ -58,9 +58,18 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
     }
 
+    // A foto escolhida da galeria fica no proprio perfil, como JPEG pequeno
+    // (192 px, uns 15 KB). O teto impede que alguem encha o documento — e,
+    // copiada para presenca e pedidos, a fila inteira — com uma imagem enorme.
+    function fotoCabe(d) {
+      return !('photoURL' in d) || d.photoURL == null
+             || (d.photoURL is string && d.photoURL.size() <= 100000);
+    }
+
     match /cantores/{uid} {
       allow read:  if logado();
-      allow write: if logado() && uid == eu();
+      allow create, update: if logado() && uid == eu() && fotoCabe(request.resource.data);
+      allow delete: if logado() && uid == eu();
     }
 
     match /sessoes/{sid} {

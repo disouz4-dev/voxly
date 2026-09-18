@@ -218,6 +218,14 @@ await naoDeve("a Ana", "pedir para cantar na música de quem desligou", () => se
   tipo: "pedido", deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", filaItemId: "m2", musica: "Creep", status: "pendente",
 }));
 await deve("o Beto", "religar convites para cantar", () => updateDoc(doc(beto.bd, "cantores", beto.uid), { aceitaDueto: true }));
+
+// Foto da galeria: JPEG pequeno no proprio perfil, com teto.
+const fotoPequena = "data:image/jpeg;base64," + "A".repeat(20000);
+const fotoEnorme  = "data:image/jpeg;base64," + "A".repeat(150000);
+await deve("a Ana", "pôr uma foto da galeria no perfil", () => updateDoc(doc(ana.bd, "cantores", ana.uid), { photoURL: fotoPequena }));
+await naoDeve("a Ana", "pôr uma foto enorme no perfil", () => updateDoc(doc(ana.bd, "cantores", ana.uid), { photoURL: fotoEnorme }));
+await naoDeve("o Beto", "trocar a foto do perfil da Ana", () => updateDoc(doc(beto.bd, "cantores", ana.uid), { photoURL: fotoPequena }));
+await deve("a Ana", "remover a foto", () => updateDoc(doc(ana.bd, "cantores", ana.uid), { photoURL: null }));
 await deve("a Ana", "convidar o Beto de novo", () => setDoc(convite(ana.bd, "c9"), {
   deUid: ana.uid, deNome: "Ana", paraUid: beto.uid, paraNome: "Beto", musica: "Creep", status: "pendente",
 }));

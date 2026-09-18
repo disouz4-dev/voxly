@@ -1566,6 +1566,8 @@ document.addEventListener("DOMContentLoaded", () => {
     url = VoxlySeguro.urlDeImagem(url);
     if (!url) return null;
     if (_avatarCache[url]) return _avatarCache[url];
+    // Foto escolhida da galeria ja chega pronta (data:), nao ha o que baixar.
+    if (url.startsWith("data:")) return url;
     if (window.electronAPI) {
       const data = VoxlySeguro.urlDeImagem(await window.electronAPI.invoke('fetch-image', url));
       if (data) { _avatarCache[url] = data; return data; }

@@ -21,6 +21,9 @@
     .hero { background: linear-gradient(180deg, #1c1c2e 0%, var(--bg) 100%); padding: 30px 20px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
     .avatar { width: 100px; height: 100px; border-radius: 50%; border: 3px solid var(--accent); object-fit: cover; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; font-weight: 700; color: #fff; flex-shrink: 0; }
     .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .avatar-caixa { position: relative; }
+    .avatar-trocar { position: absolute; right: -4px; bottom: -4px; width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--bg); background: var(--accent); color: #111; font-size: 1rem; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .avatar-remover { background: none; border: none; color: var(--muted, #8a8fa0); font-size: .72rem; text-decoration: underline; cursor: pointer; padding: 0; margin-top: -4px; }
     .hero-name { font-size: 1.5rem; font-weight: 700; text-align: center; }
     .hero-fullname { font-size: 0.85rem; color: var(--muted); }
     .hero-genres { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 4px; }
@@ -247,7 +250,13 @@
   </div>
 
   <div class="hero">
-    <div class="avatar" id="avatarEl">?</div>
+    <div class="avatar-caixa">
+      <div class="avatar" id="avatarEl">?</div>
+      <label class="avatar-trocar" id="avatarTrocar" title="Trocar a foto" aria-label="Trocar a foto" style="display:none;">📷
+        <input type="file" accept="image/*" id="avatarArquivo" onchange="escolherFoto(this)" hidden>
+      </label>
+    </div>
+    <button class="avatar-remover" id="avatarRemover" onclick="removerFoto()" style="display:none;">Remover foto</button>
     <div class="hero-name" id="nomeArtistico">—</div>
     <div class="hero-fullname" id="nomeCompleto">—</div>
     <div class="hero-genres" id="genresList"></div>
@@ -644,20 +653,92 @@
       }
       perfilData = snap.data();
 
-      const avatarEl = document.getElementById('avatarEl');
-      if (perfilData.photoURL) {
-        const foto = VoxlySeguro.urlDeImagem(perfilData.photoURL);
-        avatarEl.innerHTML = foto ? `<img src="${foto}" alt="foto">` : '';
-      } else {
-        avatarEl.textContent = getInitials(perfilData.nomeArtistico);
-        avatarEl.style.background = getAvatarColor(perfilData.nomeArtistico);
-      }
+      desenharAvatar();
 
       document.getElementById('nomeArtistico').textContent = perfilData.nomeArtistico;
       document.getElementById('nomeCompleto').textContent  = perfilData.nomeCompleto;
       document.getElementById('genresList').innerHTML = (perfilData.generos||[]).map(g=>`<span class="genre-tag">${g}</span>`).join('');
       prepararPreferenciaChat();
       return true;
+    }
+
+    function desenharAvatar() {
+      const avatarEl = document.getElementById('avatarEl');
+      const foto = VoxlySeguro.urlDeImagem(perfilData.photoURL);
+      if (foto) {
+        avatarEl.style.background = '';
+        avatarEl.innerHTML = `<img src="${foto}" alt="foto">`;
+      } else {
+        avatarEl.textContent = getInitials(perfilData.nomeArtistico);
+        avatarEl.style.background = getAvatarColor(perfilData.nomeArtistico);
+      }
+      document.getElementById('avatarTrocar').style.display = modoOffline ? 'none' : '';
+      document.getElementById('avatarRemover').style.display = (!modoOffline && foto) ? '' : 'none';
+    }
+
+    // ── Foto do perfil ──────────────────────────────────────
+    // Escolhida da galeria (o celular tambem oferece a camera). Vira um JPEG
+    // quadrado pequeno, guardado no proprio perfil: sem Storage, sem custo, e
+    // chega ao telao como qualquer outra foto (pedido do dono, 17/09).
+    const LADO_FOTO = 192;
+
+    function reduzirFoto(arquivo) {
+      return new Promise((ok, falha) => {
+        const url = URL.createObjectURL(arquivo);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          const lado = Math.min(img.naturalWidth, img.naturalHeight);
+          if (!lado) return falha(new Error('imagem vazia'));
+          const c = document.createElement('canvas');
+          c.width = c.height = LADO_FOTO;
+          const g = c.getContext('2d');
+          g.imageSmoothingQuality = 'high';
+          // Recorte quadrado do centro: rosto costuma estar no meio.
+          g.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado,
+                      0, 0, LADO_FOTO, LADO_FOTO);
+          ok(c.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); falha(new Error('formato')); };
+        img.src = url;
+      });
+    }
+
+    async function escolherFoto(input) {
+      const arquivo = input.files && input.files[0];
+      input.value = '';
+      if (!arquivo) return;
+      if (!/^image\//.test(arquivo.type || 'image/')) { mostrarToast('Escolha uma imagem.', 3500); return; }
+      mostrarToast('📷 Preparando a foto...', 2500);
+      let foto;
+      try { foto = await reduzirFoto(arquivo); }
+      catch (_) { mostrarToast('Não consegui abrir essa imagem. Tente outra.', 4500); return; }
+      await salvarFoto(foto);
+    }
+
+    function removerFoto() {
+      if (!confirm('Remover a sua foto? Fica a inicial do seu nome.')) return;
+      salvarFoto(null);
+    }
+
+    async function salvarFoto(foto) {
+      try {
+        await db.collection('cantores').doc(currentUser.uid).update({ photoURL: foto });
+      } catch (_) {
+        mostrarToast('Não consegui salvar a foto agora. Tente de novo.', 5000);
+        return;
+      }
+      perfilData.photoURL = foto;
+      desenharAvatar();
+      mostrarToast(foto ? '✅ Foto atualizada' : 'Foto removida', 3000);
+      // Na noite em curso, a foto nova vale ja: na presenca e nos pedidos que
+      // ainda vao tocar (a chamada no telao le do pedido).
+      if (!SESSAO_ID || modoOffline) return;
+      const sessao = db.collection('sessoes').doc(SESSAO_ID);
+      sessao.collection('presencas').doc(currentUser.uid).set({ photoURL: foto }, { merge: true }).catch(() => {});
+      for (const item of [filhaAtiva, filhaEspera]) {
+        if (item && item.id) sessao.collection('fila').doc(item.id).update({ photoURL: foto }).catch(() => {});
+      }
     }
 
     async function registrarPresenca() {
