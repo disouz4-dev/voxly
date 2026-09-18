@@ -50,6 +50,16 @@ service cloud.firestore {
       return !exists(perfil) || get(perfil).data.get('aceitaDueto', true) != false;
     }
 
+    // Hora de fechar a fila (show de 17/09: gente pedindo musica depois do
+    // limite). O app ja bloqueia; aqui e a defesa para app velho ou pedido
+    // forjado. Mesma folga de 5 min do sessao-regras.js. O KJ estica a noite
+    // pelo +30 min, que so move este horario; sessao antiga sem termino ou
+    // com outro formato passa como sempre passou.
+    function dentroDoHorario(sid) {
+      let fim = dadosDaSessao(sid).get('horarioTermino', null);
+      return !(fim is timestamp) || request.time <= fim + duration.value(5, 'm');
+    }
+
     function podeVerSessao(sid) {
       return logado() && (souDono(sid) || entradaPaga(sid) || abandonada(dadosDaSessao(sid)));
     }
@@ -98,7 +108,8 @@ service cloud.firestore {
         // (cantor adicionado a mao pelo KJ nao tem conta). Com entrada paga
         // ligada, o pedido do cantor so entra depois de o KJ confirmar o Pix.
         allow create: if logado() && (souDono(sid)
-                                      || (request.resource.data.cantorUid == eu() && entradaPaga(sid)));
+                                      || (request.resource.data.cantorUid == eu() && entradaPaga(sid)
+                                          && dentroDoHorario(sid)));
         // O parceiro de dueto aceita o convite mexendo so nos campos do duo — e
         // tambem precisa de ingresso: sem isto, quem nao pagou aceitava um
         // convite (so com o id do pedido) e subia ao palco de graca.

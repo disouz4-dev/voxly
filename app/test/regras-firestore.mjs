@@ -309,6 +309,20 @@ await deve("a Ana", "ver quem está na sessão com o ingresso desligado", () => 
 await naoDeve("o Caio", "religar ou mudar a cobrança da sessão", () =>
   updateDoc(sessao(caio.bd), { cobranca: { ativa: false, valor: 0 } }));
 
+console.log("\n── Fila fechada no horário ──");
+await deve("a dona", "marcar o fim da noite para 10 minutos atrás", () =>
+  updateDoc(sessao(dono.bd), { horarioTermino: Timestamp.fromMillis(Date.now() - 10 * 60e3) }));
+await naoDeve("a Ana", "pedir música depois do horário", () => pedidoDe(ana, "ana_tarde"));
+await deve("a dona", "pôr música depois do horário (o KJ decide)", () => setDoc(item(dono.bd, "manual_tarde"), {
+  cantorUid: "manual_y", nomeArtistico: "Cantor Manual", musica: "M", artista: "A", status: "aguardando", slot: "ativa",
+}));
+await deve("a dona", "esticar a noite (+30 min)", () =>
+  updateDoc(sessao(dono.bd), { horarioTermino: Timestamp.fromMillis(Date.now() + 20 * 60e3) }));
+await deve("a Ana", "pedir música depois de a noite ser esticada", () => pedidoDe(ana, "ana_esticada"));
+await deve("a dona", "marcar o fim da noite para 3 minutos atrás (dentro da folga)", () =>
+  updateDoc(sessao(dono.bd), { horarioTermino: Timestamp.fromMillis(Date.now() - 3 * 60e3) }));
+await deve("a Ana", "pedir música na folga de 5 minutos", () => pedidoDe(ana, "ana_folga"));
+
 console.log("\n── Limpeza ──");
 for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta", "pagamentos"]) {
   const snap = await getDocs(collection(dono.bd, "sessoes", SID, sub));
