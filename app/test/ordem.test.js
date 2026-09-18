@@ -21,7 +21,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { ordenarFila, ordemParaNovo, promocoesDeCafe } = require("../src/ordem");
+const { ordenarFila, ordemParaNovo, promocoesDeCafe, ordemParaCantarNaProxima } = require("../src/ordem");
 
 const esp = (id, ordemFila, extra = {}) => ({ id, status: "aguardando", slot: "ativa", ordemFila, ...extra });
 const N = (id, ordem) => esp(id, ordem, { tipo: "normal" });
@@ -228,4 +228,48 @@ test("pedido cravado pelo arrasto do KJ continua onde ele pos", () => {
   const promover = promocoesDeCafe(fila, { jaCantou });
   const depois = fila.map(i => (promover.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
   assert.equal(ordemIds(depois).indexOf("adao"), antes);
+});
+
+// ── "Cantar na proxima" ────────────────────────────────────
+// Quem foi chamado e nao esta (banheiro) volta a esperar logo depois do
+// proximo da mesma fila; ninguem mais muda de lugar.
+
+const naPrioxima = (fila, id) => {
+  const nova = ordemParaCantarNaProxima(fila, id);
+  return ordemIds(fila.map(i => (i.id === id ? { ...i, status: "aguardando", ordemFila: nova } : i)));
+};
+
+test("cantar na proxima: quem estava sendo chamado canta depois do proximo", () => {
+  const fila = [
+    pedido("rafa", 1, "normal", { status: "confirmando" }),
+    pedido("bia", 2), pedido("tuca", 3), pedido("duda", 4),
+  ];
+  assert.deepEqual(naPrioxima(fila, "rafa"), ["bia", "rafa", "tuca", "duda"]);
+});
+
+test("cantar na proxima vale tambem com a musica ja tocando", () => {
+  const fila = [pedido("rafa", 1, "normal", { status: "tocando" }), pedido("bia", 2), pedido("tuca", 3)];
+  assert.deepEqual(naPrioxima(fila, "rafa"), ["bia", "rafa", "tuca"]);
+});
+
+test("cafe com leite volta depois do proximo cafe, e a alternancia continua", () => {
+  const fila = [
+    pedido("mari", 1, "prioridade", { status: "confirmando" }),
+    pedido("n1", 2), pedido("n2", 3), pedido("nina", 4, "prioridade"), pedido("n3", 5), pedido("juca", 6, "prioridade"),
+  ];
+  assert.deepEqual(naPrioxima(fila, "mari"), ["n1", "nina", "n2", "mari", "n3", "juca"]);
+});
+
+test("sem ninguem mais esperando, a pessoa continua sendo a proxima", () => {
+  const fila = [pedido("rafa", 3, "normal", { status: "confirmando" })];
+  assert.deepEqual(naPrioxima(fila, "rafa"), ["rafa"]);
+});
+
+test("o ultimo da fila so troca com o penultimo", () => {
+  const fila = [pedido("rafa", 1, "normal", { status: "confirmando" }), pedido("bia", 2)];
+  assert.deepEqual(naPrioxima(fila, "rafa"), ["bia", "rafa"]);
+});
+
+test("pedido inexistente nao faz nada", () => {
+  assert.equal(ordemParaCantarNaProxima([pedido("bia", 1)], "ninguem"), null);
 });

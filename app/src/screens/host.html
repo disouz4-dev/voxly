@@ -575,6 +575,7 @@ footer strong { color:var(--ambar); font-weight:700; }
         <button class="btn btn-ok"      onclick="playAgora()" title="Começa agora, mesmo sem o cantor confirmar">▶ Play</button>
         <button class="btn btn-warn"    onclick="playerCmd('pause')">⏸ Pausa</button>
         <button class="btn btn-skip"    onclick="skipSong()">⏭ Pular</button>
+        <button class="btn btn-ghost"   onclick="adiarAtual()" title="A pessoa não está (banheiro, bar): canta logo depois do próximo, sem sair da fila">🚻 Cantar na próxima</button>
       </div>
 
       <!-- QR CODES -->
@@ -2591,6 +2592,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       const playBtn    = (!isPlaying && !isConfirming) ? `<button class="btn btn-ok btn-sm" onclick="tocarMusica('${item.id}')">▶ Tocar</button>` : '';
       const restartBtn = isPlaying ? `<button class="btn btn-ghost btn-sm" onclick="reiniciarMusica()" title="Voltar ao início">⏮ Reiniciar</button>` : '';
       const skipBtn    = (isPlaying || isPronto) ? `<button class="btn btn-skip btn-sm" onclick="pularMusica('${item.id}')">⏭ Pular</button>` : '';
+      const adiarBtn   = (isPlaying || isPronto || isConfirming) ? `<button class="btn btn-ghost btn-sm" onclick="cantarNaProxima('${item.id}')" title="A pessoa não está: canta logo depois do próximo, sem sair da fila">🚻 Na próxima</button>` : '';
       const removeBtn = `<button class="btn btn-danger btn-sm" onclick="abrirModalExpulsar(${i})" title="Remover da fila">✕</button>`;
 
       // Musica pedida que ainda nao esta na pasta: o KJ escolhe a versao e
@@ -2645,7 +2647,7 @@ https://www.youtube.com/@canal/videos"></textarea>
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
-          <div class="queue-actions">${baixarBtn}${vincularBtn}${playBtn}${restartBtn}${skipBtn}${trocarBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
+          <div class="queue-actions">${baixarBtn}${vincularBtn}${playBtn}${restartBtn}${skipBtn}${adiarBtn}${trocarBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
         </div>
         ${badge}
       </div>`;
@@ -2872,6 +2874,54 @@ https://www.youtube.com/@canal/videos"></textarea>
       await promoverEspera(item.cantorUid);
     }
     await iniciarConfirmacaoProxima();
+  }
+
+  // ── "Cantar na proxima" ───────────────────────────────────
+  // A pessoa foi chamada (ou a musica ja comecou) e nao esta: banheiro, bar.
+  // Pular tira a musica da noite; isto so adia — ela volta a esperar logo
+  // depois do proximo da mesma fila (ordem.js), e o proximo e chamado. Nao
+  // conta como cantada nem como pulada. Pedido do dono no show de 17/09.
+  async function cantarNaProxima(itemId) {
+    if (!SESSAO_ID || !itemId) return;
+    const filaRef = db.collection('sessoes').doc(SESSAO_ID).collection('fila');
+    const snap = await filaRef.where('status', 'in', ['aguardando', 'confirmando', 'confirmado', 'pronto', 'tocando']).get();
+    const itens = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const item = itens.find(i => i.id === itemId);
+    if (!item) return;
+
+    clearTimeout(timerConfirmacao);
+    proximaConfirmando = null;
+    // Parou o que estiver no Palco por causa dela (a previa da chamada ou a
+    // propria musica).
+    if (window.electronAPI && ['tocando', 'confirmando', 'confirmado', 'pronto'].includes(item.status)) {
+      window.electronAPI.playerCommand('stop-preview');
+      if (item.status === 'tocando') window.electronAPI.playerCommand('stop');
+    }
+    if (currentSong && currentSong.id === itemId) {
+      currentSong = null;
+      document.getElementById('np-song').textContent   = '—';
+      document.getElementById('np-artist').textContent = '—';
+      document.getElementById('np-singer').textContent = '—';
+    }
+
+    const novaOrdem = VoxlyOrdem.ordemParaCantarNaProxima(itens, itemId);
+    await filaRef.doc(itemId).update({
+      status: 'aguardando', ordemFila: novaOrdem, fixado: false,
+      confirmandoAte: firebase.firestore.FieldValue.delete(),
+      adiadoVezes: firebase.firestore.FieldValue.increment(1),
+    });
+    mostrarToast(`🚻 ${item.nomeArtistico} canta na próxima — chamando o seguinte`, 5000);
+    await iniciarConfirmacaoProxima();
+  }
+
+  // O botao do card do meio: vale para quem esta tocando ou sendo chamado.
+  async function adiarAtual() {
+    if (!SESSAO_ID) return;
+    if (currentSong) return cantarNaProxima(currentSong.id);
+    const snap = await db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+      .where('status', 'in', ['tocando', 'confirmando', 'confirmado', 'pronto']).limit(1).get();
+    if (!snap.empty) return cantarNaProxima(snap.docs[0].id);
+    mostrarToast('Ninguém está sendo chamado agora.', 3500);
   }
 
   // ── Expulsar cantor da sessão ────────────────────────────
@@ -5583,6 +5633,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
+      'cantarNaProxima',
     ];
     for (const nome of NOMES) {
       const original = window[nome];

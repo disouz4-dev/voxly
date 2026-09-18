@@ -134,7 +134,30 @@ function promocoesDeCafe(itens, { jaCantou, prioridadeAtiva = true } = {}) {
   return promovidos;
 }
 
-const api = { ordenarFila, ordemParaNovo, promocoesDeCafe };
+// ── "Cantar na proxima" ────────────────────────────────────
+// A pessoa foi chamada (ou a musica comecou) e ela nao esta — no banheiro, no
+// bar. Pular tira a musica; isto so adia: ela volta a esperar logo depois do
+// proximo da mesma fila (a principal, ou a do cafe com leite, se ela for cafe),
+// e a noite segue. Pedido do dono no show de 17/09.
+//
+// Devolve o novo ordemFila. O ordemFila e so a ordem de chegada, entao um
+// numero entre o do proximo e o do seguinte basta; a intercalacao faz o resto.
+function ordemParaCantarNaProxima(itens, id) {
+  const lista = (Array.isArray(itens) ? itens : []).filter(Boolean);
+  const alvo = lista.find(i => i.id === id);
+  if (!alvo) return null;
+  const mesmaFila = lista
+    .filter(i => i.id !== id && i.status === "aguardando" && i.slot !== "espera"
+      && !i.fixado && ehCafe(i) === ehCafe(alvo))
+    .sort((a, b) => ordemDe(a) - ordemDe(b));
+  const numeros = lista.map(ordemDe).filter(Number.isFinite);
+  if (!mesmaFila.length) return (numeros.length ? Math.max(...numeros) : 0) + 1;
+  const proximo = ordemDe(mesmaFila[0]);
+  const seguinte = mesmaFila[1] ? ordemDe(mesmaFila[1]) : proximo + 1;
+  return (proximo + seguinte) / 2;
+}
+
+const api = { ordenarFila, ordemParaNovo, promocoesDeCafe, ordemParaCantarNaProxima };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyOrdem = api;
 
