@@ -72,6 +72,7 @@
     .nav-btn { position: relative; }
     #instalarAviso { position: fixed; left: 10px; right: 10px; bottom: 78px; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface2); border: 1px solid #ffffff1a; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
     #instalarAviso[hidden] { display: none; }
+    body.com-aviso-instalar { padding-bottom: 150px; }
     #instalarAviso img { width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; }
     .btn-instalar { background: var(--accent); color: #111; border: none; border-radius: 10px; padding: 8px 12px; font-weight: 700; font-size: .8rem; cursor: pointer; flex-shrink: 0; }
     .btn-instalar-fechar { background: none; border: none; color: var(--muted); font-size: 1rem; cursor: pointer; padding: 4px; flex-shrink: 0; }
@@ -720,6 +721,7 @@
     window.addEventListener('appinstalled', () => {
       _pedidoInstalar = null;
       document.getElementById('instalarAviso').hidden = true;
+      document.body.classList.remove('com-aviso-instalar');
     });
     if ('serviceWorker' in navigator && location.protocol === 'https:') {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -743,11 +745,13 @@
         return;
       }
       document.getElementById('instalarAviso').hidden = false;
+      document.body.classList.add('com-aviso-instalar');
     }
 
     async function instalarApp() {
       if (!_pedidoInstalar) return;
       document.getElementById('instalarAviso').hidden = true;
+      document.body.classList.remove('com-aviso-instalar');
       _pedidoInstalar.prompt();
       const { outcome } = await _pedidoInstalar.userChoice.catch(() => ({}));
       _pedidoInstalar = null;
@@ -756,6 +760,7 @@
 
     function dispensarInstalar() {
       document.getElementById('instalarAviso').hidden = true;
+      document.body.classList.remove('com-aviso-instalar');
       try { localStorage.setItem(CHAVE_INSTALAR, String(Date.now())); } catch (_) {}
     }
 
@@ -777,7 +782,9 @@
     // Escolhida da galeria (o celular tambem oferece a camera). Vira um JPEG
     // quadrado pequeno, guardado no proprio perfil: sem Storage, sem custo, e
     // chega ao telao como qualquer outra foto (pedido do dono, 17/09).
-    const LADO_FOTO = 192;
+    // 128 px, ~6 KB: a foto e copiada para a presenca e para cada pedido, e
+    // todo celular da casa baixa isso pelo Wi-Fi do bar.
+    const LADO_FOTO = 128;
 
     function reduzirFoto(arquivo) {
       return new Promise((ok, falha) => {
@@ -794,7 +801,7 @@
           // Recorte quadrado do centro: rosto costuma estar no meio.
           g.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado,
                       0, 0, LADO_FOTO, LADO_FOTO);
-          ok(c.toDataURL('image/jpeg', 0.82));
+          ok(c.toDataURL('image/jpeg', 0.78));
         };
         img.onerror = () => { URL.revokeObjectURL(url); falha(new Error('formato')); };
         img.src = url;
@@ -1379,7 +1386,12 @@ function escutarFila() {
         fecharModal();
         gravacao.catch(e => {
           console.error('[pedido] gravacao falhou:', e);
-          mostrarToast('Não foi possível enviar seu pedido. Tente de novo.', 6000);
+          // Recusado pelo banco perto do fim: o relogio do celular atrasado
+          // deixou pedir, mas o horario da sessao ja tinha passado.
+          const fechou = e && e.code === 'permission-denied'
+            && sessaoTermino && !VoxlySessao.podePedirMusica(sessaoTermino, Date.now() + 10 * 60e3);
+          mostrarToast(fechou ? '⏰ A fila desta sessão já fechou.'
+                              : 'Não foi possível enviar seu pedido. Tente de novo.', 6000);
         });
       } catch (e) {
         console.error('[pedido]', e);
@@ -2156,7 +2168,7 @@ function escutarFila() {
 
     function escutarFilaEvento() {
       db.collection('sessoes').doc(SESSAO_ID).collection('fila')
-        .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'pronto'])
+        .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'confirmado', 'pronto'])
         .onSnapshot(snap => {
           const el = document.getElementById('filaEventoList');
           // Mesma ordem da Gerencia (ordem.js). A daqui punha toda prioridade na

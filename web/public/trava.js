@@ -54,7 +54,9 @@ function chaveDeMusica(musica, artista) {
   const limpar = s => String(s || "")
     .replace(/\s*-\s*\[[0-9a-f]{6}\]\s*$/i, "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    // Letras de qualquer alfabeto: so a-z juntava titulos em cirilico ou
+    // japones numa chave vazia, e o segundo pedido era barrado por engano.
+    .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   return limpar(musica) + "|" + limpar(artista);
 }
 

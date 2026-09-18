@@ -3,7 +3,7 @@
   "short_name": "Voxly",
   "description": "Peça música, acompanhe a fila e seja chamado para cantar.",
   "lang": "pt-BR",
-  "start_url": "/?origem=app",
+  "start_url": "/profile.html?origem=app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
