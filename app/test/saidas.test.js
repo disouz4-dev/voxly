@@ -77,3 +77,33 @@ test("casa escolhida desconectada: ela vira o padrão, e monitoria no padrão n�
   assert.strictEqual(monitoriaSegura({ monitorId: "mac", principalId: "scarlett", dispositivos: semScarlett }).ok, false);
   assert.strictEqual(monitoriaSegura({ monitorId: "fone", principalId: "scarlett", dispositivos: semScarlett }).ok, true);
 });
+
+// ── Som da casa que nao foge (espelhar para a TV) ──────────
+const interface_ = { kind: "audiooutput", deviceId: "iface", groupId: "g-iface", label: "Interface" };
+const tv         = { kind: "audiooutput", deviceId: "tv", groupId: "g-tv", label: "TV (AirPlay)" };
+const padraoEm = g => ({ kind: "audiooutput", deviceId: "default", groupId: g, label: "Padrão" });
+const { aparelhoDoPadrao, saidaEfetiva } = require("../src/saidas");
+
+test("acha o aparelho de verdade por tras do 'padrao'", () => {
+  assert.equal(aparelhoDoPadrao([padraoEm("g-iface"), interface_, tv]), "iface");
+  assert.equal(aparelhoDoPadrao([padraoEm("g-tv"), interface_, tv]), "tv");
+  assert.equal(aparelhoDoPadrao([interface_]), "");
+});
+
+test("no 'padrao', o Palco fixa o aparelho da hora e nao segue o sistema depois", () => {
+  const antes = saidaEfetiva({ escolhida: "", fixada: "", dispositivos: [padraoEm("g-iface"), interface_] });
+  assert.deepEqual(antes, { id: "iface", motivo: "fixou-agora" });
+  // Espelhou para a TV: o macOS mudou o padrao para ela.
+  const depois = saidaEfetiva({ escolhida: "", fixada: antes.id, dispositivos: [padraoEm("g-tv"), interface_, tv] });
+  assert.deepEqual(depois, { id: "iface", motivo: "fixada" });
+});
+
+test("se o aparelho fixado sumir, vai para o padrao da hora e avisa", () => {
+  const r = saidaEfetiva({ escolhida: "", fixada: "iface", dispositivos: [padraoEm("g-tv"), tv] });
+  assert.deepEqual(r, { id: "tv", motivo: "fixada-sumiu" });
+});
+
+test("saida escolhida pelo KJ vale enquanto estiver conectada", () => {
+  assert.deepEqual(saidaEfetiva({ escolhida: "iface", dispositivos: [padraoEm("g-tv"), interface_, tv] }), { id: "iface", motivo: "escolhida" });
+  assert.deepEqual(saidaEfetiva({ escolhida: "iface", dispositivos: [padraoEm("g-tv"), tv] }), { id: "tv", motivo: "escolhida-sumiu" });
+});

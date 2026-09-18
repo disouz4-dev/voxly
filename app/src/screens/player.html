@@ -698,6 +698,7 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
 <script src="../volume.js"></script>
 <script src="../seguro.js"></script>
 <script src="../guia.js"></script>
+<script src="../saidas.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   // Declarado aqui de proposito: o bloco do modo publico logo abaixo usa
@@ -855,6 +856,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Saida de audio escolhida pelo KJ (a Scarlett, por exemplo). Vazio = o
   // padrao do sistema. Vale para o karaoke e para todo som do Palco.
   let saidaPrincipal = "";
+  // Com a casa no "padrao do sistema", o aparelho que era o padrao quando o
+  // Palco fixou a saida. Espelhar a tela para a TV muda o padrao do macOS e,
+  // antes, levava o som junto no meio do show (17/09). Ver saidas.js.
+  let saidaFixada    = "";
+  let saidaAplicada  = null;
   let rampaNode  = null;   // entradas e saidas sem estalo (vai a 0 na troca)
   let faderNode  = null;   // volume do KJ — independente da rampa
   let volumeKJ   = VoxlyVolume.PADRAO;
@@ -1000,9 +1006,7 @@ document.addEventListener("DOMContentLoaded", () => {
     normNode = audioCtx.createGain();
     normNode.connect(compNode);
 
-    if (saidaPrincipal && audioCtx.setSinkId) {
-      audioCtx.setSinkId(saidaPrincipal).catch(e => console.warn("[AUDIO] saida escolhida indisponivel:", e.message));
-    }
+    reaplicarSaida();
 
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
     srcNode = audioCtx.createMediaElementSource(video);
@@ -1046,14 +1050,41 @@ document.addEventListener("DOMContentLoaded", () => {
   // e melhor que ficar mudo.
   async function aplicarSaida(id) {
     saidaPrincipal = id || "";
+    // Escolher "padrao" de novo em ⚙ Config e o jeito de o KJ refixar no
+    // aparelho que e o padrao agora.
+    saidaFixada = "";
     diario('audio.saida', { id: saidaPrincipal ? saidaPrincipal.slice(0, 12) : 'padrao' });
+    await reaplicarSaida();
+  }
+
+  // Descobre qual aparelho usar (saidas.js) e so mexe se mudou. Roda ao criar o
+  // audio, quando o KJ troca a saida e quando um aparelho entra ou sai.
+  async function reaplicarSaida() {
+    if (isAudience || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    let dispositivos = [];
+    try { dispositivos = await navigator.mediaDevices.enumerateDevices(); } catch (_) {}
+    const r = VoxlySaidas.saidaEfetiva({ escolhida: saidaPrincipal, fixada: saidaFixada, dispositivos });
+    if (r.motivo === "fixou-agora" || r.motivo === "fixada" || r.motivo === "fixada-sumiu") saidaFixada = r.id;
+    if (r.id === saidaAplicada) return;
+    saidaAplicada = r.id;
+    // So na troca: a conferencia roda a cada aparelho que entra ou sai.
+    if (r.motivo === "escolhida-sumiu" || r.motivo === "fixada-sumiu") {
+      diario('audio.saida-sumiu', { motivo: r.motivo, agora: r.id ? r.id.slice(0, 12) : 'padrao' }, 'aviso');
+    }
+    if (r.motivo === "fixou-agora") diario('audio.saida-fixada', { id: r.id ? r.id.slice(0, 12) : 'padrao' });
     if (audioCtx && audioCtx.setSinkId) {
-      await audioCtx.setSinkId(saidaPrincipal).catch(e => console.warn("[AUDIO] setSinkId:", e.message));
+      await audioCtx.setSinkId(r.id).catch(e => console.warn("[AUDIO] setSinkId:", e.message));
     }
     for (const el of [intervaloAudio, aberturaAudio, falaAudio, previewAudio]) {
-      if (el && el.setSinkId) await el.setSinkId(saidaPrincipal).catch(() => {});
+      if (el && el.setSinkId) await el.setSinkId(r.id).catch(() => {});
     }
   }
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', () => { reaplicarSaida(); });
+  }
+  // Ja na abertura: a musica de intervalo toca antes da primeira musica, e sem
+  // isto ela seguiria o padrao do sistema (e iria para a TV ao espelhar).
+  setTimeout(() => { reaplicarSaida(); }, 800);
 
   function aplicarVolumeKJ(valor) {
     volumeKJ = VoxlyVolume.posicaoValida(valor);
