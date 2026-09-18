@@ -248,7 +248,13 @@ body.modo-publico #entrada-publica { display:flex; }
   background:linear-gradient(180deg, rgba(11,12,17,.95), rgba(11,12,17,.85));
   border-right:1px solid var(--linha);
   padding:clamp(20px,4vh,40px) clamp(24px,4vw,48px);
-  overflow-y:auto;
+  /* A coluna INTEIRA nao rola. Quem rola e so a lista de proximos (abaixo):
+     antes, com a fila cheia, o QR descia junto e saia da tela — e ninguem na
+     plateia conseguia escanear. Visto no show de 17/09. */
+  overflow:hidden;
+  /* Numa grade o item pode esticar alem da linha: sem min-height:0 a coluna
+     crescia com a fila e o overflow:hidden acima nao segurava nada. */
+  min-height:0;
 }
 .pub-left-header {
   font-family:'Space Mono', monospace; font-size:.7rem; letter-spacing:.5em;
@@ -276,7 +282,15 @@ body.modo-publico #entrada-publica { display:flex; }
 }
 .pub-duo-name { font-family:'Unbounded'; font-weight:500; color:var(--rosa); font-size:clamp(1rem,2.5vw,1.8rem); margin-bottom:clamp(16px,3vh,28px); }
 .pub-song-title { font-family:'Unbounded'; font-weight:600; font-size:clamp(1.1rem,2.8vw,2.2rem); color:var(--ambar); line-height:1.2; margin-bottom:6px; }
-.pub-proximos { margin-top:clamp(16px,3vh,28px); }
+.pub-proximos {
+  margin-top:clamp(16px,3vh,28px);
+  /* Cresce e encolhe conforme sobra espaco, e rola por dentro. O min-height:0
+     e o que deixa o flex encolher de verdade. */
+  flex:1 1 auto; overflow-y:auto; scrollbar-width:thin;
+  /* Guarda um pedaco da coluna para a lista: numa tela baixa o QR encolhe
+     ate o minimo dele em vez de engolir os proximos. */
+  min-height:clamp(64px, 12vh, 200px);
+}
 .pub-proximos-titulo {
   font-family:'Space Mono', monospace; font-size:.62rem; letter-spacing:.4em;
   text-transform:uppercase; color:var(--azul); margin-bottom:10px;
@@ -409,14 +423,18 @@ body.modo-publico #entrada-publica { display:flex; }
   .pub-right { border-left:none; border-top:1px solid var(--linha); order:3; max-height:40vh; }
 }
 
-/* QR de entrada, abaixo do cantor — e o que a plateia escaneia. */
+/* QR de entrada, abaixo do cantor — e o que a plateia escaneia. Fica preso no
+   pe da coluna, aconteca o que acontecer com o tamanho da fila. */
 .pub-qr {
+  flex:0 0 auto;
   margin-top:auto; padding-top:clamp(18px,3vh,28px);
   border-top:1px solid var(--linha);
   display:flex; flex-direction:column; align-items:center; gap:clamp(10px,2vh,16px);
 }
 .pub-qr img {
-  width:100%; max-width:340px; aspect-ratio:1; image-rendering:pixelated;
+  /* Acompanha a altura da tela: numa TV 1080p fica grande, numa tela baixa
+     encolhe em vez de espremer a lista de proximos. */
+  width:100%; max-width:min(340px, max(150px, 26vh)); aspect-ratio:1; image-rendering:pixelated;
   background:#fff; padding:clamp(10px,1.6vw,16px); border-radius:16px;
   box-shadow:0 18px 50px rgba(0,0,0,.55);
 }
