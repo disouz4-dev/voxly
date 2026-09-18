@@ -21,7 +21,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert");
-const { ordenarFila, ordemParaNovo } = require("../src/ordem");
+const { ordenarFila, ordemParaNovo, promocoesDeCafe } = require("../src/ordem");
 
 const esp = (id, ordemFila, extra = {}) => ({ id, status: "aguardando", slot: "ativa", ordemFila, ...extra });
 const N = (id, ordem) => esp(id, ordem, { tipo: "normal" });
@@ -149,4 +149,83 @@ test("lista vazia ou torta nao quebra", () => {
   assert.deepStrictEqual(ordenarFila([]), []);
   assert.deepStrictEqual(ordenarFila(null), []);
   assert.strictEqual(ordenarFila([null, undefined]).length, 2);
+});
+
+// ── Quem entra junto quando a fila vira prioridade ─────────
+// O caso do show de 17/09: o Adão pediu com a fila curta (entrou normal); a
+// Bia e o Caio chegaram depois, com a fila grande (entraram como cafe) — e
+// passaram na frente dele, sendo que nenhum dos tres tinha cantado.
+
+const pedido = (id, ordemFila, tipo = "normal", extra = {}) =>
+  ({ id, cantorUid: id, ordemFila, tipo, status: "aguardando", slot: "ativa", ...extra });
+const cantaram = new Set(["n1", "n2", "n3", "n4"]);
+const jaCantou = uid => cantaram.has(uid);
+const ordemIds = fila => ordenarFila(fila).map(i => i.id);
+
+test("o caso do show: quem pediu antes e nao cantou entra junto e fica na frente dos cafes que chegaram depois", () => {
+  const fila = [
+    pedido("n1", 1), pedido("n2", 2), pedido("adao", 3), pedido("n3", 4), pedido("n4", 5),
+    pedido("bia", 6, "prioridade"), pedido("caio", 7, "prioridade"),
+  ];
+  assert.deepEqual(ordemIds(fila), ["n1", "bia", "n2", "caio", "adao", "n3", "n4"], "o defeito: Adao atras da Bia e do Caio");
+
+  const promover = promocoesDeCafe(fila, { jaCantou });
+  assert.deepEqual(promover, ["adao"]);
+
+  const depois = fila.map(i => (promover.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+  assert.deepEqual(ordemIds(depois), ["n1", "adao", "n2", "bia", "n3", "caio", "n4"]);
+});
+
+test("ninguem e promovido se isso o jogar para tras", () => {
+  const fila = [
+    pedido("adao", 1), pedido("n1", 2), pedido("n2", 3),
+    pedido("bia", 4, "prioridade"), pedido("caio", 5, "prioridade"),
+  ];
+  // Adao ja e o primeiro da fila principal: como cafe ele iria depois do n1.
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou }), []);
+});
+
+test("quem ja cantou nao vira cafe com leite", () => {
+  const fila = [pedido("n1", 1), pedido("n2", 2), pedido("n3", 3), pedido("bia", 4, "prioridade")];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou }), []);
+});
+
+test("sem ninguem como cafe, a fila nao virou prioridade: nada muda", () => {
+  const fila = [pedido("n1", 1), pedido("adao", 2), pedido("n2", 3)];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou }), []);
+});
+
+test("prioridade desligada nas regras: nada muda", () => {
+  const fila = [pedido("n1", 1), pedido("n2", 2), pedido("adao", 3), pedido("bia", 4, "prioridade")];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou, prioridadeAtiva: false }), []);
+});
+
+test("musica em espera e quem ja tem cafe pendente nao entram", () => {
+  const fila = [
+    pedido("n1", 1), pedido("n2", 2),
+    pedido("adao", 3, "normal", { slot: "espera" }),
+    pedido("bia", 4, "prioridade"), pedido("bia", 5, "normal", { id: "bia-2" }),
+  ];
+  assert.deepEqual(promocoesDeCafe(fila, { jaCantou }), []);
+});
+
+test("um cafe por cantor: so o pedido mais antigo dele", () => {
+  const fila = [
+    pedido("n1", 1), pedido("n2", 2), pedido("n3", 3),
+    pedido("adao", 4), pedido("adao", 5, "normal", { id: "adao-2" }),
+    pedido("bia", 6, "prioridade"),
+  ];
+  const promover = promocoesDeCafe(fila, { jaCantou });
+  assert.ok(!promover.includes("adao-2"));
+});
+
+test("pedido cravado pelo arrasto do KJ continua onde ele pos", () => {
+  const fila = [
+    pedido("n1", 1), pedido("n2", 2), pedido("adao", 3, "normal", { fixado: true }),
+    pedido("n3", 4), pedido("bia", 5, "prioridade"),
+  ];
+  const antes = ordemIds(fila).indexOf("adao");
+  const promover = promocoesDeCafe(fila, { jaCantou });
+  const depois = fila.map(i => (promover.includes(i.id) ? { ...i, tipo: "prioridade" } : i));
+  assert.equal(ordemIds(depois).indexOf("adao"), antes);
 });

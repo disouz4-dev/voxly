@@ -89,7 +89,52 @@ function ordemParaNovo(fila) {
   return (numeros.length ? Math.max(...numeros) : 0) + 1;
 }
 
-const api = { ordenarFila, ordemParaNovo };
+// ── Quem entra junto quando a fila vira prioridade ─────────
+// O "cafe com leite" e carimbado no PEDIDO, pela espera daquele momento. Ai
+// congelava: quem pediu com a fila curta entrava como normal, e quem chegou
+// depois, ja com a fila grande, entrava como cafe e passava na frente dele —
+// sendo que os dois ainda nao tinham cantado. Visto no show de 17/09.
+//
+// A regra do dono: se a fila virou prioridade, quem ainda nao cantou e ja
+// estava esperando entra junto, e entre os cafes vale a ordem de chegada.
+//
+// Devolve os ids a promover. So promove quem NAO piora de lugar com isso: quem
+// ja esta perto de cantar pela fila principal fica onde esta. Um cafe por
+// cantor, nunca musica em espera, e nada quando a prioridade esta desligada.
+//
+// `jaCantou(uid)` diz se a pessoa ja cantou nesta noite.
+function promocoesDeCafe(itens, { jaCantou, prioridadeAtiva = true } = {}) {
+  if (prioridadeAtiva === false) return [];
+  const lista = (Array.isArray(itens) ? itens : []).filter(Boolean);
+  const esperando = i => i.status === "aguardando" && i.slot !== "espera";
+  if (!lista.some(i => esperando(i) && ehCafe(i))) return [];   // a fila nao virou prioridade
+
+  const cantou = typeof jaCantou === "function" ? jaCantou : () => false;
+  const pendente = new Set(["aguardando", "confirmando", "confirmado", "pronto", "tocando"]);
+  const comCafe = new Set(lista.filter(i => ehCafe(i) && pendente.has(i.status)).map(i => i.cantorUid));
+
+  // Candidatos em ordem de chegada, um por cantor.
+  const vistos = new Set();
+  const candidatos = lista
+    .filter(i => esperando(i) && !ehCafe(i) && i.cantorUid && !cantou(i.cantorUid) && !comCafe.has(i.cantorUid))
+    .sort((a, b) => ordemDe(a) - ordemDe(b))
+    .filter(i => (vistos.has(i.cantorUid) ? false : (vistos.add(i.cantorUid), true)));
+
+  let atual = lista.map(i => ({ ...i }));
+  const posicao = (fila, id) => ordenarFila(fila).filter(esperando).findIndex(i => i.id === id);
+  const promovidos = [];
+  for (const c of candidatos) {
+    const antes = posicao(atual, c.id);
+    const tentativa = atual.map(i => (i.id === c.id ? { ...i, tipo: "prioridade" } : i));
+    if (posicao(tentativa, c.id) <= antes) {
+      atual = tentativa;
+      promovidos.push(c.id);
+    }
+  }
+  return promovidos;
+}
+
+const api = { ordenarFila, ordemParaNovo, promocoesDeCafe };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyOrdem = api;
 

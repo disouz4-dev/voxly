@@ -1221,6 +1221,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   let currentSong      = null;
   let filaData         = [];
   let presencasData    = [];
+  // Quem ja cantou nesta noite, pelo historico da sessao (a presenca some
+  // quando o cantor fica offline; o historico nao). Usado pela promocao de
+  // cafe com leite (ordem.js promocoesDeCafe).
+  let _jaCantaram      = new Set();
+  let _promovendoCafe  = false;
   // Ingresso da noite (ver o bloco "Entrada paga"). Declarados aqui em cima:
   // funcoes que rodam na carga da tela ja leem estes nomes.
   let cobrancaSessao   = null;
@@ -2509,6 +2514,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         // na frente a cada atualizacao e desfazia o arrastar do KJ.
         filaData = VoxlyOrdem.ordenarFila(
           snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'));
+        promoverCafesPendentes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
 
         // Restaura currentSong depois de o app reiniciar no meio de uma
         // musica. So enquanto ESTE host ainda nao mexeu na fila: o write de
@@ -2696,6 +2702,35 @@ https://www.youtube.com/@canal/videos"></textarea>
         <span class="${tagCls} user-badge">${tagTxt}</span>
       </div>`;
     }).join('');
+  }
+
+  // ── Fila virou prioridade: quem nao cantou entra junto ───
+  // O cafe com leite e carimbado no pedido e congelava: quem pediu com a fila
+  // curta ficava como normal, e quem chegou depois, ja como cafe, passava na
+  // frente dele (show de 17/09). A regra mora em ordem.js; aqui a Gerencia
+  // dona grava a promocao, para todas as telas verem igual.
+  async function promoverCafesPendentes(itens) {
+    if (!SESSAO_ID || modoOffline || _promovendoCafe) return;
+    const ids = VoxlyOrdem.promocoesDeCafe(itens, {
+      prioridadeAtiva: regras.prioridadeAtiva !== false,
+      jaCantou: uid => _jaCantaram.has(uid) || presencasData.some(p =>
+        (p.id === uid || p.uid === uid) && p.primeiraMusicaCantada),
+    });
+    if (!ids.length) return;
+    _promovendoCafe = true;
+    try {
+      const fila = db.collection('sessoes').doc(SESSAO_ID).collection('fila');
+      const lote = db.batch();
+      ids.forEach(id => lote.update(fila.doc(id), { tipo: 'prioridade', cafePorPromocao: true }));
+      await lote.commit();
+      const nomes = itens.filter(i => ids.includes(i.id)).map(i => i.nomeArtistico);
+      diario('fila.cafe-promovido', { ids, nomes });
+      mostrarToast(`☕ ${nomes.join(', ')} ${nomes.length > 1 ? 'entraram' : 'entrou'} como café com leite (ainda não cantou)`, 5000);
+    } catch (e) {
+      console.warn('[CAFE] promocao falhou:', e.message);
+    } finally {
+      _promovendoCafe = false;
+    }
   }
 
   // ── Ações da fila ─────────────────────────────────────────
@@ -4579,6 +4614,10 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!SESSAO_ID) return;
     db.collection('sessoes').doc(SESSAO_ID).collection('historico')
       .onSnapshot(snap => {
+        // So o cantor principal conta como "ja cantou": o parceiro de dueto
+        // continua podendo ser cafe com leite, como na regra de sempre.
+        _jaCantaram = new Set(snap.docs.map(d => d.data())
+          .filter(h => h && h.status !== 'pulada' && h.cantorUid).map(h => h.cantorUid));
         const el = document.getElementById('historico-sessao-list');
         if (!el) return;
         if (snap.empty) {
