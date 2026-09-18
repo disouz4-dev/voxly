@@ -3943,6 +3943,18 @@ https://www.youtube.com/@canal/videos"></textarea>
   // ── Relatorios ────────────────────────────────────────────
   // Resumos lidos de relatorios/, mais a noite em curso calculada na hora.
   let _relatorios = [];
+  let _noitesNaTela = [];
+
+  // PDF de uma noite, para mandar para a casa (pedido do dono, 17/09).
+  async function exportarNoitePdf(ev, indice) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    const r = _noitesNaTela[indice];
+    if (!r || !window.electronAPI || !window.electronAPI.relatorioPdf) return;
+    mostrarToast('📄 Montando o PDF...');
+    const res = await window.electronAPI.relatorioPdf(JSON.parse(JSON.stringify(r)));
+    if (res && res.erro) mostrarToast('❌ Não consegui gerar o PDF: ' + res.erro, 6000);
+    else if (res && res.arquivo) mostrarToast('✅ PDF salvo: ' + res.arquivo.split(/[/\\]/).pop(), 5000);
+  }
 
   async function abrirModalRelatorios() {
     document.getElementById('modalRelatorios').classList.add('open');
@@ -3993,6 +4005,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     const hm = ms => ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
     const qtd = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
     const faixa = r => (r.primeiraMusica && r.ultimaMusica) ? ` · ${hm(r.primeiraMusica)}–${hm(r.ultimaMusica)}` : '';
+    _noitesNaTela = c.porNoite;
 
     corpo.innerHTML = `
       <div class="rel-numeros">
@@ -4017,13 +4030,14 @@ https://www.youtube.com/@canal/videos"></textarea>
         </div>
       </div>
       <label class="modal-label">Noite a noite</label>
-      ${c.porNoite.map(r => `
+      ${c.porNoite.map((r, i) => `
         <details class="rel-noite">
           <summary>
             <strong>${dia(VoxlyRelatorio.dataDaNoite(r))}</strong>
             <span>${escHtml(r.nomeCasa || '')}${faixa(r)}</span>
             ${r.aoVivo ? '<em class="rel-vivo">● ao vivo</em>' : ''}
             <span class="rel-resumo">${qtd(r.participantes, 'cantor', 'cantores')} · ${qtd(r.cantadas, 'cantada', 'cantadas')} · ${r.naoCantadas} sem tocar</span>
+            <button class="btn btn-ghost btn-sm" onclick="exportarNoitePdf(event, ${i})" title="Salvar o relatório desta noite em PDF para mandar para a casa">📄 PDF</button>
           </summary>
           <ol class="rel-lista">${(r.musicas || []).map(m =>
             `<li><span>${hm(m.horario)} ${escHtml(m.musica)} <small>— ${escHtml(m.artista)}</small></span>` +

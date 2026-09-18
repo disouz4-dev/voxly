@@ -2225,6 +2225,39 @@ ipcMain.handle("yt-cancel", () => {
 // de fora (api.qrserver.com), o que e aceitavel para um endereco publico, mas
 // nao para um codigo que carrega a chave Pix e o nome de quem recebe.
 const pix = require("./pix");
+// Relatorio da noite em PDF, para mandar para a casa. A pagina e montada aqui
+// (relatorio-pdf.js) a partir do resumo; a tela so manda o resumo. Uma janela
+// escondida, sem JavaScript, imprime em A4 e o KJ escolhe onde salvar.
+ipcMain.handle("relatorio-pdf", async (_e, resumo) => {
+  const { paginaDaNoite, nomeDoArquivo } = require("./relatorio-pdf");
+  let janela = null;
+  const tmp = path.join(os.tmpdir(), `voxly-relatorio-${process.pid}-${Date.now()}.html`);
+  try {
+    let logo = null;
+    try { logo = "data:image/png;base64," + fs.readFileSync(path.join(__dirname, "assets", "logo", "logo_voxly.png")).toString("base64"); } catch (_) {}
+    fs.writeFileSync(tmp, paginaDaNoite(resumo || {}, { logo }), "utf8");
+    janela = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true } });
+    await janela.loadFile(tmp);
+    const pdf = await janela.webContents.printToPDF({ pageSize: "A4", printBackground: true, preferCSSPageSize: true });
+
+    const { canceled, filePath } = await dialog.showSaveDialog(hostWindow || undefined, {
+      title: "Salvar relatório da noite",
+      defaultPath: path.join(app.getPath("documents"), nomeDoArquivo(resumo || {})),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (canceled || !filePath) return { cancelado: true };
+    fs.writeFileSync(filePath, pdf);
+    registrar("main", "relatorio.pdf", { arquivo: path.basename(filePath), casa: resumo && resumo.nomeCasa });
+    require("electron").shell.showItemInFolder(filePath);
+    return { arquivo: filePath };
+  } catch (e) {
+    return { erro: e.message };
+  } finally {
+    if (janela && !janela.isDestroyed()) janela.destroy();
+    try { fs.unlinkSync(tmp); } catch (_) {}
+  }
+});
+
 ipcMain.handle("pix-gerar", async (_e, dados) => {
   try {
     const d = dados || {};

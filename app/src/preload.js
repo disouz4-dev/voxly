@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Diario: send, nao invoke — registrar nunca pode fazer a tela esperar.
   diario:             (evento, dados, nivel) => ipcRenderer.send("diario", { evento, dados, nivel }),
   pixGerar:              (dados) => ipcRenderer.invoke("pix-gerar", dados),
+  relatorioPdf:          (resumo) => ipcRenderer.invoke("relatorio-pdf", resumo),
   // Licenca: a tela so pergunta e mostra; quem confere assinatura e o main.
   licencaEstado:         () => ipcRenderer.invoke("licenca-estado"),
   licencaAtualizar:      () => ipcRenderer.invoke("licenca-atualizar"),
