@@ -230,6 +230,7 @@ header {
 }
 .queue-item.playing .queue-pos { background:var(--ok); border-color:var(--ok); color:#08241a; }
 .queue-info { flex:1; min-width:0; }
+.queue-hora { font-family:'Space Mono', monospace; font-size:.66rem; color:var(--mudo); margin-top:2px; font-variant-numeric:tabular-nums; }
 .queue-song { font-weight:600; font-size:.86rem; color:var(--texto); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .queue-artist { font-family:'Space Mono', monospace; font-size:.66rem; color:var(--mudo); margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.04em; }
 .queue-singer { font-size:.74rem; color:var(--rosa); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -502,6 +503,8 @@ footer strong { color:var(--ambar); font-weight:700; }
     <span class="relogio-kj" id="relogioHora" aria-live="off" title="Hora atual">--:--</span>
     <span class="session-badge inativa" id="sessionBadge" onclick="editarSessaoAtiva()"
           title="Clique para editar nome, data e horário sem derrubar a sessão">Sem Sessão</span>
+    <button class="btn btn-ghost btn-sm" id="btnEsticar" onclick="esticarSessao(30)" style="display:none;"
+            title="Casa cheia? Estica o fim da sessão em 30 minutos, sem abrir nada">+30 min</button>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="abrirModalSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-danger btn-sm" id="btnDerrubarSessao" onclick="derrubarSessoes()" title="Apaga do servidor qualquer sessão em aberto, inclusive as presas de outra máquina">💥 Derrubar sessão</button>
@@ -568,6 +571,17 @@ footer strong { color:var(--ambar); font-weight:700; }
                  oninput="mudarVolume(this.value)" style="flex:1;accent-color:var(--accent);"
                  aria-label="Volume geral do Voxly">
           <span id="fader-volume-valor" style="font-size:.8rem;font-weight:700;color:var(--accent);min-width:36px;text-align:right;font-variant-numeric:tabular-nums;">85%</span>
+        </div>
+        <!-- Quanto falta da musica: pedido do dono no show de 17/09 -->
+        <div id="progresso-musica" style="margin-top:10px;display:none;">
+          <div style="height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;">
+            <div id="progresso-barra" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width .9s linear;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;">
+            <span id="progresso-atual">0:00</span>
+            <span id="progresso-falta" style="color:var(--texto);font-weight:700;">faltam 0:00</span>
+            <span id="progresso-total">0:00</span>
+          </div>
         </div>
       </div>
 
@@ -1186,6 +1200,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../limite.js"></script>
 <script src="../orfaos.js"></script>
 <script src="../entrada.js"></script>
+<script src="../previsao.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -1229,6 +1244,10 @@ https://www.youtube.com/@canal/videos"></textarea>
   // que faz a alternancia seguir de onde parou; fica tambem na sessao
   // (alternancia.ultimoFoiCafe) para o app do cantor e para outra maquina.
   let _ultimoFoiCafe   = null;
+  // Onde esta a musica no Palco (progresso-musica), e quanto dura cada musica
+  // que ja tocou — e com isso que a fila mostra a hora prevista (previsao.js).
+  let _progresso       = { atual: 0, total: 0, pausado: true };
+  const CHAVE_DURACOES = 'voxly_duracoes';
   let _promovendoCafe  = false;
   // Ingresso da noite (ver o bloco "Entrada paga"). Declarados aqui em cima:
   // funcoes que rodam na carga da tela ja leem estes nomes.
@@ -1456,6 +1475,40 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // O badge mostrava so o codigo, que nao diz nada ao KJ no meio da noite.
   // Nome da casa e faixa de horario sao o que ele precisa conferir de relance.
+  // Casa cheia: +30 min no fim da sessao, com um toque, sem janela no meio do
+  // movimento. Conta a partir do fim marcado — ou de agora, se ja passou.
+  async function esticarSessao(minutos) {
+    if (!SESSAO_ID || !dadosSessaoAtual) return;
+    const fimAtual = dadosSessaoAtual.termino && dadosSessaoAtual.termino.toDate
+      ? dadosSessaoAtual.termino.toDate().getTime() : Number(dadosSessaoAtual.termino) || Date.now();
+    const novo = Math.max(fimAtual, Date.now()) + minutos * 60e3;
+    try {
+      await db.collection('sessoes').doc(SESSAO_ID).update({
+        horarioTermino: firebase.firestore.Timestamp.fromMillis(novo),
+      });
+      dadosSessaoAtual = { ...dadosSessaoAtual, termino: novo };
+      atualizarBadgeSessao();
+      reenviarEstadoAoPublico();
+      mostrarToast(`⏰ Sessão até ${new Date(novo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, 5000);
+    } catch (e) {
+      mostrarToast('❌ Não consegui esticar a sessão: ' + e.message, 6000);
+    }
+  }
+
+  // Faltando 15 min (ou ja passou), o selo e o botao chamam atencao.
+  function avisarFimDaSessao() {
+    const el = document.getElementById('sessionBadge');
+    const btn = document.getElementById('btnEsticar');
+    if (!el || !btn) return;
+    const d = dadosSessaoAtual || {};
+    const fim = d.termino && d.termino.toDate ? d.termino.toDate().getTime() : Number(d.termino) || 0;
+    const acabando = !!(SESSAO_ID && fim && fim - Date.now() < 15 * 60e3);
+    btn.style.display = SESSAO_ID ? '' : 'none';
+    btn.className = 'btn btn-sm ' + (acabando ? 'btn-secondary' : 'btn-ghost');
+    el.style.outline = acabando ? '1px solid var(--ambar)' : '';
+  }
+  setInterval(avisarFimDaSessao, 30 * 1000);
+
   function atualizarBadgeSessao() {
     const el = document.getElementById('sessionBadge');
     if (!el) return;
@@ -1468,6 +1521,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     el.textContent = `${d.nomeCasa || 'Sessão ' + (sessaoCodigo || '')}${faixa}`;
     el.title = `Sessão ${sessaoCodigo || ''} — clique para editar sem derrubar`;
     el.style.cursor = 'pointer';
+    avisarFimDaSessao();
   }
 
   // Editar sem derrubar: muda nome, data e horario da sessao EM CURSO. O
@@ -1806,6 +1860,12 @@ https://www.youtube.com/@canal/videos"></textarea>
     filaSnap.forEach(d => batch2.update(d.ref, { status: 'cancelada' }));
     await batch2.commit();
 
+    // O relatorio da noite era guardado so quando a sessao era apagada (na
+    // faxina ou ao abrir a proxima noite). Finalizou, ja guarda.
+    await preservarSessao(db.collection('sessoes').doc(SESSAO_ID))
+      .then(() => mostrarToast('📊 Relatório da noite guardado', 4000))
+      .catch(e => diario('relatorio.nao-guardou', { erro: e.message }, 'aviso'));
+
     if (window.electronAPI) {
       window.electronAPI.playerCommand('stop');
       window.electronAPI.playerCommand('sessao-encerrada');
@@ -1825,6 +1885,7 @@ https://www.youtube.com/@canal/videos"></textarea>
     sessaoCodigo = null;
     dadosSessaoAtual = null;
     pararEntradaPaga();
+    avisarFimDaSessao();
     atualizarQrHost();
     modoOffline  = false;
 
@@ -2566,6 +2627,59 @@ https://www.youtube.com/@canal/videos"></textarea>
     window.electronAPI.playerCommand(JSON.stringify({ cmd: 'fila-publico', itens }));
   }
 
+  // ── Progresso da musica e hora prevista da fila ──────────
+  function duracoesGuardadas() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_DURACOES) || '{}') || {}; } catch (_) { return {}; }
+  }
+  function duracaoDe(item) {
+    return duracoesGuardadas()[VoxlyTrava.chaveDeMusica(item.musica, item.artista)] || null;
+  }
+  // Aprende quanto a musica dura na primeira vez que ela toca.
+  function guardarDuracao(item, segundos) {
+    if (!item || !(segundos > 30)) return;
+    const mapa = duracoesGuardadas();
+    const chave = VoxlyTrava.chaveDeMusica(item.musica, item.artista);
+    if (Math.abs((mapa[chave] || 0) - segundos) < 1) return;
+    mapa[chave] = Math.round(segundos);
+    const chaves = Object.keys(mapa);
+    if (chaves.length > 3000) delete mapa[chaves[0]];
+    try { localStorage.setItem(CHAVE_DURACOES, JSON.stringify(mapa)); } catch (_) {}
+  }
+
+  function desenharProgresso() {
+    const caixa = document.getElementById('progresso-musica');
+    if (!caixa) return;
+    const { atual, total } = _progresso;
+    if (!(total > 0) || !currentSong) { caixa.style.display = 'none'; return; }
+    caixa.style.display = '';
+    document.getElementById('progresso-barra').style.width = Math.min(100, (atual / total) * 100).toFixed(1) + '%';
+    document.getElementById('progresso-atual').textContent = VoxlyPrevisao.minutosESegundos(atual);
+    document.getElementById('progresso-total').textContent = VoxlyPrevisao.minutosESegundos(total);
+    document.getElementById('progresso-falta').textContent =
+      (_progresso.pausado ? '⏸ ' : '') + 'faltam ' + VoxlyPrevisao.minutosESegundos(total - atual);
+  }
+
+  function atualizarHorasDaFila() {
+    const restanteS = currentSong && _progresso.total > 0 ? Math.max(0, _progresso.total - _progresso.atual) : 0;
+    const previsto = VoxlyPrevisao.horariosPrevistos({ fila: filaData, agora: Date.now(), restanteS, duracaoDe });
+    document.querySelectorAll('[data-previsto]').forEach(el => {
+      const ms = previsto.get(el.dataset.previsto);
+      el.textContent = ms ? '~' + VoxlyPrevisao.horaCurta(ms) : '';
+      el.title = ms ? 'Hora aproximada em que deve tocar' : '';
+    });
+  }
+  setInterval(atualizarHorasDaFila, 20 * 1000);
+
+  if (window.electronAPI && window.electronAPI.onProgressoMusica) {
+    let _horasEm = 0;
+    window.electronAPI.onProgressoMusica(p => {
+      _progresso = { atual: Number(p.atual) || 0, total: Number(p.total) || 0, pausado: !!p.pausado };
+      if (currentSong && _progresso.total > 0) guardarDuracao(currentSong, _progresso.total);
+      desenharProgresso();
+      if (Date.now() - _horasEm > 10000) { _horasEm = Date.now(); atualizarHorasDaFila(); }
+    });
+  }
+
   function renderQueue() {
     enviarFilaAoPublico();
     destravarDownloadsOrfaos();
@@ -2656,11 +2770,13 @@ https://www.youtube.com/@canal/videos"></textarea>
           <div class="queue-song">${escHtml(item.musica)}</div>
           <div class="queue-artist">${escHtml(item.artista)}</div>
           <div class="queue-singer">🎤 ${escHtml(item.nomeArtistico||'-')}${isDuet ? ' <span style="color:var(--accent)">& ' + escHtml(item.duoNome) + '</span>' : ''}</div>
+          ${isPlaying ? '' : `<div class="queue-hora" data-previsto="${escHtml(item.id)}"></div>`}
           <div class="queue-actions">${baixarBtn}${vincularBtn}${playBtn}${restartBtn}${skipBtn}${adiarBtn}${trocarBtn}${duoBtn}${duoRemBtn}${removeBtn}${pitchCtrl}</div>
         </div>
         ${badge}
       </div>`;
     }).join('');
+    atualizarHorasDaFila();
   }
 
   // ── Presenças ─────────────────────────────────────────────
@@ -5660,7 +5776,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
-      'cantarNaProxima',
+      'cantarNaProxima','esticarSessao',
     ];
     // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
     // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.

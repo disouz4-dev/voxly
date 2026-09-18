@@ -1277,6 +1277,12 @@ ipcMain.handle("sincronizar-publico", (_, { filePath, tempo }) => {
 // "sessao-iniciada" (QR, nome da casa, horarios) e enviado uma unica vez. Uma
 // tela recarregada perdia tudo e ficava no aviso de espera para sempre. Agora
 // ela pede o estado de volta ao nascer, e a Gerencia reenvia.
+// Em que ponto esta a musica no Palco, para a barra de progresso e a hora
+// prevista de cada musica da fila na Gerencia.
+ipcMain.on("progresso-musica", (_e, p) => {
+  if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("progresso-musica", p);
+});
+
 ipcMain.on("pedir-estado", () => {
   if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("pedir-estado");
 });

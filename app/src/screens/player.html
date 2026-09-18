@@ -2141,7 +2141,23 @@ intervaloDeck = [];
     if (video.duration && video.currentTime >= video.duration - 0.5 && video.style.display !== "none") {
       aoTerminarMusica();
     }
+    contarProgresso();
   });
+  // A Gerencia desenha a barra da musica e a hora prevista de cada pedido.
+  // Uma vez por segundo basta; pausa e fim mandam na hora.
+  let _progressoEm = 0;
+  function contarProgresso(forcar) {
+    if (isAudience || !window.electronAPI || !window.electronAPI.progressoMusica) return;
+    if (!forcar && Date.now() - _progressoEm < 1000) return;
+    _progressoEm = Date.now();
+    const tocando = video.style.display !== "none" && !!video.currentSrc && isFinite(video.duration);
+    window.electronAPI.progressoMusica({
+      atual: tocando ? video.currentTime : 0,
+      total: tocando ? video.duration : 0,
+      pausado: video.paused,
+    });
+  }
+  for (const ev of ["pause", "play", "ended", "emptied"]) video.addEventListener(ev, () => contarProgresso(true));
   // Recarregou (ou abriu depois da sessao comecar): pede o QR e os dados da
   // casa de volta, senao a tela fica presa no aviso de espera.
   if (window.electronAPI.pedirEstado) window.electronAPI.pedirEstado();

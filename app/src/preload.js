@@ -84,4 +84,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ajustarTempoPublico:  (t) => ipcRenderer.send("ajustar-tempo-publico", t),
   onAjustarTempo:       (cb) => ipcRenderer.on("ajustar-tempo", (_e, t) => cb(t)),
   onPedirEstado:        (cb) => ipcRenderer.on("pedir-estado", () => cb()),
+  // Progresso da musica: o Palco conta (send, nunca espera) e a Gerencia desenha.
+  progressoMusica:      (p) => ipcRenderer.send("progresso-musica", p),
+  onProgressoMusica:    (cb) => ipcRenderer.on("progresso-musica", (_e, p) => cb(p)),
 });
