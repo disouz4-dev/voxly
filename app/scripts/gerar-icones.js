@@ -6,6 +6,11 @@
 //   src/assets/icons/icon.png   1024x1024 — Mac (Dock, app, .dmg) e Linux
 //   src/assets/icons/icon.ico   Windows, com 16 a 256 px dentro
 //   src/assets/icons/tray.png   32x32
+//   src/assets/icons/linux/     16x16.png ... 512x512.png — no Linux o
+//                               electron-builder so instala o icone no tamanho
+//                               certo a partir de uma pasta assim; com um PNG
+//                               so ele caia em hicolor/0x0 e o menu mostrava o
+//                               icone generico.
 //   ../web/public/assets/icons/ app-192, app-512 e apple-touch-icon (180):
 //                               o app do cantor instalado na tela do celular.
 //                               Quadrado cheio, sem cantos: o Android e o iOS
@@ -106,7 +111,7 @@ const DESENHO = `(async (src) => {
   }
 
   const saida = {};
-  for (const lado of [1024, 256, 128, 64, 48, 32, 24, 16]) saida['i' + lado] = icone(lado, true);
+  for (const lado of [1024, 512, 256, 128, 64, 48, 32, 24, 16]) saida['i' + lado] = icone(lado, true);
   saida.tray = icone(32, true);
   for (const lado of [512, 192, 180]) saida['web' + lado] = icone(lado, 'cheio');
   saida.recorte = { x0, y0, larg, alt };
@@ -123,6 +128,11 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(DESTINO, "tray.png"), bin(r.tray));
   fs.writeFileSync(path.join(DESTINO, "icon.ico"),
     montarIco([16, 24, 32, 48, 64, 128, 256].map(lado => ({ lado, dados: bin(r["i" + lado]) }))));
+  const linux = path.join(DESTINO, "linux");
+  fs.mkdirSync(linux, { recursive: true });
+  for (const lado of [16, 24, 32, 48, 64, 128, 256, 512]) {
+    fs.writeFileSync(path.join(linux, `${lado}x${lado}.png`), bin(r["i" + lado]));
+  }
   fs.mkdirSync(DESTINO_WEB, { recursive: true });
   fs.writeFileSync(path.join(DESTINO_WEB, "app-512.png"), bin(r.web512));
   fs.writeFileSync(path.join(DESTINO_WEB, "app-192.png"), bin(r.web192));
