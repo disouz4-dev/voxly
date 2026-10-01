@@ -107,3 +107,17 @@ test("saida escolhida pelo KJ vale enquanto estiver conectada", () => {
   assert.deepEqual(saidaEfetiva({ escolhida: "iface", dispositivos: [padraoEm("g-tv"), interface_, tv] }), { id: "iface", motivo: "escolhida" });
   assert.deepEqual(saidaEfetiva({ escolhida: "iface", dispositivos: [padraoEm("g-tv"), tv] }), { id: "tv", motivo: "escolhida-sumiu" });
 });
+
+test("fone plugado vira o som da casa na hora", () => {
+  const fone = { kind: "audiooutput", deviceId: "fone1", groupId: "g-fone", label: "Fones de Ouvido Externos" };
+  const iface = { kind: "audiooutput", deviceId: "iface", groupId: "g-iface", label: "Scarlett 2i2" };
+  const comFone = [{ kind: "audiooutput", deviceId: "default", groupId: "g-fone", label: "Default - Fones de Ouvido Externos" }, fone, iface];
+  assert.strictEqual(saidaEfetiva({ escolhida: "", fixada: "iface", dispositivos: comFone }).id, "fone1");
+  assert.strictEqual(saidaEfetiva({ escolhida: "iface", fixada: "", dispositivos: comFone }).motivo, "fone-plugado");
+
+  // Tirou o fone: volta a fixar o aparelho padrao, nao segue a TV depois.
+  const tv = { kind: "audiooutput", deviceId: "tv", groupId: "g-tv", label: "PHILCO (AirPlay)" };
+  const semFone = [{ kind: "audiooutput", deviceId: "default", groupId: "g-tv", label: "Default - PHILCO" }, iface, tv];
+  assert.strictEqual(saidaEfetiva({ escolhida: "iface", fixada: "", dispositivos: semFone }).id, "iface");
+  assert.strictEqual(saidaEfetiva({ escolhida: "", fixada: "iface", dispositivos: semFone }).id, "iface");
+});

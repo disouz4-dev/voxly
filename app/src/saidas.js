@@ -51,6 +51,22 @@ function monitoriaSegura({ monitorId, principalId, dispositivos } = {}) {
 // o aparelho que ERA o padrao quando o Palco fixou a saida, e ele so muda se
 // esse aparelho sumir.
 
+// Fone plugado na saida de fone manda: o KJ pediu isso em 01/10 — plugou o
+// fone (ou o P2 que vai para a mesa), o som da casa vai por ali na hora, sem
+// ninguem abrir Ajustes. Vale so para fone/headset de verdade; TV, AirPlay e
+// alto-falante continuam presos no aparelho fixado (foi o estrago de 17/09).
+const FONE = /fone|headphone|head phone|earphone|headset|auricular/i;
+
+function foneDoPadrao(lista) {
+  const padrao = lista.find(d => d.deviceId === "default");
+  if (!padrao) return "";
+  const real = lista.find(d => !PADRAO.includes(d.deviceId) && d.deviceId !== "communications"
+    && d.groupId === padrao.groupId && FONE.test(d.label || ""));
+  // Alguns sistemas nao repetem o aparelho: o rotulo do proprio "default" serve.
+  if (!real) return FONE.test(padrao.label || "") ? aparelhoDoPadrao(lista) : "";
+  return real.deviceId;
+}
+
 // O aparelho concreto por tras do "default" do Chromium (mesmo groupId).
 function aparelhoDoPadrao(dispositivos) {
   const lista = (Array.isArray(dispositivos) ? dispositivos : []).filter(d => d && d.kind === "audiooutput");
@@ -68,6 +84,8 @@ function aparelhoDoPadrao(dispositivos) {
 function saidaEfetiva({ escolhida = "", fixada = "", dispositivos } = {}) {
   const lista = (Array.isArray(dispositivos) ? dispositivos : []).filter(d => d && d.kind === "audiooutput");
   const existe = id => !!id && lista.some(d => d.deviceId === id);
+  const fone = foneDoPadrao(lista);
+  if (fone) return { id: fone, motivo: "fone-plugado" };
   if (escolhida && !PADRAO.includes(escolhida)) {
     if (existe(escolhida)) return { id: escolhida, motivo: "escolhida" };
     return { id: aparelhoDoPadrao(lista), motivo: "escolhida-sumiu" };
@@ -78,7 +96,7 @@ function saidaEfetiva({ escolhida = "", fixada = "", dispositivos } = {}) {
   return { id: aparelhoDoPadrao(lista), motivo: fixada ? "fixada-sumiu" : "fixou-agora" };
 }
 
-const api = { saidasDeAudio, monitoriaSegura, aparelhoDoPadrao, saidaEfetiva };
+const api = { saidasDeAudio, monitoriaSegura, aparelhoDoPadrao, foneDoPadrao, saidaEfetiva };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlySaidas = api;
 

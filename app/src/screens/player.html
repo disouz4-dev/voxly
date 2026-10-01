@@ -1081,6 +1081,9 @@ document.addEventListener("DOMContentLoaded", () => {
     try { dispositivos = await navigator.mediaDevices.enumerateDevices(); } catch (_) {}
     const r = VoxlySaidas.saidaEfetiva({ escolhida: saidaPrincipal, fixada: saidaFixada, dispositivos });
     if (r.motivo === "fixou-agora" || r.motivo === "fixada" || r.motivo === "fixada-sumiu") saidaFixada = r.id;
+    // Fone plugado assume o som da casa; tirando o fone, volta a fixar o que
+    // for padrao naquele momento.
+    if (r.motivo === "fone-plugado") saidaFixada = "";
     if (r.id === saidaAplicada) return;
     saidaAplicada = r.id;
     // So na troca: a conferencia roda a cada aparelho que entra ou sai.
@@ -1088,6 +1091,7 @@ document.addEventListener("DOMContentLoaded", () => {
       diario('audio.saida-sumiu', { motivo: r.motivo, agora: r.id ? r.id.slice(0, 12) : 'padrao' }, 'aviso');
     }
     if (r.motivo === "fixou-agora") diario('audio.saida-fixada', { id: r.id ? r.id.slice(0, 12) : 'padrao' });
+    if (r.motivo === "fone-plugado") diario('audio.fone-plugado', { id: r.id.slice(0, 12) });
     if (audioCtx && audioCtx.setSinkId) {
       await audioCtx.setSinkId(r.id).catch(e => console.warn("[AUDIO] setSinkId:", e.message));
     }

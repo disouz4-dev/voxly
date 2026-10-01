@@ -885,6 +885,10 @@ function createAudienceWindow() {
   audienceWindow.once("ready-to-show", () => {
     arrumarJanelasTelaUnica();
     audienceWindow.show();
+    // Na TV ela nasce ocupando o monitor inteiro (pedido do dono, 01/10): com
+    // a moldura, as bordas do display sobravam e a fila cortava embaixo. Com
+    // um monitor so, as janelas continuam divididas para o KJ enxergar tudo.
+    if (temMonitorExterno()) audienceWindow.maximize();
     audienceWindow.moveTop();
     if (hostWindow) hostWindow.webContents.send("audiencia-estado", true);
   });
