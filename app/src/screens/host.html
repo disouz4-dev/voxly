@@ -911,19 +911,9 @@ https://www.youtube.com/@canal/videos"></textarea>
     <p style="font-size:.75rem;color:var(--mudo);margin-bottom:12px;">
       Depois desse horário o cantor não põe mais música pelo celular. Você continua tocando o que está na fila.
     </p>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-      <button class="btn btn-ghost btn-sm" onclick="esticarSessao(-30)">−30 min</button>
-      <button class="btn btn-ghost btn-sm" onclick="esticarSessao(-15)">−15 min</button>
-      <button class="btn btn-secondary btn-sm" onclick="esticarSessao(15)">+15 min</button>
-      <button class="btn btn-secondary btn-sm" onclick="esticarSessao(30)">+30 min</button>
-      <button class="btn btn-secondary btn-sm" onclick="esticarSessao(60)">+1 h</button>
-    </div>
-    <label class="modal-label" for="tempoMinutos">Ou escreva os minutos (pode ser negativo)</label>
-    <div style="display:flex;gap:8px;">
-      <input class="modal-input" id="tempoMinutos" type="number" step="5" placeholder="ex.: 45 ou -20"
-             style="flex:1;margin:0;" onkeydown="aplicarAjusteDeTempo(event)">
-      <button class="btn btn-primary btn-sm" onclick="aplicarAjusteDeTempo()">Aplicar</button>
-    </div>
+    <label class="modal-label" for="tempoHora">Hora de fechar a fila</label>
+    <input class="modal-input" id="tempoHora" type="time" style="margin:0;font-size:1.3rem;text-align:center;"
+           onchange="cravarFimDaSessao()" onkeydown="cravarFimDaSessao(event)">
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="fecharAjusteDeTempo()">Fechar</button>
     </div>
@@ -1559,7 +1549,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   // movimento. Conta a partir do fim marcado — ou de agora, se ja passou.
   function abrirAjusteDeTempo() {
     if (!SESSAO_ID) return;
-    document.getElementById('tempoMinutos').value = '';
+    const d = dadosSessaoAtual || {};
+    const fimAtual = d.termino && d.termino.toDate ? d.termino.toDate().getTime() : Number(d.termino) || 0;
+    const hhmm = n => String(n).padStart(2, '0');
+    document.getElementById('tempoHora').value = fimAtual
+      ? `${hhmm(new Date(fimAtual).getHours())}:${hhmm(new Date(fimAtual).getMinutes())}` : '';
     desenharAjusteDeTempo();
     document.getElementById('modalTempo').classList.add('open');
   }
@@ -1576,12 +1570,18 @@ https://www.youtube.com/@canal/videos"></textarea>
     el.textContent = faltam >= 0 ? `Fecha às ${hora} — faltam ${faltam} min` : `Fechou às ${hora}, há ${-faltam} min`;
   }
 
-  // Tecla Enter no campo tambem aplica; o botao chama sem evento.
-  function aplicarAjusteDeTempo(ev) {
+  // Nada de quantidade pronta: o KJ EDITA a hora de fechar, e so (ele foi
+  // explicito em 02/10). "A casa fecha 02:00" e pronto, sem conta de cabeca.
+  function cravarFimDaSessao(ev) {
     if (ev && ev.key !== 'Enter') return;
-    const minutos = parseInt(document.getElementById('tempoMinutos').value, 10);
-    if (!Number.isFinite(minutos) || minutos === 0) { mostrarToast('Escreva quantos minutos somar ou tirar'); return; }
-    esticarSessao(minutos);
+    const valor = document.getElementById('tempoHora').value;
+    if (!valor) { mostrarToast('Escolha a hora de fechar'); return; }
+    const [h, m] = valor.split(':').map(Number);
+    const alvo = new Date();
+    alvo.setHours(h, m, 0, 0);
+    // Hora ja passada quer dizer madrugada: 02:00 pedido as 23h e amanha.
+    if (alvo.getTime() < Date.now()) alvo.setDate(alvo.getDate() + 1);
+    definirFimDaSessao(alvo.getTime());
   }
 
   // Minutos positivos esticam a noite; negativos antecipam o fechamento da
@@ -1592,7 +1592,16 @@ https://www.youtube.com/@canal/videos"></textarea>
     const fimAtual = dadosSessaoAtual.termino && dadosSessaoAtual.termino.toDate
       ? dadosSessaoAtual.termino.toDate().getTime() : Number(dadosSessaoAtual.termino) || Date.now();
     const base = minutos >= 0 ? Math.max(fimAtual, Date.now()) : fimAtual;
-    const novo = Math.max(Date.now() + 5 * 60e3, base + minutos * 60e3);
+    return definirFimDaSessao(base + minutos * 60e3);
+  }
+
+  // A hora que o KJ escreveu, gravada como esta — nada de converter para
+  // minutos e voltar, que era o que comia um minuto a cada edicao. O chao de 5
+  // minutos existe para fechar "agora" nao trancar a casa inteira de uma vez.
+  async function definirFimDaSessao(alvoMs) {
+    if (!SESSAO_ID || !dadosSessaoAtual) return;
+    const novo = Math.max(Date.now() + 5 * 60e3, Math.round(alvoMs / 60000) * 60000);
+    const minutos = Math.round((novo - Date.now()) / 60000);
     try {
       await db.collection('sessoes').doc(SESSAO_ID).update({
         horarioTermino: firebase.firestore.Timestamp.fromMillis(novo),
@@ -6135,7 +6144,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
-      'cantarNaProxima','esticarSessao','aplicarAjusteDeTempo','ajustarVelocidade','alternarAutoPlay','salvarControleEmail',
+      'cantarNaProxima','esticarSessao','cravarFimDaSessao','ajustarVelocidade','alternarAutoPlay','salvarControleEmail',
     ];
     // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
     // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.
