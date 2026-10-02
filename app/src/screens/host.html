@@ -5029,9 +5029,21 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // ── Sincronização offline com o servidor local (cantores) ──
   let localEventSource = null;
+  // appUrlLocal vem com a senha na query (?lan=...), que serve ao QR do cantor.
+  // Para a Gerencia FALAR com o servidor, usamos a origem limpa e mandamos a
+  // senha no cabecalho.
   function baseLocal() {
-    if (appUrlLocal) return appUrlLocal;
-    return 'http://localhost:8030';
+    const u = appUrlLocal || 'http://localhost:8030';
+    try { const o = new URL(u); return o.origin; } catch (_) { return u.split('?')[0]; }
+  }
+  function tokenLocal() {
+    try { return new URL(appUrlLocal).searchParams.get('lan') || ''; } catch (_) { return ''; }
+  }
+  function cabecalhoLocal(extra) {
+    const h = { ...(extra || {}) };
+    const tk = tokenLocal();
+    if (tk) h['x-voxly-lan'] = tk;
+    return h;
   }
 
   function normalizarLocal(doc) {
@@ -5042,7 +5054,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   async function localApi(path, metodo, corpo) {
     try {
-      const opts = { method: metodo, headers: {} };
+      const opts = { method: metodo, headers: cabecalhoLocal() };
       if (corpo !== undefined) {
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(corpo);
@@ -5077,7 +5089,8 @@ https://www.youtube.com/@canal/videos"></textarea>
   function escutarLocalOffline() {
     if (localEventSource || !SESSAO_ID) return;
     try {
-      localEventSource = new EventSource(baseLocal() + '/api/eventos?sessao=' + SESSAO_ID);
+      const tk = tokenLocal();
+      localEventSource = new EventSource(baseLocal() + '/api/eventos?sessao=' + SESSAO_ID + (tk ? '&lan=' + encodeURIComponent(tk) : ''));
       localEventSource.onmessage = async () => {
         if (!modoOffline) return;
         // Puxa a fila atualizada do servidor local e mescla

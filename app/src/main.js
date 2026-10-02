@@ -605,18 +605,43 @@ async function buscarKaraokeYt(termo, artista) {
   return { candidatos, brutos: videos.length, consulta };
 }
 
-function iniciarServidorCatalogo() {
+function iniciarServidorCatalogo(tokenLan) {
   if (servidorCatalogo) return;
   servidorCatalogo = http.createServer((req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Private-Network", "true");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    // De onde veio: so a maquina do KJ (127.0.0.1) dispara busca no YouTube.
+    const ip = (req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    const local = ip === "127.0.0.1" || ip === "::1";
+    // O catalogo o celular le pela LAN, com a mesma senha do QR.
+    let lan = "", rota = req.url;
+    try { const u = new URL(req.url, "http://local"); lan = u.searchParams.get("lan") || ""; rota = u.pathname; } catch (_) {}
+    const autorizado = local || (!!tokenLan && lan === tokenLan);
 
-    // Preflight para Private Network Access (Chrome/Firefox)
+    // CORS so para quem tem a senha. O "*" + Allow-Private-Network de antes era
+    // justamente o que deixava um site da internet, aberto num celular da casa,
+    // disparar o yt-dlp e baixar o acervo.
+    if (autorizado && req.headers.origin) {
+      res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    }
+
     if (req.method === "OPTIONS") {
       res.statusCode = 204;
       res.end();
+      return;
+    }
+
+    // Busca, datas e sugestao mexem no yt-dlp e na rede: so a propria Gerencia,
+    // da maquina local. De fora, nem a senha serve.
+    if (!local && (req.url.startsWith("/buscar") || req.url.startsWith("/datas") || req.url.startsWith("/sugerir"))) {
+      res.statusCode = 403; res.setHeader("Content-Type", "application/json");
+      res.end('{"erro":"so a Gerencia busca no YouTube"}');
+      return;
+    }
+    // O resto (catalogo, ping, foto) exige a senha quando vem de fora.
+    if (!autorizado) {
+      res.statusCode = 403; res.setHeader("Content-Type", "application/json");
+      res.end('{"erro":"sem autorizacao"}');
       return;
     }
 
@@ -686,18 +711,18 @@ function iniciarServidorCatalogo() {
       return;
     }
 
-    if (req.url === "/catalogo") {
+    if (rota === "/catalogo") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(catalogoLocal));
 
-    } else if (req.url === "/ping") {
+    } else if (rota === "/ping") {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ ok: true, total: catalogoLocal.length }));
 
-    } else if (req.url.startsWith("/artista-foto/")) {
+    } else if (rota.startsWith("/artista-foto/")) {
       const folder = store.get("musicFolder", null);
       if (!folder) { res.statusCode = 404; res.end(""); return; }
-      const nome = decodeURIComponent(req.url.slice("/artista-foto/".length));
+      const nome = decodeURIComponent(rota.slice("/artista-foto/".length));
       const filePath = fotoArtistaPath(folder, nome);
       if (fs.existsSync(filePath)) {
         res.setHeader("Content-Type", "image/jpeg");
@@ -942,11 +967,13 @@ app.whenReady().then(() => {
     startWatcher(folder);
     agendarDownloadFotos(folder);
   }
-  iniciarServidorCatalogo();
   servidorLocal = new ServidorLocal({
     caminhoDados: path.join(app.getPath("userData"), "voxly-offline.json"),
   });
   servidorLocal.iniciar();
+  // O catalogo compartilha a senha do servidor local: o celular que escaneou o
+  // QR ja a tem, e usa a mesma para ler o acervo pela LAN.
+  iniciarServidorCatalogo(servidorLocal.token);
   configurarAutoUpdate();
 
   // DEPOIS das janelas, e sem esperar: o binario independente leva ~20s na

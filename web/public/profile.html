@@ -1129,7 +1129,10 @@ function escutarFila() {
       const proto = location.protocol;
       if (proto === 'https:') return null;   // HTTPS nao alcanca http local
       const host = location.hostname || '127.0.0.1';
-      return `http://${host}:7432/catalogo`;
+      // A mesma senha do QR: o catalogo agora exige token de quem vem pela LAN.
+      let lan = '';
+      try { lan = new URLSearchParams(location.search).get('lan') || sessionStorage.getItem('voxly_lan') || ''; } catch (_) {}
+      return `http://${host}:7432/catalogo` + (lan ? `?lan=${encodeURIComponent(lan)}` : '');
     }
 
     let _catalogoLocalCache = null;

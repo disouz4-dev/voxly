@@ -61,7 +61,7 @@
   }
   function _garantirSSE() {
     if (_es) return;
-    _es = new EventSource("/api/eventos");
+    _es = new EventSource(_comToken("/api/eventos"));
     _es.onmessage = () => {
       [ ..._ouvintes ].forEach(([prefixo, cbs]) => {
         cbs.forEach(cb => _notificar(cb));
@@ -70,10 +70,26 @@
     _es.onerror = () => { /* tenta reconectar sozinho */ };
   }
 
+  // Senha da rede local: veio no QR (?lan=...) e vale a sessao inteira. Sem
+  // ela, o servidor do KJ recusa — e por ela que um site qualquer aberto no
+  // celular nao consegue mexer na noite.
+  const _lanToken = (() => {
+    try {
+      const daUrl = new URLSearchParams(location.search).get("lan");
+      if (daUrl) { sessionStorage.setItem("voxly_lan", daUrl); return daUrl; }
+      return sessionStorage.getItem("voxly_lan") || "";
+    } catch (_) { return ""; }
+  })();
+  function _comToken(url) {
+    if (!_lanToken) return url;
+    return url + (url.includes("?") ? "&" : "?") + "lan=" + encodeURIComponent(_lanToken);
+  }
+
   // ── Requisições ──
   async function _api(path, metodo, corpo) {
     const url = "/api/store" + path;
     const opts = { method: metodo, headers: {} };
+    if (_lanToken) opts.headers["x-voxly-lan"] = _lanToken;
     if (corpo !== undefined) {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(corpo);

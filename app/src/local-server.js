@@ -18,6 +18,7 @@ const http   = require("http");
 const path   = require("path");
 const fs     = require("fs");
 const os     = require("os");
+const crypto = require("crypto");
 
 const PORT            = 8030;
 // Rodando do fonte, o app do cantor esta em ../../web/public. No app
@@ -38,6 +39,21 @@ class ServidorLocal {
     this.ouvintesSSE    = new Set();
     this._salvarTimer   = null;
     this.servidor       = null;
+    // Senha da rede local. O servidor atende QUALQUER aparelho no Wi-Fi do bar
+    // — sem isto, um site aberto em qualquer celular (ou alguem na mesma rede)
+    // lia os perfis e a chave Pix, e reescrevia ou apagava a fila da noite. O
+    // token viaja no QR (so quem escaneia a tela do KJ o tem) e a Gerencia o
+    // manda no cabecalho.
+    this.token          = opcoes.token || crypto.randomBytes(16).toString("hex");
+  }
+
+  // Confere a senha: no cabecalho (Gerencia) ou na query ?lan= (o celular, que
+  // recebeu o endereco pelo QR). Estaticos (a pagina, os .js, as fontes) nao
+  // exigem senha — e por eles que o celular carrega o app.
+  _autorizado(req, url) {
+    const header = req.headers["x-voxly-lan"];
+    const query  = url.searchParams.get("lan");
+    return header === this.token || query === this.token;
   }
 
   // ── Persistência ──────────────────────────────────────────
@@ -94,11 +110,27 @@ class ServidorLocal {
       const url = new URL(req.url, `http://localhost:${this.porta}`);
       const caminho = url.pathname;
 
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      // CORS so para quem tem a senha: um site qualquer aberto num celular da
+      // casa nao consegue ler a resposta nem mandar comando. O "*" de antes
+      // deixava qualquer pagina da internet mexer na noite.
+      const autorizado = this._autorizado(req, url);
+      if (autorizado && req.headers.origin) {
+        res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-voxly-lan");
+      }
 
       if (req.method === "OPTIONS") { res.statusCode = 204; res.end(); return; }
+
+      // Tudo em /api/ exige a senha: ler vaza perfil e chave Pix, escrever
+      // reescreve a noite. Estaticos seguem abertos (o celular precisa deles
+      // para carregar a pagina antes de ter o token em maos).
+      if (caminho.startsWith("/api/") && !autorizado) {
+        res.statusCode = 403;
+        res.setHeader("Content-Type", "application/json");
+        res.end('{"erro":"sem autorizacao na rede local"}');
+        return;
+      }
 
       // SSE
       if (caminho === "/api/eventos" && req.method === "GET") {
@@ -163,7 +195,10 @@ class ServidorLocal {
     return "127.0.0.1";
   }
 
-  urlWeb() { return `http://${this._ipLocal()}:${this.porta}`; }
+  // Para a Gerencia falar com o servidor (ela manda o token no cabecalho).
+  urlBase() { return `http://${this._ipLocal()}:${this.porta}`; }
+  // Para o QR do cantor: leva o token na URL, senao o celular nao entra.
+  urlWeb()  { return `${this.urlBase()}/?lan=${this.token}`; }
 
   _lerCorpo(req) {
     return new Promise((resolve) => {

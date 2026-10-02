@@ -153,8 +153,15 @@
     // Preserva o deep link do QR (?sessao=<id>) atraves do login: o cantor que
     // escaneou o codigo da casa precisa cair naquela sessao, e nao na lista.
     function comSessao(destino) {
-      const sessao = new URLSearchParams(location.search).get('sessao');
-      return sessao ? `${destino}?sessao=${encodeURIComponent(sessao)}` : destino;
+      // Carrega adiante o codigo da sessao E a senha da rede local (?lan=): sem
+      // o lan, o celular perde o token do QR no redirecionamento e nao fala com
+      // o servidor do KJ no modo offline.
+      const p = new URLSearchParams(location.search);
+      const fora = new URLSearchParams();
+      if (p.get('sessao')) fora.set('sessao', p.get('sessao'));
+      if (p.get('lan'))    fora.set('lan', p.get('lan'));
+      const q = fora.toString();
+      return q ? `${destino}?${q}` : destino;
     }
 
     async function redirectByProfile(user) {
