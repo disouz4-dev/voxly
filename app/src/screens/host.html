@@ -2688,8 +2688,16 @@ https://www.youtube.com/@canal/videos"></textarea>
 
         // Regra unica de ordem (src/ordem.js). A antiga punha toda prioridade
         // na frente a cada atualizacao e desfazia o arrastar do KJ.
+        // Pedido com id estranho nem entra na tela: o id e escolhido por quem
+        // pede e vai dentro de atributos (onclick, draggable). Um id com aspas
+        // rodaria codigo aqui dentro, com acesso ao disco (QA de 02/10).
+        const seguros = snap.docs.filter(d => {
+          if (VoxlySeguro.idSeguro(d.id)) return true;
+          diario('fila.id-suspeito', { id: String(d.id).slice(0, 60) }, 'erro');
+          return false;
+        });
         filaData = VoxlyOrdem.ordenarFila(
-          snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'),
+          seguros.map(d => ({ id: d.id, ...d.data() })).filter(d => d.slot !== 'espera'),
           { ultimoFoiCafe: _ultimoFoiCafe });
         _filaCompleta = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         promoverCafesPendentes(_filaCompleta);
@@ -3010,6 +3018,14 @@ https://www.youtube.com/@canal/videos"></textarea>
     // "tocando" e so depois se descobria que nao havia arquivo: a fila ficava
     // presa numa musica que nao tocava, e um alert() travava a Gerencia ate
     // alguem clicar.
+    // Palco fechado engole o comando sem reclamar (main.js so manda "if
+    // (playerWindow)"): o painel dizia "tocando" e nada tocava.
+    if (window.electronAPI && window.electronAPI.palcoVivo && !(await window.electronAPI.palcoVivo().catch(() => true))) {
+      diario('kj.palco-fechado', { id: itemId, musica: item.musica }, 'erro');
+      mostrarToast('🖥 O Palco está fechado — abrindo. Dê Play de novo em 2 segundos.', 7000);
+      window.electronAPI.invoke('open-player');
+      return;
+    }
     const filePath = window.electronAPI ? await arquivoDoItem(item) : null;
     if (window.electronAPI && !filePath) {
       diario('kj.tocar-sem-arquivo', { id: itemId, musica: item.musica }, 'aviso');
@@ -5464,18 +5480,25 @@ https://www.youtube.com/@canal/videos"></textarea>
     // Pasta mudou (musica nova baixada, arquivo removido): republica o menu.
     window.electronAPI.onMusicFolderChanged(() => publicarCatalogo());
 
-    let processandoFim = false;
+    // A trava do fim da musica e por TEMPO, nao por "terminei de gravar". Era
+    // um booleano solto depois dos writes: com a internet caida, a gravacao do
+    // Firestore nao rejeita — ela fica pendurada — e a trava nunca abria. Da
+    // segunda musica em diante o fim era ignorado em silencio e a noite parava
+    // de andar sozinha (QA de 02/10). Tres segundos bastam para nao processar
+    // duas vezes o mesmo fim.
+    let _fimTratadoEm = 0;
     window.electronAPI.onSongEnded(async () => {
-      if (processandoFim) return;
-      processandoFim = true;
+      const agora = Date.now();
+      if (agora - _fimTratadoEm < 3000) {
+        diario('fim.ignorado', { desde: agora - _fimTratadoEm }, 'aviso');
+        return;
+      }
+      _fimTratadoEm = agora;
       try {
-        if (currentSong) {
-          await marcarCantada(currentSong.id);
-        } else {
-          await iniciarConfirmacaoProxima();
-        }
-      } finally {
-        processandoFim = false;
+        if (currentSong) await marcarCantada(currentSong.id);
+        else await iniciarConfirmacaoProxima();
+      } catch (e) {
+        diario('fim.falhou', { erro: e.message }, 'erro');
       }
     });
   }

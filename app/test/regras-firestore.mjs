@@ -327,6 +327,22 @@ await deve("a dona", "marcar o fim da noite para 3 minutos atrás (dentro da fol
   updateDoc(sessao(dono.bd), { horarioTermino: Timestamp.fromMillis(Date.now() - 3 * 60e3) }));
 await deve("a Ana", "pedir música na folga de 5 minutos", () => pedidoDe(ana, "ana_folga"));
 
+console.log("\n── Id de pedido forjado ──");
+// O id do pedido vai dentro de atributos das telas da Gerencia. Com aspas e
+// sinal de menor, ele fecharia o atributo e rodaria codigo na maquina do KJ.
+await naoDeve("o cantor", "criar pedido com id que vira código", () =>
+  setDoc(item(estranho.bd, 'x"><img src=x onerror=alert(1)>'), {
+    cantorUid: estranho.uid, nomeArtistico: "Invasor", musica: "M", artista: "A",
+    status: "aguardando", slot: "ativa", ordemFila: 1 }));
+await naoDeve("a dona", "criar pedido com id que vira código (nem ela)", () =>
+  setDoc(item(dono.bd, "y'><script>x()</script>"), {
+    cantorUid: "manual_z", nomeArtistico: "Manual", musica: "M", artista: "A",
+    status: "aguardando", slot: "ativa" }));
+await deve("o cantor", "criar pedido com id normal", () =>
+  setDoc(item(estranho.bd, "uid_Abc-123"), {
+    cantorUid: estranho.uid, nomeArtistico: "Cantor", musica: "M", artista: "A",
+    status: "aguardando", slot: "ativa", ordemFila: 2 }));
+
 console.log("\n── Controle do Palco pelo celular ──");
 // A porta so abre para o e-mail que a Gerencia cadastrou, conferido no token
 // do Google. Aqui os dois usuarios sao ANONIMOS (sem e-mail), entao o que da

@@ -58,3 +58,11 @@ test("vazio e lixo viram nulo", () => {
   assert.strictEqual(urlDeImagem(null), null);
   assert.strictEqual(urlDeImagem({ toString: () => "https://x.com/a.png" }), null);
 });
+
+test("id de pedido so passa com letra, numero, _ e -", () => {
+  const { idSeguro } = require("../src/seguro");
+  for (const bom of ["abc123", "uid_Abc-123", "manual_1790000000000", "kj_x", "a".repeat(160)])
+    assert.strictEqual(idSeguro(bom), true, bom);
+  for (const mau of ["a\"><img src=x onerror=alert(1)>", "a'b", "a b", "a<b", "a/b", "", null, 42, "a".repeat(161), "a\nb"])
+    assert.strictEqual(idSeguro(mau), false, String(mau));
+});

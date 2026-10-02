@@ -884,6 +884,7 @@ function escutarFila() {
         .onSnapshot(snap => {
           filhaAtiva = null; filhaEspera = null;
           snap.forEach(doc => {
+            if (!VoxlySeguro.idSeguro(doc.id)) return;   // id forjado nao entra na tela
             const d = { id: doc.id, ...doc.data() };
             if (['cantada','pulada','cancelada'].includes(d.status)) return;
             if (d.slot === 'ativa')  filhaAtiva  = d;

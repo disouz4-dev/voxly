@@ -176,7 +176,11 @@ service cloud.firestore {
         // O cantor cria o proprio pedido; a Gerencia cria por qualquer um
         // (cantor adicionado a mao pelo KJ nao tem conta). Com entrada paga
         // ligada, o pedido do cantor so entra depois de o KJ confirmar o Pix.
-        allow create: if logado() && (souDono(sid)
+        // O id vem do celular e vai parar dentro de atributos das telas: com
+        // aspas e sinal de menor ele viraria codigo rodando na Gerencia, que
+        // mexe no disco da maquina. Id de verdade e so letra, numero, _ e -.
+        allow create: if logado() && itemId.matches('^[A-Za-z0-9_-]{1,160}$')
+                                  && (souDono(sid)
                                       || (request.resource.data.cantorUid == eu() && entradaPaga(sid)
                                           && dentroDoHorario(sid)));
         // O parceiro de dueto aceita o convite mexendo so nos campos do duo — e

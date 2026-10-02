@@ -29,7 +29,20 @@ function urlDeImagem(url) {
   return (RE_HTTP.test(url) || RE_DATA.test(url)) ? url : null;
 }
 
-const api = { escaparHtml, urlDeImagem };
+// ── Id de documento ────────────────────────────────────────
+// O id do pedido e ESCOLHIDO por quem faz o pedido (o celular), e ele entra em
+// atributos das telas. Um id com aspas e sinal de menor fecharia o atributo e
+// rodaria codigo dentro da Gerencia, que tem acesso ao disco. Os ids de
+// verdade sao sempre letra, numero, "_" e "-" (uid do Firebase, "manual_...",
+// "kj_...", id automatico). O resto e ataque — a tela ignora, e o banco recusa
+// na criacao.
+const RE_ID = /^[A-Za-z0-9_-]{1,160}$/;
+
+function idSeguro(id) {
+  return typeof id === "string" && RE_ID.test(id);
+}
+
+const api = { escaparHtml, urlDeImagem, idSeguro };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlySeguro = api;
 
