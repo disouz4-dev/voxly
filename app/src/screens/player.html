@@ -1029,12 +1029,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // cadeia existir travava o motor de audio: o relogio dele congelava, o
     // video nao andava e a noite nao comecava (QA de 02/10).
     saidaAplicada = null;
-    reaplicarSaida().then(async () => {
-      // O motor as vezes nasce "running" com o relogio congelado (depende de
-      // o aparelho de saida ter mudado por perto). Uma sacudida de graca.
-      await audioCtx.suspend().catch(() => {});
-      await audioCtx.resume().catch(() => {});
-    });
+    await reaplicarSaida();
+    // O motor as vezes nasce "running" com o relogio congelado (depende de o
+    // aparelho de saida ter mudado por perto). Uma sacudida de graca — dentro
+    // do await, senao ela caia no meio da primeira musica e cortava o comeco.
+    await audioCtx.suspend().catch(() => {});
+    await audioCtx.resume().catch(() => {});
   }
 
   // Quanto esta musica precisa subir ou descer para soar como as outras. O
@@ -2201,6 +2201,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (video.currentTime !== _tempoVisto) { _tempoVisto = video.currentTime; _paradoDesde = agora; return; }
     if (!_paradoDesde) { _paradoDesde = agora; return; }
     if (agora - _paradoDesde < 4000 || _destravando) return;
+    // Arquivo com defeito nao e motor travado: sacudir o audio nao resolve e
+    // ainda esconderia o problema de quem precisa trocar a versao.
+    if (video.error) {
+      diario('video.com-erro', { codigo: video.error.code, arquivo: (video.src || '').split('/').pop() }, 'erro');
+      _paradoDesde = 0;
+      return;
+    }
+    // Ainda carregando (disco lento, arquivo no HD externo): esperar e o certo.
+    if (video.readyState < 3) { _paradoDesde = agora; return; }
     _destravando = true;
     diario('audio.travou', { tempo: Number(video.currentTime.toFixed(2)),
                              motor: audioCtx ? audioCtx.state : 'sem motor',
@@ -2213,7 +2222,9 @@ document.addEventListener("DOMContentLoaded", () => {
         await audioCtx.suspend().catch(() => {});
         await audioCtx.resume().catch(() => {});
       }
-      await video.play().catch(() => {});
+      // A pausa do KJ manda: dois awaits depois, ele pode ter pausado de
+      // proposito para falar com a sala.
+      if (!video.paused && !video.ended && video.src) await video.play().catch(() => {});
     } finally {
       _paradoDesde = Date.now();
       _destravando = false;

@@ -1804,6 +1804,9 @@ https://www.youtube.com/@canal/videos"></textarea>
     horarioInicioShow = dados.inicio;
 
     SESSAO_ID    = sessaoId;
+    // Sem isto o painel do celular nunca aparecia numa noite nova: o e-mail
+    // ficava so nesta maquina (QA de 02/10).
+    await gravarControleEmail();
     await gravarCobrancaPublica(cobranca);
     sessaoCodigo = codigo;
     dadosSessaoAtual = { nomeCasa: dados.nomeCasa, inicio: dados.inicio, termino: dados.termino };
@@ -2314,7 +2317,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // apareciam para sempre na lista de sessoes ativas do cantor. Agora, passado
   // o horario de termino declarado pelo KJ, a sessao e apagada com suas
   // subcolecoes.
-  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos', 'cobranca', 'comandos'];
+  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos', 'cobranca', 'comandos', 'controle'];
   // A sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila
   // mesmo depois do prazo — quem para de pedir e o cantor.
 
@@ -2679,6 +2682,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'confirmado', 'pronto'])
       .onSnapshot(snap => {
         _carregado.fila = true;
+        _repescarAutoPlay(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         // Pedido novo com videoId: garante o arquivo antes da vez chegar.
         snap.docs.forEach(d => garantirArquivoDaFila({ id: d.id, ...d.data() }));
 
@@ -4404,6 +4408,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   function desenharAutoPlay() {
     const b = document.getElementById('btnAutoPlay');
     if (!b) return;
+    // Sem sessao ou sem internet nao existe auto play: escutarConfirmacoes nao
+    // roda, e o botao mentiria dizendo "ligado".
+    const vale = !!SESSAO_ID && !modoOffline;
+    b.disabled = !vale;
+    if (!vale) _autoPlayLigado = false;
     b.textContent = _autoPlayLigado ? '🔁 Auto play: ligado' : '🔁 Auto play: desligado';
     b.style.opacity = _autoPlayLigado ? '1' : '.5';
     b.classList.toggle('btn-ok', _autoPlayLigado);
@@ -4425,6 +4434,21 @@ https://www.youtube.com/@canal/videos"></textarea>
   async function palcoVivo() {
     if (!window.electronAPI || !window.electronAPI.palcoVivo) return true;
     try { return !!(await window.electronAPI.palcoVivo()); } catch (_) { return false; }
+  }
+
+  // A fila esvaziou e voltou a encher: sem isto o auto play ficava esperando
+  // uma confirmacao que ninguem ia mandar, porque ninguem tinha sido chamado.
+  // So na BORDA (vazio -> cheio), nunca a cada atualizacao da fila.
+  let _filaTinhaGente = false;
+  function _repescarAutoPlay(itens) {
+    const esperando = itens.some(i => i.status === 'aguardando' && i.slot !== 'espera');
+    const chamando  = itens.some(i => ['confirmando', 'confirmado', 'pronto', 'tocando'].includes(i.status));
+    const antes = _filaTinhaGente;
+    _filaTinhaGente = esperando || chamando;
+    if (!_autoPlayLigado || antes || !esperando || chamando) return;
+    if (currentSong || _autoPlaySubindo || proximaConfirmando) return;
+    diario('autoplay.repescagem', { esperando: itens.filter(i => i.status === 'aguardando').length });
+    iniciarConfirmacaoProxima();
   }
 
   async function tentarAutoPlay(item) {
@@ -4454,6 +4478,10 @@ https://www.youtube.com/@canal/videos"></textarea>
           diario('autoplay.desistiu', { id: item.id, status: agora ? agora.status : 'sumiu' }, 'aviso');
           return;
         }
+        // O KJ pode ter desligado o modo (ou fechado o Palco) dentro do
+        // respiro: nos 4 s entre decidir e tocar, tudo pode ter mudado.
+        if (!_autoPlayLigado) { diario('autoplay.desistiu', { id: item.id, status: 'desligado no meio' }, 'aviso'); return; }
+        if (!(await palcoVivo())) { diario('autoplay.desistiu', { id: item.id, status: 'Palco fechado' }, 'aviso'); return; }
         await tocarMusica(item.id);
       } catch (e) {
         diario('autoplay.falhou', { id: item.id, erro: e.message }, 'erro');
@@ -4480,12 +4508,22 @@ https://www.youtube.com/@canal/videos"></textarea>
     try { localStorage.setItem(CHAVE_CONTROLE_EMAIL, email); } catch (_) {}
     const el = document.getElementById('controle-email');
     if (el) el.value = email;
-    if (SESSAO_ID && !modoOffline) {
-      await db.collection('sessoes').doc(SESSAO_ID).update({ controleEmail: email })
-        .catch(e => diario('controle.nao-gravou', { erro: e.message }, 'erro'));
-    }
+    await gravarControleEmail();
     diario('kj.controleEmail', { email: email || '(vazio)' });
     mostrarToast(email ? `📱 ${email} pode comandar o Palco pelo celular` : 'Controle pelo celular desligado', 5000);
+  }
+
+  // O e-mail fica numa subcolecao fechada (sessoes/{sid}/controle/remoto), e
+  // nao no documento da sessao: qualquer conta logada le a lista de sessoes, e
+  // o endereco pessoal do KJ vazaria junto — mesmo motivo que tirou a chave
+  // Pix de la.
+  async function gravarControleEmail() {
+    if (!SESSAO_ID || modoOffline) return;
+    let email = '';
+    try { email = localStorage.getItem(CHAVE_CONTROLE_EMAIL) || ''; } catch (_) {}
+    await db.collection('sessoes').doc(SESSAO_ID).collection('controle').doc('remoto')
+      .set({ email: VoxlyComando.normalizarEmail(email), em: firebase.firestore.FieldValue.serverTimestamp() })
+      .catch(e => diario('controle.nao-gravou', { erro: e.message }, 'erro'));
   }
 
   // Cada toque no celular vira um documento. A Gerencia APAGA e so entao
@@ -4493,21 +4531,27 @@ https://www.youtube.com/@canal/videos"></textarea>
   function escutarComandos() {
     if (modoOffline || !SESSAO_ID) return;
     if (_comandosUnsub) _comandosUnsub();
+    let corrente = Promise.resolve();   // um comando por vez, na ordem que chegou
     _comandosUnsub = db.collection('sessoes').doc(SESSAO_ID).collection('comandos')
       .onSnapshot(snap => {
-        snap.docChanges().forEach(async mudanca => {
+        snap.docChanges().forEach(mudanca => {
           if (mudanca.type !== 'added') return;
           const cmd = { id: mudanca.doc.id, ...mudanca.doc.data() };
-          try { await mudanca.doc.ref.delete(); }
-          catch (_) { return; }   // outra Gerencia pegou primeiro
-          executarComando(cmd);
+          corrente = corrente.then(async () => {
+            try { await mudanca.doc.ref.delete(); }
+            catch (_) { return; }   // outra Gerencia pegou primeiro
+            await executarComando(cmd);
+          }).catch(() => {});
         });
       }, e => diario('controle.escuta-caiu', { erro: e.message }, 'aviso'));
   }
 
   async function executarComando(cmd) {
+    // O chamado vem da fila, nao de proximaConfirmando: assim que o cantor
+    // confirma, aquela variavel e zerada e o comando do celular era descartado.
+    const chamado = filaData.find(i => ['confirmando', 'confirmado', 'pronto'].includes(i.status));
     const estado = { itemNoPalco: currentSong ? currentSong.id : null,
-                     chamandoId: proximaConfirmando ? proximaConfirmando.id : null };
+                     chamandoId: chamado ? chamado.id : (proximaConfirmando ? proximaConfirmando.id : null) };
     const juizo = VoxlyComando.julgarComando(cmd, { agora: Date.now(), estado });
     if (!juizo.fazer) {
       diario('controle.descartado', { acao: cmd.acao, motivo: juizo.motivo }, 'aviso');

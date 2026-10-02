@@ -2211,6 +2211,9 @@ function escutarFila() {
     function desenharFilaEvento() {
           const el = document.getElementById('filaEventoList');
           const items = _itensEvento;
+          // Antes do retorno de fila vazia: senao o rotulo do controle
+          // congelava em "tocando X" depois que a fila esvaziava.
+          desenharControlePalco();
           if (items.length === 0) { el.innerHTML = '<div class="empty">Fila vazia.</div>'; return; }
           el.innerHTML = items.map((d, i) => {
             const isMinha   = d.cantorUid === currentUser.uid;
@@ -2244,21 +2247,43 @@ function escutarFila() {
             const b = ev.target.closest('[data-pedir-cantar]');
             if (b) pedirParaCantarJunto(_itensEvento[Number(b.dataset.pedirCantar)]);
           };
-        desenharControlePalco();
     }
 
     // ── Controle do Palco (so para o dono) ───────────────────
     // O KJ cadastra o e-mail dele na Gerencia; aqui o painel so aparece se a
     // conta logada for essa. Quem realmente barra os outros e o banco: a
     // regra compara o e-mail assinado pelo Google com o da sessao.
+    // Quem diz se o painel e dele e o BANCO: o e-mail do controle mora numa
+    // subcolecao que so a Gerencia e o dono leem. Se a leitura passa, e ele.
+    // (No documento da sessao, o endereco vazava para qualquer um que abrisse
+    // a lista de casas.)
+    let _controleLiberado = false;
+    let _controleConferidoEm = null;
+
+    async function conferirControleDoPalco() {
+      const chave = SESSAO_ID + '|' + (currentUser && currentUser.uid);
+      if (_controleConferidoEm === chave) return _controleLiberado;
+      _controleConferidoEm = chave;
+      _controleLiberado = false;
+      if (modoOffline || !SESSAO_ID || !currentUser || !currentUser.email || !currentUser.emailVerified) return false;
+      try {
+        const doc = await db.collection('sessoes').doc(SESSAO_ID).collection('controle').doc('remoto').get();
+        _controleLiberado = doc.exists && VoxlyComando.mesmoDono(doc.data().email, currentUser.email);
+      } catch (_) {
+        _controleLiberado = false;   // sem permissao = nao e o dono
+      }
+      if (_controleLiberado) desenharControlePalco();
+      return _controleLiberado;
+    }
+
     function souODonoDoPalco() {
-      return !modoOffline && !!currentUser && !!sessaoAtualDoc
-        && VoxlyComando.mesmoDono(sessaoAtualDoc.controleEmail, currentUser.email);
+      return !modoOffline && _controleLiberado;
     }
 
     function desenharControlePalco() {
       const sec = document.getElementById('controlePalco');
       if (!sec) return;
+      conferirControleDoPalco();
       if (!souODonoDoPalco()) { sec.style.display = 'none'; return; }
       sec.style.display = '';
       const tocando = _itensEvento.find(i => i.status === 'tocando');

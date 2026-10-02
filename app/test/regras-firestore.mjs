@@ -333,7 +333,15 @@ console.log("\n── Controle do Palco pelo celular ──");
 // para provar e o essencial: ninguem de fora comanda. O caminho feliz (o
 // celular do dono, logado com o Google) se testa no celular.
 await deve("a dona", "cadastrar o e-mail do controle", () =>
+  setDoc(doc(dono.bd, "sessoes", SID, "controle", "remoto"), { email: "dono@exemplo.com" }));
+await naoDeve("a dona", "pôr o e-mail no documento da sessão (vazava para todo mundo)", () =>
   updateDoc(sessao(dono.bd), { controleEmail: "dono@exemplo.com" }));
+await naoDeve("o estranho", "ler o e-mail do controle", () =>
+  getDoc(doc(estranho.bd, "sessoes", SID, "controle", "remoto")));
+await naoDeve("a Ana", "escrever no controle da sessão", () =>
+  setDoc(doc(ana.bd, "sessoes", SID, "controle", "remoto"), { email: "ana@exemplo.com" }));
+await deve("a dona", "ler o próprio controle", () =>
+  getDoc(doc(dono.bd, "sessoes", SID, "controle", "remoto")));
 await naoDeve("o estranho", "escrever um comando solto na sessão", () =>
   updateDoc(sessao(estranho.bd), { comando: { acao: "tocar", ts: Date.now() } }));
 await naoDeve("o estranho", "trocar o e-mail do controle", () =>

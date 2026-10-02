@@ -61,7 +61,8 @@ service cloud.firestore {
     }
 
     function podeVerSessao(sid) {
-      return logado() && (souDono(sid) || entradaPaga(sid) || abandonada(dadosDaSessao(sid)));
+      return logado() && (souDono(sid) || donoRemoto(sid) || entradaPaga(sid)
+                          || abandonada(dadosDaSessao(sid)));
     }
 
     // ── Controle do Palco pelo celular do dono ──────────────────────────
@@ -73,15 +74,24 @@ service cloud.firestore {
       return request.auth.token.get('email', '').lower().trim();
     }
     function emailConfiavel() {
+      // Google e o unico provedor com e-mail que o Voxly usa; exigir isso na
+      // regra tira a seguranca da mao de um ajuste do console do Firebase.
       return logado() && request.auth.token.get('email_verified', false) == true
+             && request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'google.com'
              && emailDoToken() != '';
     }
+    // O e-mail do dono NAO mora no documento da sessao: qualquer conta logada
+    // le (e lista) as sessoes, e o endereco pessoal dele vazaria para a casa
+    // inteira — o mesmo motivo que tirou a chave Pix de la.
+    function emailDoControle(sid) {
+      let p = /databases/$(database)/documents/sessoes/$(sid)/controle/remoto;
+      return exists(p) ? get(p).data.get('email', '').lower().trim() : '';
+    }
     function donoRemoto(sid) {
-      let d = dadosDaSessao(sid);
       return emailConfiavel()
-             && d.get('controleEmail', '') != ''
-             && d.get('controleEmail', '').lower().trim() == emailDoToken()
-             && d.get('donoUid', '') != '';
+             && emailDoControle(sid) != ''
+             && emailDoControle(sid) == emailDoToken()
+             && dadosDaSessao(sid).get('donoUid', '') != '';
     }
     // Um comando e um toque de botao, nada mais: acao conhecida, alvo opcional
     // e a hora do SERVIDOR. A hora vem de request.time para o celular nao
@@ -133,10 +143,10 @@ service cloud.firestore {
       // porque ninguem lia o campo; com o controle remoto lendo, seria o Palco
       // na mao de estranhos. O controle agora passa pela subcolecao comandos,
       // abaixo, onde o banco confere o e-mail assinado pelo Google.
-      allow update: if logado() && (resource.data.donoUid == eu()
-                                    || ((abandonada(resource.data) || semDono(resource.data))
-                                        && request.resource.data.get('donoUid', '') == resource.data.get('donoUid', '')
-                                        && request.resource.data.get('controleEmail', '') == resource.data.get('controleEmail', '')));
+      allow update: if logado() && !('controleEmail' in request.resource.data)
+                                 && (resource.data.donoUid == eu()
+                                     || ((abandonada(resource.data) || semDono(resource.data))
+                                         && request.resource.data.get('donoUid', '') == resource.data.get('donoUid', '')));
       allow delete: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
                                     || semDono(resource.data));
 
@@ -144,12 +154,21 @@ service cloud.firestore {
       // apaga e executa. Documento novo (e nao um campo unico) porque dois
       // toques nao podem se sobrescrever, e porque apagar antes de executar e
       // o que garante que o mesmo comando nunca toca duas vezes.
+      // Quem comanda o Palco de longe. So a Gerencia dona escreve; ler, so ela
+      // e o proprio dono pelo celular (e e assim que o celular descobre que o
+      // painel e dele: se a leitura passa, e ele).
+      match /controle/{doc} {
+        allow read:  if souDono(sid) || donoRemoto(sid);
+        allow write: if souDono(sid);
+        // A faxina de outra maquina precisa limpar o que ficou para tras.
+        allow delete: if souDono(sid) || abandonada(dadosDaSessao(sid)) || semDono(dadosDaSessao(sid));
+      }
+
       match /comandos/{cid} {
         allow read:   if souDono(sid) || donoRemoto(sid);
         allow create: if donoRemoto(sid) && comandoBem(request.resource.data);
         allow update: if false;
-        allow delete: if souDono(sid) || donoRemoto(sid)
-                         || abandonada(dadosDaSessao(sid)) || semDono(dadosDaSessao(sid));
+        allow delete: if souDono(sid) || donoRemoto(sid);
       }
 
       match /fila/{itemId} {
