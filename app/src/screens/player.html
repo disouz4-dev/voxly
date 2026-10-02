@@ -1017,18 +1017,24 @@ document.addEventListener("DOMContentLoaded", () => {
     normNode = audioCtx.createGain();
     normNode.connect(compNode);
 
-    // O audio da musica nasce agora, depois das conferencias da abertura: elas
-    // ja marcaram a saida como aplicada (so nos <audio>), e sem esquecer isto
-    // o reaplicarSaida saia cedo e a musica ia para o padrao do sistema — a
-    // TV, ao espelhar (QA da 1.1.28).
-    saidaAplicada = null;
-    reaplicarSaida();
-
     // Conecta vídeo à cadeia (apenas uma vez — createMediaElementSource lança exceção na segunda)
     srcNode = audioCtx.createMediaElementSource(video);
     pitchNode = criarRubberbandNode();
     srcNode.connect(pitchNode);
     pitchNode.connect(normNode);
+
+    // So agora a saida: as conferencias da abertura ja marcaram a saida como
+    // aplicada (nos <audio>), e sem esquecer isto a musica ia para o padrao do
+    // sistema — a TV, ao espelhar (QA da 1.1.28). Trocar a saida ANTES de a
+    // cadeia existir travava o motor de audio: o relogio dele congelava, o
+    // video nao andava e a noite nao comecava (QA de 02/10).
+    saidaAplicada = null;
+    reaplicarSaida().then(async () => {
+      // O motor as vezes nasce "running" com o relogio congelado (depende de
+      // o aparelho de saida ter mudado por perto). Uma sacudida de graca.
+      await audioCtx.suspend().catch(() => {});
+      await audioCtx.resume().catch(() => {});
+    });
   }
 
   // Quanto esta musica precisa subir ou descer para soar como as outras. O
@@ -1094,6 +1100,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (r.motivo === "fone-plugado") diario('audio.fone-plugado', { id: r.id.slice(0, 12) });
     if (audioCtx && audioCtx.setSinkId) {
       await audioCtx.setSinkId(r.id).catch(e => console.warn("[AUDIO] setSinkId:", e.message));
+      // Trocar a saida pode deixar o motor suspenso: sem isto ele fica "running"
+      // com o relogio parado, e o video nao anda.
+      await audioCtx.resume().catch(() => {});
     }
     for (const el of [intervaloAudio, aberturaAudio, falaAudio, previewAudio]) {
       if (el && el.setSinkId) await el.setSinkId(r.id).catch(() => {});
@@ -2192,6 +2201,36 @@ intervaloDeck = [];
     });
   }
   for (const ev of ["pause", "play", "ended", "emptied"]) video.addEventListener(ev, () => contarProgresso(true));
+  // Vigia do motor de audio. Sintoma visto no QA de 02/10: o AudioContext diz
+  // "running" mas o relogio dele congela (acontece quando a saida de audio
+  // muda ou some), e o video preso nele para de andar sem pausar e sem erro —
+  // a noite morreria em silencio. Aqui o Palco se destrava sozinho.
+  let _tempoVisto = -1, _paradoDesde = 0, _destravando = false;
+  setInterval(async () => {
+    if (isAudience || !video.src || video.paused || video.ended) { _tempoVisto = -1; _paradoDesde = 0; return; }
+    const agora = Date.now();
+    if (video.currentTime !== _tempoVisto) { _tempoVisto = video.currentTime; _paradoDesde = agora; return; }
+    if (!_paradoDesde) { _paradoDesde = agora; return; }
+    if (agora - _paradoDesde < 4000 || _destravando) return;
+    _destravando = true;
+    diario('audio.travou', { tempo: Number(video.currentTime.toFixed(2)),
+                             motor: audioCtx ? audioCtx.state : 'sem motor',
+                             relogio: audioCtx ? Number(audioCtx.currentTime.toFixed(2)) : null }, 'erro');
+    try {
+      // Suspender e retomar e o que REALMENTE destrava: o motor se diz
+      // "running" com o relogio parado, e so um resume nao faz nada (QA de
+      // 02/10, provado na janela do Palco).
+      if (audioCtx) {
+        await audioCtx.suspend().catch(() => {});
+        await audioCtx.resume().catch(() => {});
+      }
+      await video.play().catch(() => {});
+    } finally {
+      _paradoDesde = Date.now();
+      _destravando = false;
+    }
+  }, 2000);
+
   // Trocar o arquivo volta a velocidade para 1: reaplica a cada video novo.
   for (const ev of ["loadedmetadata", "play"]) video.addEventListener(ev, aplicarVelocidade);
   // Recarregou (ou abriu depois da sessao comecar): pede o QR e os dados da

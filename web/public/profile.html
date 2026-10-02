@@ -70,6 +70,9 @@
     .nav-btn.active { color: var(--accent); }
     .nav-btn span { font-size: 1.3rem; }
     .nav-btn { position: relative; }
+    .btn-controle { padding: 14px 10px; border-radius: 12px; border: 1px solid var(--accent); background: #ffffff0d; color: var(--text); font-family: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; }
+    .btn-controle:active { background: var(--accent); color: #111; }
+    .btn-controle[disabled] { opacity: .4; cursor: default; }
     #instalarAviso { position: fixed; left: 10px; right: 10px; bottom: 78px; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface2); border: 1px solid #ffffff1a; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
     #instalarAviso[hidden] { display: none; }
     body.com-aviso-instalar { padding-bottom: 150px; }
@@ -354,6 +357,22 @@
         <div class="card" id="respostasList"></div>
       </div>
 
+      <!-- So aparece para a conta que o KJ cadastrou na Gerencia: e o proprio
+           KJ comandando o Palco do celular, longe do notebook. -->
+      <div class="section" id="controlePalco" style="display:none;">
+        <div class="section-title">🎛️ Controle do Palco</div>
+        <div class="card">
+          <div id="controleAgora" style="font-size:.85rem;color:var(--muted);margin-bottom:10px;">—</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <button class="btn-controle" onclick="mandarComando('tocar')">▶ Play</button>
+            <button class="btn-controle" onclick="mandarComando('pausar')">⏸ Pausa</button>
+            <button class="btn-controle" onclick="mandarComando('pular')">⏭ Pular</button>
+            <button class="btn-controle" onclick="mandarComando('cantarNaProxima')">🚻 Cantar na próxima</button>
+            <button class="btn-controle" style="grid-column:1/-1;" onclick="mandarComando('chamarProximo')">📣 Chamar o próximo</button>
+          </div>
+        </div>
+      </div>
+
       <div class="section">
         <div class="section-title">🎶 Fila do Evento</div>
         <div class="card" id="filaEventoCard">
@@ -507,6 +526,7 @@
   <script src="/seguro.js"></script>
   <script src="/chat.js"></script>
   <script src="/entrada.js"></script>
+  <script src="/comando.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -2224,6 +2244,56 @@ function escutarFila() {
             const b = ev.target.closest('[data-pedir-cantar]');
             if (b) pedirParaCantarJunto(_itensEvento[Number(b.dataset.pedirCantar)]);
           };
+        desenharControlePalco();
+    }
+
+    // ── Controle do Palco (so para o dono) ───────────────────
+    // O KJ cadastra o e-mail dele na Gerencia; aqui o painel so aparece se a
+    // conta logada for essa. Quem realmente barra os outros e o banco: a
+    // regra compara o e-mail assinado pelo Google com o da sessao.
+    function souODonoDoPalco() {
+      return !modoOffline && !!currentUser && !!sessaoAtualDoc
+        && VoxlyComando.mesmoDono(sessaoAtualDoc.controleEmail, currentUser.email);
+    }
+
+    function desenharControlePalco() {
+      const sec = document.getElementById('controlePalco');
+      if (!sec) return;
+      if (!souODonoDoPalco()) { sec.style.display = 'none'; return; }
+      sec.style.display = '';
+      const tocando = _itensEvento.find(i => i.status === 'tocando');
+      const chamando = _itensEvento.find(i => i.status === 'confirmando' || i.status === 'pronto');
+      const el = document.getElementById('controleAgora');
+      el.textContent = tocando
+        ? `▶ ${tocando.musica} — ${tocando.nomeArtistico}`
+        : chamando ? `📣 chamando ${chamando.nomeArtistico}` : 'Nada tocando agora';
+    }
+
+    // O alvo viaja junto: entre o toque aqui e a chegada na Gerencia a musica
+    // pode ter virado, e um "pular" atrasado tiraria a vez de outra pessoa.
+    async function mandarComando(acao) {
+      if (!souODonoDoPalco()) return;
+      const tocando = _itensEvento.find(i => i.status === 'tocando');
+      const chamando = _itensEvento.find(i => i.status === 'confirmando' || i.status === 'pronto');
+      const alvoId = acao === 'pular' ? (tocando && tocando.id)
+        : acao === 'cantarNaProxima' ? ((tocando && tocando.id) || (chamando && chamando.id))
+        : null;
+      if (VoxlyComando.ACOES[acao].alvo && !alvoId) {
+        mostrarToast('Nada no palco para esse botão agora.', 3500);
+        return;
+      }
+      try {
+        await db.collection('sessoes').doc(SESSAO_ID).collection('comandos').add({
+          acao,
+          alvoId: alvoId || null,
+          por: VoxlyComando.normalizarEmail(currentUser.email),
+          criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        mostrarToast('📱 Enviado para a Gerência', 2500);
+      } catch (e) {
+        console.error('[controle]', e);
+        mostrarToast('Não consegui enviar o comando. Tente de novo.', 5000);
+      }
     }
 
     async function pedirParaCantarJunto(item) {
@@ -2382,6 +2452,7 @@ function escutarFila() {
         const data = snap.data();
         const valorAntes = _cobrancaPublica && _cobrancaPublica.valor;
         sessaoAtualDoc = data;
+        desenharControlePalco();
         if (VoxlyEntrada.cobrancaAtiva(data) && valorAntes !== undefined && valorAntes !== data.cobranca.valor) {
           _cobrancaPublica = null;   // o KJ mudou o valor: o QR antigo nao serve
           carregarCobrancaPublica();

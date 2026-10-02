@@ -64,6 +64,37 @@ service cloud.firestore {
       return logado() && (souDono(sid) || entradaPaga(sid) || abandonada(dadosDaSessao(sid)));
     }
 
+    // ── Controle do Palco pelo celular do dono ──────────────────────────
+    // A Gerencia entra anonima: ela nao conhece o uid Google do dono, so o
+    // e-mail que ele digitou em Ajustes (sessao.controleEmail). Quem prova a
+    // identidade e o proprio token do Google, assinado, que o cliente nao
+    // forja. Sem e-mail configurado, a porta nem existe.
+    function emailDoToken() {
+      return request.auth.token.get('email', '').lower().trim();
+    }
+    function emailConfiavel() {
+      return logado() && request.auth.token.get('email_verified', false) == true
+             && emailDoToken() != '';
+    }
+    function donoRemoto(sid) {
+      let d = dadosDaSessao(sid);
+      return emailConfiavel()
+             && d.get('controleEmail', '') != ''
+             && d.get('controleEmail', '').lower().trim() == emailDoToken()
+             && d.get('donoUid', '') != '';
+    }
+    // Um comando e um toque de botao, nada mais: acao conhecida, alvo opcional
+    // e a hora do SERVIDOR. A hora vem de request.time para o celular nao
+    // conseguir gravar um comando "do futuro" que ficaria valendo a noite toda.
+    function comandoBem(d) {
+      return d.keys().hasOnly(['acao', 'alvoId', 'criadoEm', 'por'])
+             && d.keys().hasAll(['acao', 'criadoEm'])
+             && d.acao in ['tocar', 'pausar', 'pular', 'cantarNaProxima', 'chamarProximo']
+             && d.criadoEm == request.time
+             && (!('alvoId' in d) || d.alvoId == null || (d.alvoId is string && d.alvoId.size() <= 200))
+             && (!('por' in d) || d.por == emailDoToken());
+    }
+
     function soMudou(campos) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
     }
@@ -89,18 +120,37 @@ service cloud.firestore {
       // como sempre foi (qualquer Gerencia administra); com dono, so a dona.
       allow create: if logado() && (!('donoUid' in request.resource.data)
                                     || request.resource.data.donoUid == eu());
-      // A dona manda; sessao abandonada ou antiga, qualquer Gerencia resolve; e
-      // o cantor so consegue mandar o pedido de tocar (campo "comando").
+      // A dona manda; sessao abandonada ou antiga, qualquer Gerencia resolve.
       // Sessao abandonada ou antiga continua administravel por outra Gerencia
       // (encerrar, apagar), mas NINGUEM reescreve o dono: sem isto, dez minutos
       // sem sinal — KJ em modo offline, notebook dormindo — e qualquer pessoa
       // logada se carimbava dona da noite, liberava ingresso de graca, lia os
       // pagantes e trancava o KJ de verdade para fora.
-      allow update: if logado() && (resource.data.donoUid == eu() || soMudou(['comando'])
+      // Tambem ninguem de fora troca o e-mail do controle remoto nem escreve
+      // comando no documento: ate 02/10 havia um "soMudou(['comando'])" aqui
+      // que deixava QUALQUER conta logada — ate anonima, de qualquer lugar —
+      // escrever um comando na sessao de qualquer casa. Nao fazia estrago
+      // porque ninguem lia o campo; com o controle remoto lendo, seria o Palco
+      // na mao de estranhos. O controle agora passa pela subcolecao comandos,
+      // abaixo, onde o banco confere o e-mail assinado pelo Google.
+      allow update: if logado() && (resource.data.donoUid == eu()
                                     || ((abandonada(resource.data) || semDono(resource.data))
-                                        && request.resource.data.get('donoUid', '') == resource.data.get('donoUid', '')));
+                                        && request.resource.data.get('donoUid', '') == resource.data.get('donoUid', '')
+                                        && request.resource.data.get('controleEmail', '') == resource.data.get('controleEmail', '')));
       allow delete: if logado() && (resource.data.donoUid == eu() || abandonada(resource.data)
                                     || semDono(resource.data));
+
+      // Cada toque no celular do dono vira UM documento aqui; a Gerencia le,
+      // apaga e executa. Documento novo (e nao um campo unico) porque dois
+      // toques nao podem se sobrescrever, e porque apagar antes de executar e
+      // o que garante que o mesmo comando nunca toca duas vezes.
+      match /comandos/{cid} {
+        allow read:   if souDono(sid) || donoRemoto(sid);
+        allow create: if donoRemoto(sid) && comandoBem(request.resource.data);
+        allow update: if false;
+        allow delete: if souDono(sid) || donoRemoto(sid)
+                         || abandonada(dadosDaSessao(sid)) || semDono(dadosDaSessao(sid));
+      }
 
       match /fila/{itemId} {
         allow read:   if podeVerSessao(sid);

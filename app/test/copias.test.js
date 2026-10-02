@@ -22,6 +22,7 @@ const PARES = [
   ["src/seguro.js", "../web/public/seguro.js"],
   ["src/chat.js", "../web/public/chat.js"],
   ["src/entrada.js", "../web/public/entrada.js"],
+  ["src/comando.js", "../web/public/comando.js"],
 ];
 
 for (const [origem, copia] of PARES) {

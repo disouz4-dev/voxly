@@ -79,7 +79,11 @@ await deve("o cantor", "trocar o tom do próprio pedido", () =>
   updateDoc(item(estranho.bd, "pedido_cantor"), { semitons: -2 }));
 await deve("o cantor", "pedir busca no YouTube", () =>
   setDoc(doc(estranho.bd, "sessoes", SID, "buscas", "b1"), { termo: "zombie", status: "pendente" }));
-await deve("o cantor", "mandar o pedido de tocar (campo comando)", () =>
+// Ate 02/10 qualquer logado escrevia o campo "comando" na sessao de qualquer
+// casa. Ninguem lia, entao nao fazia estrago; com o controle remoto lendo,
+// seria o Palco na mao de estranhos. O controle agora e a subcolecao comandos,
+// so para o e-mail que o KJ cadastrou.
+await naoDeve("o cantor", "mandar comando solto na sessão", () =>
   updateDoc(sessao(estranho.bd), { comando: { acao: "tocar", itemId: "pedido_cantor", ts: Date.now() } }));
 await deve("o cantor", "desistir do próprio pedido", () => deleteDoc(item(estranho.bd, "pedido_cantor")));
 
@@ -323,9 +327,30 @@ await deve("a dona", "marcar o fim da noite para 3 minutos atrás (dentro da fol
   updateDoc(sessao(dono.bd), { horarioTermino: Timestamp.fromMillis(Date.now() - 3 * 60e3) }));
 await deve("a Ana", "pedir música na folga de 5 minutos", () => pedidoDe(ana, "ana_folga"));
 
+console.log("\n── Controle do Palco pelo celular ──");
+// A porta so abre para o e-mail que a Gerencia cadastrou, conferido no token
+// do Google. Aqui os dois usuarios sao ANONIMOS (sem e-mail), entao o que da
+// para provar e o essencial: ninguem de fora comanda. O caminho feliz (o
+// celular do dono, logado com o Google) se testa no celular.
+await deve("a dona", "cadastrar o e-mail do controle", () =>
+  updateDoc(sessao(dono.bd), { controleEmail: "dono@exemplo.com" }));
+await naoDeve("o estranho", "escrever um comando solto na sessão", () =>
+  updateDoc(sessao(estranho.bd), { comando: { acao: "tocar", ts: Date.now() } }));
+await naoDeve("o estranho", "trocar o e-mail do controle", () =>
+  updateDoc(sessao(estranho.bd), { controleEmail: "invasor@exemplo.com" }));
+await naoDeve("o estranho", "mandar comando pela subcoleção", () =>
+  setDoc(doc(estranho.bd, "sessoes", SID, "comandos", "c1"), {
+    acao: "tocar", criadoEm: serverTimestamp(), por: "invasor@exemplo.com" }));
+await naoDeve("a Ana", "mandar comando (conta sem e-mail do dono)", () =>
+  setDoc(doc(ana.bd, "sessoes", SID, "comandos", "c2"), { acao: "pular", alvoId: "x", criadoEm: serverTimestamp() }));
+await deve("a dona", "ler a caixa de comandos", () => getDocs(collection(dono.bd, "sessoes", SID, "comandos")));
+
 console.log("\n── Limpeza ──");
-for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta", "pagamentos", "chats", "cobranca"]) {
-  const snap = await getDocs(collection(dono.bd, "sessoes", SID, sub));
+for (const sub of ["fila", "presencas", "historico", "buscas", "convites", "meta", "pagamentos", "chats", "cobranca", "comandos"]) {
+  const snap = await getDocs(collection(dono.bd, "sessoes", SID, sub)).catch(e => {
+    console.log(`  (nao consegui listar ${sub}: ${e.code})`); return null;
+  });
+  if (!snap) continue;
   for (const d of snap.docs) await deleteDoc(d.ref).catch(() => {});
 }
 await deleteDoc(sessao(dono.bd)).catch(e => console.log("  (sessão)", e.code));

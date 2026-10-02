@@ -2232,6 +2232,11 @@ const pix = require("./pix");
 // Relatorio da noite em PDF, para mandar para a casa. A pagina e montada aqui
 // (relatorio-pdf.js) a partir do resumo; a tela so manda o resumo. Uma janela
 // escondida, sem JavaScript, imprime em A4 e o KJ escolhe onde salvar.
+// O auto play precisa saber se o Palco existe antes de mandar tocar: janela
+// fechada sem querer e a noite parando em silencio, sem ninguem entender por
+// que. "Nao tem musica no ar" nao prova nada.
+ipcMain.handle("palco-vivo", () => !!(playerWindow && !playerWindow.isDestroyed()));
+
 ipcMain.handle("relatorio-pdf", async (_e, resumo) => {
   const { paginaDaNoite, nomeDoArquivo } = require("./relatorio-pdf");
   let janela = null;

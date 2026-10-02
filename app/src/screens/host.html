@@ -503,8 +503,8 @@ footer strong { color:var(--ambar); font-weight:700; }
     <span class="relogio-kj" id="relogioHora" aria-live="off" title="Hora atual">--:--</span>
     <span class="session-badge inativa" id="sessionBadge" onclick="editarSessaoAtiva()"
           title="Clique para editar nome, data e horário sem derrubar a sessão">Sem Sessão</span>
-    <button class="btn btn-ghost btn-sm" id="btnEsticar" onclick="esticarSessao(30)" style="display:none;"
-            title="Casa cheia? Estica o fim da sessão em 30 minutos, sem abrir nada">+30 min</button>
+    <button class="btn btn-ghost btn-sm" id="btnEsticar" onclick="abrirAjusteDeTempo()" style="display:none;"
+            title="Muda a hora de fechar a fila: some ou tire o tempo que você quiser">⏰ Ajustar fim</button>
     <span id="cycle-label" style="font-size:.75rem;color:var(--muted);display:none;">Ciclo <strong id="cycle-num" style="color:var(--accent)">1</strong></span>
     <button class="btn btn-primary btn-sm" id="startSessionBtn" onclick="abrirModalSessao()">▶ Iniciar Sessão</button>
     <button class="btn btn-danger btn-sm" id="btnDerrubarSessao" onclick="derrubarSessoes()" title="Apaga do servidor qualquer sessão em aberto, inclusive as presas de outra máquina">💥 Derrubar sessão</button>
@@ -597,6 +597,8 @@ footer strong { color:var(--ambar); font-weight:700; }
         <button class="btn btn-warn"    onclick="playerCmd('pause')">⏸ Pausa</button>
         <button class="btn btn-skip"    onclick="skipSong()">⏭ Pular</button>
         <button class="btn btn-ghost"   onclick="adiarAtual()" title="A pessoa não está (banheiro, bar): canta logo depois do próximo, sem sair da fila">🚻 Cantar na próxima</button>
+        <button class="btn btn-ghost" id="btnAutoPlay" onclick="alternarAutoPlay()"
+                title="A próxima entra sozinha quando a anterior acabar. Você retoma o controle a qualquer momento.">🔁 Auto play</button>
       </div>
 
       <!-- QR CODES -->
@@ -900,6 +902,34 @@ https://www.youtube.com/@canal/videos"></textarea>
   </div>
 </div>
 
+<!-- Ajuste do fim da sessao: somar OU tirar tempo, do jeito do KJ (pedido dele
+     em 02/10: o +30 fixo nao servia) -->
+<div class="modal-overlay" id="modalTempo">
+  <div class="modal-box" style="width:min(460px,94vw);">
+    <h2>⏰ Fim da sessão</h2>
+    <p id="tempoAgora" style="font-size:.85rem;color:var(--ambar);margin:10px 0 4px;"></p>
+    <p style="font-size:.75rem;color:var(--mudo);margin-bottom:12px;">
+      Depois desse horário o cantor não põe mais música pelo celular. Você continua tocando o que está na fila.
+    </p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" onclick="esticarSessao(-30)">−30 min</button>
+      <button class="btn btn-ghost btn-sm" onclick="esticarSessao(-15)">−15 min</button>
+      <button class="btn btn-secondary btn-sm" onclick="esticarSessao(15)">+15 min</button>
+      <button class="btn btn-secondary btn-sm" onclick="esticarSessao(30)">+30 min</button>
+      <button class="btn btn-secondary btn-sm" onclick="esticarSessao(60)">+1 h</button>
+    </div>
+    <label class="modal-label" for="tempoMinutos">Ou escreva os minutos (pode ser negativo)</label>
+    <div style="display:flex;gap:8px;">
+      <input class="modal-input" id="tempoMinutos" type="number" step="5" placeholder="ex.: 45 ou -20"
+             style="flex:1;margin:0;" onkeydown="aplicarAjusteDeTempo(event)">
+      <button class="btn btn-primary btn-sm" onclick="aplicarAjusteDeTempo()">Aplicar</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharAjusteDeTempo()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalSessao">
   <div class="modal-box">
     <h2 id="modalSessaoTitulo">▶ Iniciar Sessão</h2>
@@ -1108,6 +1138,18 @@ https://www.youtube.com/@canal/videos"></textarea>
       Cada arquivo é medido uma vez (precisa do ffmpeg). Música alta desce, música baixa sobe, sem regravar nada.
     </div>
 
+    <label class="modal-label" for="controle-email" style="margin-top:10px;">📱 Controle do Palco pelo seu celular</label>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input class="modal-input" id="controle-email" style="flex:1;margin:0;" placeholder="seu@gmail.com"
+             autocomplete="off" spellcheck="false" onchange="salvarControleEmail(this.value)">
+      <button class="btn btn-ghost btn-sm" onclick="salvarControleEmail(document.getElementById('controle-email').value)">Salvar</button>
+    </div>
+    <div style="font-size:.7rem;color:var(--mudo);margin:4px 0 14px;line-height:1.45;">
+      Com o seu e-mail aqui, o app do cantor — aberto no seu celular, logado com essa conta Google — mostra os botões
+      de Play, Pausa, Pular e Cantar na próxima. Só essa conta comanda: quem confere é o banco de dados, pelo e-mail
+      assinado pelo Google. Em branco, ninguém comanda de fora.
+    </div>
+
     <div class="saida-linha">
       <label for="saida-principal">🔊 Som da casa</label>
       <select class="modal-select" id="saida-principal" onchange="escolherSaida('principal', this.value)"></select>
@@ -1215,6 +1257,8 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../entrada.js"></script>
 <script src="../previsao.js"></script>
 <script src="../link-youtube.js"></script>
+<script src="../comando.js"></script>
+<script src="../autoplay.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
@@ -1263,7 +1307,16 @@ https://www.youtube.com/@canal/videos"></textarea>
   // da sessao chegaram pelo menos uma vez. Abrindo a Gerencia no meio da noite
   // a fila chega primeiro, e com o resto vazio todo mundo parecia "nunca
   // cantou" — veteranos viravam cafe e passavam na frente (QA da 1.1.28).
-  const _carregado = { presencas: false, historico: false, sessao: false };
+  const _carregado = { presencas: false, historico: false, sessao: false, fila: false };
+  // Auto play e controle pelo celular (pedidos dele em 02/10). O estado do
+  // auto play mora nesta maquina e morre com a noite (autoplay.js); o e-mail
+  // do controle fica aqui e tambem na sessao, que e onde o banco confere.
+  const CHAVE_AUTOPLAY = 'voxly_autoplay';
+  const CHAVE_CONTROLE_EMAIL = 'voxly_controle_email';
+  let _autoPlayLigado  = false;
+  let _autoPlaySubindo = false;   // uma musica subindo por vez
+  let _comandosUnsub   = null;
+  const _abertoEm = Date.now();   // tela recem-aberta nao decide nada sozinha
   // Onde esta a musica no Palco (progresso-musica), e quanto dura cada musica
   // que ja tocou — e com isso que a fila mostra a hora prevista (previsao.js).
   let _progresso       = { atual: 0, total: 0, pausado: true };
@@ -1453,6 +1506,8 @@ https://www.youtube.com/@canal/videos"></textarea>
           escutarHistorico();
           escutarPagamentos();
           escutarSessaoDoc();
+          escutarComandos();
+          prepararAutoPlay();
           return;
         }
       } catch(e) {
@@ -1502,18 +1557,51 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Nome da casa e faixa de horario sao o que ele precisa conferir de relance.
   // Casa cheia: +30 min no fim da sessao, com um toque, sem janela no meio do
   // movimento. Conta a partir do fim marcado — ou de agora, se ja passou.
+  function abrirAjusteDeTempo() {
+    if (!SESSAO_ID) return;
+    document.getElementById('tempoMinutos').value = '';
+    desenharAjusteDeTempo();
+    document.getElementById('modalTempo').classList.add('open');
+  }
+  function fecharAjusteDeTempo() { document.getElementById('modalTempo').classList.remove('open'); }
+
+  function desenharAjusteDeTempo() {
+    const el = document.getElementById('tempoAgora');
+    if (!el) return;
+    const d = dadosSessaoAtual || {};
+    const fim = d.termino && d.termino.toDate ? d.termino.toDate().getTime() : Number(d.termino) || 0;
+    if (!fim) { el.textContent = 'Esta sessão não tem hora para acabar.'; return; }
+    const faltam = Math.round((fim - Date.now()) / 60000);
+    const hora = new Date(fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    el.textContent = faltam >= 0 ? `Fecha às ${hora} — faltam ${faltam} min` : `Fechou às ${hora}, há ${-faltam} min`;
+  }
+
+  // Tecla Enter no campo tambem aplica; o botao chama sem evento.
+  function aplicarAjusteDeTempo(ev) {
+    if (ev && ev.key !== 'Enter') return;
+    const minutos = parseInt(document.getElementById('tempoMinutos').value, 10);
+    if (!Number.isFinite(minutos) || minutos === 0) { mostrarToast('Escreva quantos minutos somar ou tirar'); return; }
+    esticarSessao(minutos);
+  }
+
+  // Minutos positivos esticam a noite; negativos antecipam o fechamento da
+  // fila. O chao e daqui a 5 min: fechar "no passado" trancaria o celular de
+  // todo mundo de uma vez, no meio da casa cheia.
   async function esticarSessao(minutos) {
     if (!SESSAO_ID || !dadosSessaoAtual) return;
     const fimAtual = dadosSessaoAtual.termino && dadosSessaoAtual.termino.toDate
       ? dadosSessaoAtual.termino.toDate().getTime() : Number(dadosSessaoAtual.termino) || Date.now();
-    const novo = Math.max(fimAtual, Date.now()) + minutos * 60e3;
+    const base = minutos >= 0 ? Math.max(fimAtual, Date.now()) : fimAtual;
+    const novo = Math.max(Date.now() + 5 * 60e3, base + minutos * 60e3);
     try {
       await db.collection('sessoes').doc(SESSAO_ID).update({
         horarioTermino: firebase.firestore.Timestamp.fromMillis(novo),
       });
       dadosSessaoAtual = { ...dadosSessaoAtual, termino: novo };
       atualizarBadgeSessao();
+      desenharAjusteDeTempo();
       reenviarEstadoAoPublico();
+      diario('kj.ajustarFimDaSessao', { minutos, fim: novo });
       mostrarToast(`⏰ Sessão até ${new Date(novo).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, 5000);
     } catch (e) {
       mostrarToast('❌ Não consegui esticar a sessão: ' + e.message, 6000);
@@ -1766,6 +1854,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     escutarHistorico();
     escutarPagamentos();
     escutarSessaoDoc();
+    escutarComandos();
+    prepararAutoPlay();
 
     // Notifica player
     if (window.electronAPI) {
@@ -2260,7 +2350,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // apareciam para sempre na lista de sessoes ativas do cantor. Agora, passado
   // o horario de termino declarado pelo KJ, a sessao e apagada com suas
   // subcolecoes.
-  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos', 'cobranca'];
+  const SUBCOLECOES_SESSAO = ['fila', 'presencas', 'convites', 'historico', 'meta', 'buscas', 'pagamentos', 'cobranca', 'comandos'];
   // A sessao em uso nunca e apagada: o KJ segue tocando o que esta na fila
   // mesmo depois do prazo — quem para de pedir e o cantor.
 
@@ -2624,6 +2714,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       // Play escolhia outro no lugar de quem acabou de confirmar.
       .where('status', 'in', ['aguardando', 'tocando', 'confirmando', 'confirmado', 'pronto'])
       .onSnapshot(snap => {
+        _carregado.fila = true;
         // Pedido novo com videoId: garante o arquivo antes da vez chegar.
         snap.docs.forEach(d => garantirArquivoDaFila({ id: d.id, ...d.data() }));
 
@@ -3524,6 +3615,8 @@ https://www.youtube.com/@canal/videos"></textarea>
           proximaConfirmando = null;
           await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(item.id)
             .update({ status: 'pronto' });
+          // Com o auto play ligado, e aqui que a noite anda sozinha.
+          tentarAutoPlay({ ...item, status: 'pronto' });
           // Com musica no ar, a tela de "pronto" nao pode aparecer: ela
           // esconde o video do Palco, e o fim da musica nunca era detectado.
           if (currentSong) continue;
@@ -4103,6 +4196,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   function openSettings() {
     document.getElementById('modalAjustes').classList.add('open');
+    carregarControleEmail();
     preencherSaidas();
     carregarPrefsDownload();
   }
@@ -4540,6 +4634,147 @@ https://www.youtube.com/@canal/videos"></textarea>
   // "play" cru so retoma um video ja carregado, entao o botao nao servia para
   // nada enquanto ninguem tivesse confirmado. Aqui ele e a decisao do KJ:
   // corta a contagem e poe o proximo da fila para tocar na hora.
+  // ── Auto play ─────────────────────────────────────────────
+  // Fecha o unico elo que ainda exigia a mao do KJ: o Play. O resto da noite
+  // (marcar cantada, chamar o proximo, contar os 30 s) ja andava sozinho.
+  // A decisao — e as travas — estao em autoplay.js.
+  function prepararAutoPlay() {
+    let bruto = null;
+    try { bruto = localStorage.getItem(CHAVE_AUTOPLAY); } catch (_) {}
+    _autoPlayLigado = VoxlyAutoPlay.estadoGuardado(bruto, { sessaoId: SESSAO_ID });
+    desenharAutoPlay();
+  }
+
+  function desenharAutoPlay() {
+    const b = document.getElementById('btnAutoPlay');
+    if (!b) return;
+    b.textContent = _autoPlayLigado ? '🔁 Auto play: ligado' : '🔁 Auto play: desligado';
+    b.style.opacity = _autoPlayLigado ? '1' : '.5';
+    b.classList.toggle('btn-ok', _autoPlayLigado);
+    b.classList.toggle('btn-ghost', !_autoPlayLigado);
+  }
+
+  function alternarAutoPlay() {
+    _autoPlayLigado = !_autoPlayLigado;
+    try { localStorage.setItem(CHAVE_AUTOPLAY, JSON.stringify(VoxlyAutoPlay.paraGuardar(_autoPlayLigado, SESSAO_ID))); } catch (_) {}
+    desenharAutoPlay();
+    diario('kj.autoplay', { ligado: _autoPlayLigado });
+    mostrarToast(_autoPlayLigado
+      ? '🔁 Auto play ligado — a próxima entra sozinha quando a atual acabar'
+      : '⏹ Auto play desligado — o Play volta a ser seu', 5000);
+  }
+
+  // O Palco pode ter sido fechado sem querer: tocar sem janela e a noite
+  // parando em silencio, sem ninguem entender por que.
+  async function palcoVivo() {
+    if (!window.electronAPI || !window.electronAPI.palcoVivo) return true;
+    try { return !!(await window.electronAPI.palcoVivo()); } catch (_) { return false; }
+  }
+
+  async function tentarAutoPlay(item) {
+    if (!_autoPlayLigado || !item) return;
+    const d = VoxlyAutoPlay.decidirAutoPlay(item, {
+      ligado: _autoPlayLigado,
+      palcoVivo: await palcoVivo(),
+      ocupado: _autoPlaySubindo,
+      carregado: _carregado.fila && _carregado.sessao,
+      musicaNoAr: !!currentSong,
+      abertoHa: Date.now() - _abertoEm,
+      offline: modoOffline,
+    });
+    if (!d.tocar) {
+      diario('autoplay.parou', { id: item.id, motivo: d.motivo }, 'aviso');
+      if (d.motivo.includes('Palco')) mostrarToast('🔁 Auto play: o Palco está fechado — abra o Palco', 6000);
+      return;
+    }
+    _autoPlaySubindo = true;
+    diario('autoplay.subindo', { id: item.id, cantor: item.nomeArtistico, musica: item.musica });
+    setTimeout(async () => {
+      try {
+        // Reconfere na hora de tocar: nestes segundos o KJ pode ter dado Play,
+        // pulado, ou a pessoa pode ter saido da fila.
+        const agora = filaData.find(i => i.id === item.id);
+        if (currentSong || !agora || !['pronto', 'confirmado'].includes(agora.status)) {
+          diario('autoplay.desistiu', { id: item.id, status: agora ? agora.status : 'sumiu' }, 'aviso');
+          return;
+        }
+        await tocarMusica(item.id);
+      } catch (e) {
+        diario('autoplay.falhou', { id: item.id, erro: e.message }, 'erro');
+      } finally {
+        _autoPlaySubindo = false;
+      }
+    }, d.esperaMs);
+  }
+
+  // ── Controle do Palco pelo celular do dono ────────────────
+  // Ele cadastra o proprio e-mail aqui; o app do cantor, aberto no celular
+  // dele com essa conta Google, ganha os botoes. Quem confere e o banco.
+  function carregarControleEmail() {
+    const el = document.getElementById('controle-email');
+    if (!el) return;
+    try { el.value = localStorage.getItem(CHAVE_CONTROLE_EMAIL) || ''; } catch (_) {}
+  }
+
+  async function salvarControleEmail(valor) {
+    const email = VoxlyComando.normalizarEmail(valor);
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      mostrarToast('E-mail inválido'); return;
+    }
+    try { localStorage.setItem(CHAVE_CONTROLE_EMAIL, email); } catch (_) {}
+    const el = document.getElementById('controle-email');
+    if (el) el.value = email;
+    if (SESSAO_ID && !modoOffline) {
+      await db.collection('sessoes').doc(SESSAO_ID).update({ controleEmail: email })
+        .catch(e => diario('controle.nao-gravou', { erro: e.message }, 'erro'));
+    }
+    diario('kj.controleEmail', { email: email || '(vazio)' });
+    mostrarToast(email ? `📱 ${email} pode comandar o Palco pelo celular` : 'Controle pelo celular desligado', 5000);
+  }
+
+  // Cada toque no celular vira um documento. A Gerencia APAGA e so entao
+  // executa: comando que roda duas vezes pularia duas musicas.
+  function escutarComandos() {
+    if (modoOffline || !SESSAO_ID) return;
+    if (_comandosUnsub) _comandosUnsub();
+    _comandosUnsub = db.collection('sessoes').doc(SESSAO_ID).collection('comandos')
+      .onSnapshot(snap => {
+        snap.docChanges().forEach(async mudanca => {
+          if (mudanca.type !== 'added') return;
+          const cmd = { id: mudanca.doc.id, ...mudanca.doc.data() };
+          try { await mudanca.doc.ref.delete(); }
+          catch (_) { return; }   // outra Gerencia pegou primeiro
+          executarComando(cmd);
+        });
+      }, e => diario('controle.escuta-caiu', { erro: e.message }, 'aviso'));
+  }
+
+  async function executarComando(cmd) {
+    const estado = { itemNoPalco: currentSong ? currentSong.id : null,
+                     chamandoId: proximaConfirmando ? proximaConfirmando.id : null };
+    const juizo = VoxlyComando.julgarComando(cmd, { agora: Date.now(), estado });
+    if (!juizo.fazer) {
+      diario('controle.descartado', { acao: cmd.acao, motivo: juizo.motivo }, 'aviso');
+      return;
+    }
+    diario('controle.executando', { acao: cmd.acao, alvo: cmd.alvoId || null, por: cmd.por || null });
+    const nomes = { tocar: '▶ Play', pausar: '⏸ Pausa', pular: '⏭ Pular',
+                    cantarNaProxima: '🚻 Cantar na próxima', chamarProximo: '📣 Chamar o próximo' };
+    mostrarToast(`📱 ${nomes[cmd.acao] || cmd.acao} — pelo seu celular`, 4000);
+    try {
+      if (cmd.acao === 'tocar')            await playAgora();
+      else if (cmd.acao === 'pausar')      playerCmd('pause');
+      else if (cmd.acao === 'pular')       await pularMusica(cmd.alvoId);
+      else if (cmd.acao === 'cantarNaProxima') await cantarNaProxima(cmd.alvoId);
+      else if (cmd.acao === 'chamarProximo') {
+        if (currentSong) { mostrarToast('📱 Tem música tocando — o próximo entra quando ela acabar', 5000); return; }
+        await iniciarConfirmacaoProxima();
+      }
+    } catch (e) {
+      diario('controle.falhou', { acao: cmd.acao, erro: e.message }, 'erro');
+    }
+  }
+
   async function playAgora() {
     // currentSong e a unica fonte confiavel de "tem musica no ar": o status
     // 'tocando' da anterior pode ainda nao ter chegado no Firestore.
@@ -5900,7 +6135,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       'destravarConfirmacoesOrfas','gravarMusicaManual','atenderBusca',
       // entrada paga
       'confirmarPagamento','recusarPagamento','liberarCortesia','desfazerPagamento',
-      'cantarNaProxima','esticarSessao','ajustarVelocidade',
+      'cantarNaProxima','esticarSessao','aplicarAjusteDeTempo','ajustarVelocidade','alternarAutoPlay','salvarControleEmail',
     ];
     // Argumento que e id de pedido vira { id, cantor, musica }: "kj.pularMusica
     // ['2WIf0g…_mu6akg']" nao diz a ninguem quem foi pulado.
