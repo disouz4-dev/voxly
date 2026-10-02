@@ -1345,13 +1345,14 @@ document.addEventListener("DOMContentLoaded", () => {
     "../assets/intervalo/Pausa Animada.mp3",
     "../assets/intervalo/Pausa de Karaokê.mp3"
   ];
-  let intervaloFaixasCustom = null; // playlist do tema definida pelo host [{musica,artista,filePath}]
   let intervaloIdx   = Math.floor(Math.random() * intervaloFaixas.length);
   let intervaloDeck  = [];   // shuffle "de verdade": bag com os índices embaralhados
   let intervaloDeckPos = 0;
 
+  // Sem playlist montada a mao desde 02/10: no intervalo tocam as faixas
+  // animadas que vem com o app.
   function listaIntervaloAtiva() {
-    return intervaloFaixasCustom && intervaloFaixasCustom.length ? intervaloFaixasCustom : null;
+    return null;
   }
 
   function montarDeckIntervalo(tamanho) {
@@ -1875,17 +1876,6 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        if (dados.cmd === "intervalo-playlist") {
-          if (isAudience) return;
-          intervaloFaixasCustom = Array.isArray(dados.faixas)
-            ? dados.faixas.filter(f => f && f.filePath)
-            : null;
-intervaloDeck = [];
-          intervaloDeckPos = 0;
-          if (intervaloHabilitado && idleAtivo) tocarIntervalo();
-          return;
-        }
-
         if (dados.cmd === "sessao-iniciada") {
           // Deep link pelo id da sessao: o cantor loga e cai direto na casa certa,
           // sem escolher na lista e sem risco de cair na sessao errada.
@@ -2077,7 +2067,6 @@ intervaloDeck = [];
     if (cmd === "fullscreen")       document.documentElement.requestFullscreen?.();
     if (cmd === "intervalo-on")  { if (!isAudience) { intervaloHabilitado = true;  if (idleAtivo) tocarIntervalo(); } }
     if (cmd === "intervalo-off") { if (!isAudience) { intervaloHabilitado = false; pararIntervalo(); } }
-    if (cmd === "intervalo-playlist-clear") { if (!isAudience) { intervaloFaixasCustom = null; intervaloDeck = []; intervaloDeckPos = 0; } }
     if (cmd === "sessao-encerrada") {
       setShowHorario(null, true);
       document.getElementById("qr-sessao").style.display = "none";

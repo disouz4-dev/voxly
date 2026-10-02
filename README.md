@@ -125,7 +125,6 @@ open /Applications/Voxly.app
 - 📊 **Relatórios** — cada noite ganha um resumo permanente (participantes, músicas cantadas, quem cantou o quê e quando), guardado antes de a sessão ser apagada. O botão **📊 Relatórios** mostra todas as noites: totais, médias, músicas mais cantadas e quem mais vem, com filtro por casa. A noite em curso aparece "ao vivo". Cada noite tem o botão **📄 PDF**: o relatório em A4 (números da noite, cada música com hora e cantor, e cada cantor com quanto pediu e cantou), pronto para mandar para a casa.
 
 **Infra**
-- 🎛️ **Temas de intervalo** — playlists editáveis por tema (Rock, Pagode, MPB...). Casa de rock? Só toca Rock no intervalo.
 - 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases (Linux e Windows).
 - 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
 - 💳 **Licença mensal por casa** — opcional e desligada por padrão. Painel 🔑 Licença com o estado, renovação por **Pix** dentro do app e a explicação de como funciona. Detalhes abaixo.
@@ -310,9 +309,6 @@ de gerenciador de pacotes. Por isso o Voxly baixa e mantém a própria cópia (e
 `~/.config/Voxly/bin` no Linux), confere o SHA-256 contra o `SHA2-256SUMS` do
 release oficial e só então troca. Entre a cópia própria e a do sistema, vale a
 mais nova. Estado e botão **Atualizar agora** em ⚙ Config → Motor de download.
-
-### 🎛️ Temas de intervalo
-No botão **🎛 Temas** do host você cria temas (ex.: *Rock*) com **playlist própria e editável**, montada a partir do catálogo local. O tema ativo define o que toca entre as músicas; sem tema, voltam as faixas animadas padrão.
 
 ### Web dos cantores (local)
 ```bash

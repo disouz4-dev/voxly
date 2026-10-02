@@ -1346,65 +1346,6 @@ ipcMain.handle("toggle-audience", () => {
 ipcMain.handle("get-audience-state", () => !!(audienceWindow && !audienceWindow.isDestroyed()));
 
 // ── IPC: Resolve caminho completo p/ playlist de intervalo ──
-ipcMain.handle("resolve-arquivo", (e, arquivo) => {
-  try {
-    const folder = store.get("musicFolder");
-    if (!folder || !arquivo) return null;
-    const fullPath = path.join(folder, arquivo);
-    return fs.existsSync(fullPath) ? fullPath : null;
-  } catch {
-    return null;
-  }
-});
-
-// ── IPC: Importa música para dentro do app (temas de intervalo) ──
-function pastaTemasIntervalo() {
-  return path.join(app.getPath("userData"), "intervalo-temas");
-}
-
-function copiarSemColisao(origem, pastaDestino) {
-  fs.mkdirSync(pastaDestino, { recursive: true });
-  const ext  = path.extname(origem);
-  const base = path.basename(origem, ext);
-  let destino = path.join(pastaDestino, path.basename(origem));
-  let n = 2;
-  while (fs.existsSync(destino)) {
-    destino = path.join(pastaDestino, `${base} (${n})${ext}`);
-    n++;
-  }
-  fs.copyFileSync(origem, destino);
-  return destino;
-}
-
-ipcMain.handle("importar-musica-tema", (e, arquivo) => {
-  try {
-    const folder = store.get("musicFolder");
-    if (!folder || !arquivo) return null;
-    const origem = path.join(folder, arquivo);
-    if (!fs.existsSync(origem)) return null;
-    const destino = copiarSemColisao(origem, pastaTemasIntervalo());
-    console.log("[TEMA] música importada para o app:", path.basename(destino));
-    return destino;
-  } catch (err) {
-    console.warn("[TEMA] falha ao importar:", err.message);
-    return null;
-  }
-});
-
-ipcMain.handle("remover-musica-tema", (e, filePath) => {
-  try {
-    const pasta = pastaTemasIntervalo();
-    const rel   = path.relative(pasta, filePath);
-    if (rel.startsWith("..") || path.isAbsolute(rel)) return false; // só apaga dentro do app
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-});
-
-// ── IPC: Imagem externa (bypass CORS — net.fetch roda no processo principal) ──
-const { net } = require('electron');
 ipcMain.handle("fetch-image", async (_, url) => {
   if (!url) return null;
   try {

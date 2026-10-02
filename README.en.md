@@ -123,7 +123,6 @@ open /Applications/Voxly.app
 - 📊 **Reports** — every night gets a permanent summary (participants, songs sung, who sang what and when), saved before the session is deleted. The **📊 Relatórios** button shows every night: totals, averages, most-sung songs and regulars, with a per-venue filter. Tonight shows up as "ao vivo" (live). Every night has a **📄 PDF** button: an A4 report (the night's numbers, every song with time and singer, and every singer with how many they requested and sang), ready to send to the venue.
 
 **Infra**
-- 🎛️ **Interval themes** — editable, theme-based playlists (Rock, Pagode, MPB...). Rock venue? Only rock plays between songs.
 - 🔄 **Auto-update** — new installers are downloaded from GitHub Releases (Linux and Windows).
 - 🔌 **Offline fallback (LAN)** — even without internet the karaoke keeps going (details below).
 - 💳 **Monthly licence per venue** — optional, off by default. A 🔑 Licence panel shows the status, renews via **Pix** inside the app and explains how it works. Details below.
@@ -295,9 +294,6 @@ keeps its own copy (in `~/.config/Voxly/bin` on Linux), checks its SHA-256
 against the official release's `SHA2-256SUMS`, and only then swaps it in.
 Between its own copy and the system one, the newer wins. Status and an
 **Atualizar agora** button live in ⚙ Config → Motor de download.
-
-### 🎛️ Interval themes
-In the host's **🎛 Temas** button you create themes (e.g. *Rock*) with your own **editable playlist**, built from the local catalog. The active theme defines what plays between songs; without one, the default animated tracks play.
 
 ### Singer web app (local)
 ```bash
