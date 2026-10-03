@@ -2352,6 +2352,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       }),
       // Dinheiro da noite: a sessao e apagada na faxina, o relatorio fica.
       entrada: VoxlyEntrada.resumoDaEntrada(sessao, dados(pagamentos)),
+      // O dono da noite viaja no proprio relatorio: a sessao some na faxina, e
+      // e por este campo que o banco sabe de quem e o relatorio depois disso.
+      donoUid: sessao.donoUid || null,
     };
   }
 

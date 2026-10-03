@@ -65,8 +65,10 @@ await deve("a dona", "pôr música na fila por um cantor sem conta", () => setDo
 }));
 await deve("a dona", "gravar o histórico da sessão", () =>
   setDoc(doc(dono.bd, "sessoes", SID, "historico", "h1"), { musica: "M", status: "cantada" }));
-await deve("a dona", "gravar o relatório da noite", () =>
-  setDoc(doc(dono.bd, "relatorios", SID), { nomeCasa: "REGRAS (teste)", cantadas: 1 }));
+await deve("a dona", "gravar o relatório da noite (com o dono)", () =>
+  setDoc(doc(dono.bd, "relatorios", SID), { nomeCasa: "REGRAS (teste)", cantadas: 1, donoUid: dono.uid }));
+await deve("a dona", "ler o próprio relatório", () => getDoc(doc(dono.bd, "relatorios", SID)));
+await naoDeve("o estranho", "ler o relatório de outra casa", () => getDoc(doc(estranho.bd, "relatorios", SID)));
 
 console.log("\n── O cantor mexe no que é dele ──");
 await deve("o cantor", "marcar presença", () =>
@@ -100,7 +102,7 @@ await naoDeve("o estranho", "mexer na presença de outro", () =>
 await naoDeve("o estranho", "gravar o histórico da sessão", () =>
   setDoc(doc(estranho.bd, "sessoes", SID, "historico", "h2"), { musica: "X" }));
 await naoDeve("o estranho", "gravar o relatório da noite", () =>
-  setDoc(doc(estranho.bd, "relatorios", SID), { nomeCasa: "invadido" }));
+  setDoc(doc(estranho.bd, "relatorios", SID), { nomeCasa: "invadido", donoUid: estranho.uid }));
 await naoDeve("o estranho", "apagar o relatório", () => deleteDoc(doc(estranho.bd, "relatorios", SID)));
 await naoDeve("o estranho", "gravar no histórico pessoal de outro cantor", () =>
   setDoc(doc(estranho.bd, "historico", "outro_cantor", "apresentacoes", "x"), { musica: "X", sessaoId: SID }));
@@ -326,6 +328,30 @@ await deve("a Ana", "pedir música depois de a noite ser esticada", () => pedido
 await deve("a dona", "marcar o fim da noite para 3 minutos atrás (dentro da folga)", () =>
   updateDoc(sessao(dono.bd), { horarioTermino: Timestamp.fromMillis(Date.now() - 3 * 60e3) }));
 await deve("a Ana", "pedir música na folga de 5 minutos", () => pedidoDe(ana, "ana_folga"));
+
+console.log("\n── O cantor edita a propria musica, mas nao forja a Gerencia ──");
+// Pedido do cantor, em estado normal.
+await deve("o cantor", "criar o próprio pedido editavel", () =>
+  setDoc(item(estranho.bd, "ped_edit"), {
+    cantorUid: estranho.uid, nomeArtistico: "Cantor", musica: "M1", artista: "A",
+    status: "aguardando", slot: "ativa", ordemFila: 5, semitons: 0 }));
+await deve("o cantor", "trocar a própria música e o tom", () =>
+  updateDoc(item(estranho.bd, "ped_edit"), { musica: "M2", semitons: -2 }));
+await deve("o cantor", "confirmar presença (aguardando→confirmado)", () =>
+  updateDoc(item(estranho.bd, "ped_edit"), { status: "confirmado" }));
+await naoDeve("o cantor", "forjar 'tocando'", () =>
+  updateDoc(item(estranho.bd, "ped_edit"), { status: "tocando" }));
+await naoDeve("o cantor", "forjar 'cantada'", () =>
+  updateDoc(item(estranho.bd, "ped_edit"), { status: "cantada" }));
+await naoDeve("o cantor", "se dar prioridade (furar a fila)", () =>
+  updateDoc(item(estranho.bd, "ped_edit"), { tipo: "prioridade" }));
+// Musica ja cantada nao volta para a fila pelo celular (bug de 01/10).
+await deve("a dona", "marcar a música como cantada", () =>
+  updateDoc(item(dono.bd, "ped_edit"), { status: "cantada" }));
+await naoDeve("o cantor", "ressuscitar a música cantada", () =>
+  updateDoc(item(estranho.bd, "ped_edit"), { status: "aguardando" }));
+await deve("o cantor", "sair da fila (apagar o próprio pedido)", () =>
+  deleteDoc(item(estranho.bd, "ped_edit")));
 
 console.log("\n── Id de pedido forjado ──");
 // O id do pedido vai dentro de atributos das telas da Gerencia. Com aspas e

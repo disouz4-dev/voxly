@@ -186,7 +186,17 @@ service cloud.firestore {
         // O parceiro de dueto aceita o convite mexendo so nos campos do duo — e
         // tambem precisa de ingresso: sem isto, quem nao pagou aceitava um
         // convite (so com o id do pedido) e subia ao palco de graca.
-        allow update: if logado() && (souDono(sid) || resource.data.cantorUid == eu()
+        // O cantor PODE e DEVE editar o proprio pedido (trocar a musica, o tom,
+        // o dueto, confirmar, recusar). O que ele NAO pode e forjar o que e da
+        // Gerencia: dizer que a musica esta 'tocando' ou foi 'cantada', se dar
+        // 'prioridade' (furar a fila), ou mexer num pedido que ja subiu ao
+        // palco / ja foi cantado / foi pulado — era por aqui que uma musica
+        // cantada voltava para a fila (01/10).
+        allow update: if logado() && (souDono(sid)
+                                      || (resource.data.cantorUid == eu()
+                                          && !(resource.data.status in ['tocando', 'cantada', 'pulada'])
+                                          && !(request.resource.data.status in ['tocando', 'cantada'])
+                                          && request.resource.data.get('tipo', 'normal') != 'prioridade')
                                       || (resource.data.duoUid == eu() && entradaPaga(sid)
                                           && soMudou(['duoPendente', 'duoNomeConfirmado', 'duoPhotoURL', 'duoUid', 'duoNome'])));
         allow delete: if logado() && (souDono(sid) || resource.data.cantorUid == eu());
@@ -347,8 +357,14 @@ service cloud.firestore {
     // Resumo permanente de cada noite, gravado pela Gerencia dona antes de a
     // faxina apagar a sessao (por isso a sessao ainda existe neste momento).
     match /relatorios/{sid} {
-      allow read: if logado();
-      allow create, update: if souDono(sid);
+      // Antes qualquer conta logada lia o relatorio de TODA noite de TODA casa
+      // (quem cantou o que, e onde). Agora e so o dono: o relatorio carrega o
+      // donoUid, que sobrevive a faxina (a sessao some, o relatorio fica). O id
+      // da Gerencia e estavel entre aberturas (login anonimo guardado), entao o
+      // KJ segue lendo os proprios. Relatorio antigo sem o campo continua
+      // legivel — senao o KJ perderia o historico ja gravado.
+      allow read: if logado() && (!('donoUid' in resource.data) || resource.data.donoUid == eu());
+      allow create, update: if souDono(sid) && request.resource.data.donoUid == eu();
       allow delete: if false;
     }
 
