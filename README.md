@@ -83,13 +83,15 @@ open /Applications/Voxly.app
 - 🖥️ **3 telas** — **Gerência** (KJ), **Palco** (vídeo em tela cheia) e **Público** (opcional), que espelha o vídeo do Palco junto com o cantor, o avatar, os próximos da fila e o QR grande — **o QR fica preso no pé da tela**, com a fila cheia ou vazia, para ninguém ter que escanear um QR cortado. A **chamada do próximo cantor** aparece no Palco e no Público, com a foto do cantor.
 - ⏱️ **Horário do show** — o KJ define quando o show começa; o público e o app dos cantores mostram a **contagem regressiva**. Sem música tocando, a tela do público alterna um **guia animado** de como participar.
 - 🕐 **Relógio do KJ** — a hora, na barra do topo.
-- ⏳ **Prazo da sessão** — a sessão acaba no horário que o KJ marcou, com 5 minutos de tolerância. Depois disso o cantor não põe mais música — a trava é também do **banco de dados**, então nem app antigo nem pedido forjado passam; o KJ segue tocando o que está na fila e ainda pode pôr música à mão. Quinze minutos antes do fim a Gerência avisa, e o botão **+30 min** ao lado do badge da sessão estica a noite quando a casa está cheia.
+- ⏳ **Prazo da sessão** — a sessão acaba no horário que o KJ marcou, com 5 minutos de tolerância. Depois disso o cantor não põe mais música — a trava é também do **banco de dados**, então nem app antigo nem pedido forjado passam; o KJ segue tocando o que está na fila e ainda pode pôr música à mão. Quinze minutos antes do fim a Gerência avisa, e o botão **⏰ Ajustar fim** ao lado do badge abre um editor onde o KJ **escreve a nova hora de fechar** a fila — sem quantidades prontas, do jeito dele.
 - 📊 **Relatório guardado ao finalizar** — ao finalizar a sessão o relatório da noite é gravado antes de qualquer coisa ser apagada, com aviso na tela.
 - 🔒 **Uma sessão por vez** — abrir uma nova expurga as anteriores e os cantores das sessões antigas são desconectados. Uma sessão com a Gerência aberta nunca é apagada pela faxina automática, nem pela de outra máquina: as músicas só saem da fila quando o KJ finaliza, derruba ou abre outra sessão.
 
 **Fila**
 - 🎤 **Fila em tempo real** — os cantores pedem pelo celular, o host controla (tocar, pular, trocar a música de alguém, remover, adicionar cantor e música à mão). O pedido nunca entra duas vezes, mesmo com clique repetido, e **a mesma música não entra de novo** para quem já a tem esperando na fila (o celular barra; na Gerência o KJ confirma).
 - 🚻 **Cantar na próxima** — no cartão do centro e em cada item da fila: quem não está (no banheiro, lá fora) é adiado uma posição, sem sair da fila e sem perder a vez para sempre.
+- 📱 **Controle do Palco pelo celular** — o KJ cadastra o próprio e-mail em ⚙ Ajustes e, no celular dele logado com essa conta Google, o app do cantor mostra **Play, Pausa, Pular, Cantar na próxima e Chamar o próximo**. Só essa conta comanda: quem confere é o banco, pelo e-mail assinado pelo Google. Cada toque é um comando que a Gerência executa uma vez só.
+- 🔁 **Auto play** — um botão na barra do Palco deixa a noite andar sozinha: acabou a música, chama o próximo e já toca. Nasce **desligado** (a casa abre no manual) e o KJ retoma o controle num toque. Não toca com o Palco fechado, não corta quem está cantando e não sobe música sem arquivo.
 - 🕘 **Hora prevista** — cada música da fila mostra a hora aproximada em que vai tocar, pelo que falta da atual e pela duração de cada uma (o Voxly aprende a duração quando a música toca).
 - ▶️ **Barra de progresso** — abaixo do fader, a música tocando mostra quanto já foi e quanto falta.
 - ↕️ **Ordem de chegada** — quem pediu antes canta antes. O KJ arrasta para reordenar e o app toca **exatamente na ordem que ele vê**; quem foi arrastado fica cravado no lugar.
@@ -122,11 +124,11 @@ open /Applications/Voxly.app
 - 📲 **Instalar na tela inicial** — o app do cantor é instalável (PWA): no Android o Voxly oferece **Instalar**; no iPhone explica o caminho pelo Safari. "Agora não" vale por 14 dias.
 - 💬 **Botão Chat** — na barra de baixo, ao lado do Catálogo, com o número de mensagens não lidas.
 - 📜 **Diário** — tudo o que acontece numa noite fica num arquivo por dia (`logs/voxly-AAAA-MM-DD.jsonl` na pasta do app, 30 dias guardados): cada mudança na fila e nos cantores dizendo se saiu desta máquina ou veio de fora, cada comando ao Palco, cada ação do KJ, downloads, erros das telas. **Toda linha traz o nome do cantor e a música**, nunca só o id. Em ⚙ Config: ver o diário de hoje (com filtro) ou abrir a pasta.
-- 📊 **Relatórios** — cada noite ganha um resumo permanente (participantes, músicas cantadas, quem cantou o quê e quando), guardado antes de a sessão ser apagada. O botão **📊 Relatórios** mostra todas as noites: totais, médias, músicas mais cantadas e quem mais vem, com filtro por casa. A noite em curso aparece "ao vivo". Cada noite tem o botão **📄 PDF**: o relatório em A4 (números da noite, cada música com hora e cantor, e cada cantor com quanto pediu e cantou), pronto para mandar para a casa.
+- 📊 **Relatórios** — cada noite ganha um resumo permanente (participantes, músicas cantadas, quem cantou o quê e quando), guardado antes de a sessão ser apagada. O botão **📊 Relatórios** mostra todas as noites: totais, médias, músicas mais cantadas e quem mais vem, com filtro por casa, e **só o dono lê os próprios relatórios** (cada um guarda de quem é). A noite em curso aparece "ao vivo". Cada noite tem o botão **📄 PDF**: o relatório em A4 (números da noite, cada música com hora e cantor, e cada cantor com quanto pediu e cantou), pronto para mandar para a casa.
 
 **Infra**
 - 🔄 **Atualização automática** — novos instaladores são baixados pelo GitHub Releases (Linux e Windows).
-- 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo).
+- 🔌 **Fallback offline (LAN)** — mesmo sem internet, o karaokê não para (detalhes abaixo). Os servidores da rede local pedem uma **senha que viaja no QR**: só quem escaneia a tela do KJ fala com eles; um site aberto num celular da casa não mexe na noite.
 - 💳 **Licença mensal por casa** — opcional e desligada por padrão. Painel 🔑 Licença com o estado, renovação por **Pix** dentro do app e a explicação de como funciona. Detalhes abaixo.
 
 ## 💳 Cobrança (licença mensal por casa)
@@ -421,7 +423,12 @@ app/                       # aplicação Electron (Gerência + Palco + Público 
   src/texto.js             # │
   src/sugestoes.js         # │
   src/chat.js              # │ (convite de dueto: respostas prontas e conversa)
-  src/entrada.js           # ┘ (ingresso da noite: quem está liberado, quem conferir)
+  src/entrada.js           # │ (ingresso da noite: quem está liberado, quem conferir)
+  src/comando.js           # ┘ (controle do Palco pelo celular: o que vale, de quem é)
+  src/autoplay.js          # auto play: a decisão e as travas (só na Gerência)
+  src/previsao.js          # hora prevista de cada música da fila
+  src/link-youtube.js      # lê o vídeo de um link do YouTube colado pelo KJ
+  src/relatorio-pdf.js     # página A4 do relatório da noite
   scripts/versao-web.js    # grava web/public/versao.js com a versão do package.json (vem no sincronizar-regras)
   scripts/gerar-icones.js  # ícones do app e do app do cantor a partir da logo (npx electron scripts/gerar-icones.js <logo.png>)
   test/                    # testes automatizados (node --test)
