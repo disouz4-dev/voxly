@@ -7,8 +7,9 @@ const cmd = (extra = {}) => ({ acao: "tocar", criadoEm: agora, ...extra });
 
 test("so as acoes conhecidas passam", () => {
   for (const acao of Object.keys(ACOES)) {
-    const alvo = ACOES[acao].alvo ? { alvoId: "item1" } : {};
-    assert.ok(comandoValido({ acao, ...alvo }), acao);
+    const extra = ACOES[acao].alvo ? { alvoId: "item1" } : {};
+    if (ACOES[acao].valor) extra.valor = "dQw4w9WgXcQ";
+    assert.ok(comandoValido({ acao, ...extra }), acao);
   }
   for (const ruim of [null, {}, { acao: "apagarTudo" }, { acao: "" }, "tocar"]) {
     assert.strictEqual(comandoValido(ruim), false, JSON.stringify(ruim));
@@ -22,7 +23,7 @@ test("acao destrutiva sem alvo nao vale", () => {
 });
 
 test("o Play sobe quando o comando acabou de chegar", () => {
-  assert.deepStrictEqual(julgarComando(cmd(), { agora }), { fazer: true, alvo: null });
+  assert.deepStrictEqual(julgarComando(cmd(), { agora }), { fazer: true, alvo: null, valor: null });
 });
 
 test("comando velho e comando do futuro sao descartados", () => {
@@ -57,4 +58,20 @@ test("e-mail do dono: caixa e espaco nao podem trancar ele para fora", () => {
   assert.strictEqual(mesmoDono("", ""), false);
   assert.strictEqual(mesmoDono(null, "a@b.com"), false);
   assert.strictEqual(mesmoDono("a@b.com", "c@d.com"), false);
+});
+
+test("acoes de admin miram item da fila, nao o palco", () => {
+  const base = { criadoEm: agora };
+  // procurar/baixarVersao/remover NAO exigem que o alvo esteja no palco
+  assert.strictEqual(julgarComando({ ...base, acao: "procurar", alvoId: "qualquer" }, { agora, estado: {} }).fazer, true);
+  assert.strictEqual(julgarComando({ ...base, acao: "remover", alvoId: "qualquer" }, { agora, estado: {} }).fazer, true);
+  const bv = { ...base, acao: "baixarVersao", alvoId: "it1", valor: "dQw4w9WgXcQ" };
+  assert.strictEqual(julgarComando(bv, { agora }).fazer, true);
+  assert.strictEqual(julgarComando(bv, { agora }).valor, "dQw4w9WgXcQ");
+  // baixarVersao sem valor nao vale
+  assert.strictEqual(comandoValido({ ...base, acao: "baixarVersao", alvoId: "it1" }), false);
+  // valor gigante nao entra
+  assert.strictEqual(comandoValido({ ...base, acao: "baixarVersao", alvoId: "it1", valor: "x".repeat(300) }), false);
+  // pular continua preso ao palco
+  assert.strictEqual(julgarComando({ ...base, acao: "pular", alvoId: "m1" }, { agora, estado: {} }).fazer, false);
 });

@@ -97,11 +97,13 @@ service cloud.firestore {
     // e a hora do SERVIDOR. A hora vem de request.time para o celular nao
     // conseguir gravar um comando "do futuro" que ficaria valendo a noite toda.
     function comandoBem(d) {
-      return d.keys().hasOnly(['acao', 'alvoId', 'criadoEm', 'por'])
+      return d.keys().hasOnly(['acao', 'alvoId', 'valor', 'criadoEm', 'por'])
              && d.keys().hasAll(['acao', 'criadoEm'])
-             && d.acao in ['tocar', 'pausar', 'pular', 'cantarNaProxima', 'chamarProximo']
+             && d.acao in ['tocar', 'pausar', 'pular', 'cantarNaProxima', 'chamarProximo',
+                           'procurar', 'baixarVersao', 'remover']
              && d.criadoEm == request.time
              && (!('alvoId' in d) || d.alvoId == null || (d.alvoId is string && d.alvoId.size() <= 200))
+             && (!('valor' in d) || d.valor == null || (d.valor is string && d.valor.size() <= 200))
              && (!('por' in d) || d.por == emailDoToken());
     }
 

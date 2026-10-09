@@ -4580,7 +4580,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
     diario('controle.executando', { acao: cmd.acao, alvo: cmd.alvoId || null, por: cmd.por || null });
     const nomes = { tocar: '▶ Play', pausar: '⏸ Pausa', pular: '⏭ Pular',
-                    cantarNaProxima: '🚻 Cantar na próxima', chamarProximo: '📣 Chamar o próximo' };
+                    cantarNaProxima: '🚻 Cantar na próxima', chamarProximo: '📣 Chamar o próximo',
+                    procurar: '🔎 Procurar versões', baixarVersao: '⬇ Baixar versão', remover: '✕ Remover' };
     mostrarToast(`📱 ${nomes[cmd.acao] || cmd.acao} — pelo seu celular`, 4000);
     try {
       if (cmd.acao === 'tocar')            await playAgora();
@@ -4591,9 +4592,34 @@ https://www.youtube.com/@canal/videos"></textarea>
         if (currentSong) { mostrarToast('📱 Tem música tocando — o próximo entra quando ela acabar', 5000); return; }
         await iniciarConfirmacaoProxima();
       }
+      // ── Admin remoto: o trabalho roda aqui, na estacao do KJ ──
+      else if (cmd.acao === 'procurar')     await procurarVersoes(cmd.alvoId);
+      else if (cmd.acao === 'remover')      await removerDaFilaPorId(cmd.alvoId);
+      else if (cmd.acao === 'baixarVersao') await baixarVersaoRemota(cmd.alvoId, cmd.valor);
     } catch (e) {
       diario('controle.falhou', { acao: cmd.acao, erro: e.message }, 'erro');
     }
+  }
+
+  // Baixa a versao que o celular escolheu (id do video, ou um link colado). O
+  // trabalho — yt-dlp, arquivo — e tudo nesta maquina; o celular so apontou.
+  async function baixarVersaoRemota(itemId, valor) {
+    const item = filaData.find(i => i.id === itemId);
+    if (!item) { diario('controle.baixar-sem-item', { itemId }, 'aviso'); return; }
+    const id = VoxlyLinkYoutube.idDoVideo(valor);
+    if (!id) { diario('controle.baixar-valor-ruim', { valor: String(valor).slice(0, 60) }, 'aviso'); return; }
+    // Se o id esta entre os candidatos ja buscados, usa a URL de la (canal,
+    // titulo); senao monta o endereco pelo proprio id.
+    const cand = (item.candidatos || []).find(c => c.id === id);
+    const c = cand || { id, url: VoxlyLinkYoutube.urlDoVideo(id), titulo: 'versão (' + id + ')' };
+    await aplicarQualidadePadrao();
+    await baixarVersao(item, c);
+  }
+
+  // Remover da fila pelo id (sem o modal de confirmacao, que e so da tela).
+  async function removerDaFilaPorId(itemId) {
+    if (!SESSAO_ID || !itemId) return;
+    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId).delete().catch(() => {});
   }
 
   async function playAgora() {

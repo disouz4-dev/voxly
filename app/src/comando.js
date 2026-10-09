@@ -25,10 +25,16 @@
 const ACOES = {
   tocar:          { alvo: false, descricao: "Play — retoma ou sobe o proximo" },
   pausar:         { alvo: false, descricao: "Pausa a musica no ar" },
-  pular:          { alvo: true,  descricao: "Pula a musica no ar" },
-  cantarNaProxima:{ alvo: true,  descricao: "Adia quem nao esta, sem tirar da fila" },
+  pular:          { alvo: true,  palco: true, descricao: "Pula a musica no ar" },
+  cantarNaProxima:{ alvo: true,  palco: true, descricao: "Adia quem nao esta, sem tirar da fila" },
   chamarProximo:  { alvo: false, descricao: "Chama o proximo da fila" },
+  // Tela de admin (celular do KJ): o trabalho roda na estacao, o celular manda.
+  procurar:       { alvo: true,  descricao: "Procura versoes no YouTube para o pedido" },
+  baixarVersao:   { alvo: true,  valor: true, descricao: "Baixa a versao escolhida (id do video ou link)" },
+  remover:        { alvo: true,  descricao: "Tira o pedido da fila" },
 };
+
+const VALOR_MAX = 200;   // id de video ou link; nada gigante entra no comando
 
 const IDADE_MAXIMA_S = 90;   // comando parado mais que isso e so lixo
 
@@ -49,6 +55,8 @@ function comandoValido(cmd) {
   if (!def) return false;
   if (def.alvo && (typeof cmd.alvoId !== "string" || !cmd.alvoId)) return false;
   if (!def.alvo && cmd.alvoId != null && typeof cmd.alvoId !== "string") return false;
+  if (def.valor && (typeof cmd.valor !== "string" || !cmd.valor || cmd.valor.length > VALOR_MAX)) return false;
+  if (!def.valor && cmd.valor != null && typeof cmd.valor !== "string") return false;
   return true;
 }
 
@@ -66,15 +74,18 @@ function julgarComando(cmd, { agora = null, estado = {}, idadeMaximaS = IDADE_MA
     if (quando - t > idadeMaximaS * 1000) return { fazer: false, motivo: "comando velho" };
   }
 
-  // Alvo: so executa se o palco ainda estiver onde o celular viu.
-  if (ACOES[cmd.acao].alvo) {
+  // Acao de PALCO (pular/cantar na proxima): so vale se o palco ainda estiver
+  // onde o celular viu, senao um toque atrasado pularia a musica de outra
+  // pessoa. As acoes de admin (procurar, baixar versao, remover) miram um
+  // pedido QUALQUER da fila pelo id — a Gerencia confere se o item existe.
+  if (ACOES[cmd.acao].palco) {
     const alvoAtual = cmd.acao === "cantarNaProxima"
       ? (estado.itemNoPalco || estado.chamandoId || null)
       : (estado.itemNoPalco || null);
     if (!alvoAtual) return { fazer: false, motivo: "nada no palco para esse comando" };
     if (alvoAtual !== cmd.alvoId) return { fazer: false, motivo: "a musica ja virou" };
   }
-  return { fazer: true, alvo: cmd.alvoId || null };
+  return { fazer: true, alvo: cmd.alvoId || null, valor: cmd.valor || null };
 }
 
 // O e-mail que a Gerencia guarda e o que o Google manda vem com caixa e

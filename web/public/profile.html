@@ -413,6 +413,23 @@
       </div>
     </div>
 
+    <!-- TAB: ADMIN — a estação do KJ no celular (só para quem o KJ cadastrou).
+         O trabalho (baixar, versão) roda na máquina do KJ; aqui é só comando. -->
+    <div id="tab-admin" style="display:none;">
+      <div class="section">
+        <div class="section-title">🎛 Controle da Gerência</div>
+        <div class="card" id="adminControles" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-controle" onclick="mandarComando('tocar')">▶ Play</button>
+          <button class="btn-controle" onclick="mandarComando('pausar')">⏸ Pausa</button>
+          <button class="btn-controle" onclick="mandarComando('chamarProximo')">📣 Chamar o próximo</button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-title">🎶 Fila completa</div>
+        <div class="card" id="adminFila"><div class="loading">Carregando…</div></div>
+      </div>
+    </div>
+
     <!-- TAB: HISTÓRICO -->
     <div id="tab-historico" style="display:none;">
       <div class="section">
@@ -429,6 +446,7 @@
     <button class="nav-btn active" id="nav-fila"      onclick="mudarTab('fila')"><span>🎤</span>Fila</button>
     <button class="nav-btn"        id="nav-catalogo"  onclick="mudarTab('catalogo')"><span>🎵</span>Catálogo</button>
     <button class="nav-btn"        id="nav-chat"      onclick="mudarTab('chat')"><span>💬</span>Chat<b class="nav-badge" id="navChatBadge" hidden></b></button>
+    <button class="nav-btn" id="nav-admin" onclick="mudarTab('admin')" style="display:none;"><span>🎛</span>Admin</button>
     <button class="nav-btn"        id="nav-historico" onclick="mudarTab('historico')"><span>📋</span>Histórico</button>
     <button class="nav-btn"                           onclick="sair()"><span>🚪</span>Sair</button>
   </div>
@@ -527,6 +545,7 @@
   <script src="/chat.js"></script>
   <script src="/entrada.js"></script>
   <script src="/comando.js"></script>
+  <script src="/link-youtube.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
     firebase.initializeApp({
@@ -1620,6 +1639,8 @@ function escutarFila() {
     // atraso na casa anterior abria a porta da casa nova.
     function esquecerIngresso() {
       if (_pararPagamento) { _pararPagamento(); _pararPagamento = null; }
+      pararFilaAdmin();
+      _controleConferidoEm = null;   // confere o controle de novo na próxima sessão
       meuPagamento = null;
       sessaoAtualDoc = null;
       _pagamentoCarregado = false;
@@ -2278,6 +2299,8 @@ function escutarFila() {
       } catch (_) {
         _controleLiberado = false;   // sem permissao = nao e o dono
       }
+      const navAdmin = document.getElementById('nav-admin');
+      if (navAdmin) navAdmin.style.display = _controleLiberado ? '' : 'none';
       if (_controleLiberado) desenharControlePalco();
       return _controleLiberado;
     }
@@ -2302,29 +2325,124 @@ function escutarFila() {
 
     // O alvo viaja junto: entre o toque aqui e a chegada na Gerencia a musica
     // pode ter virado, e um "pular" atrasado tiraria a vez de outra pessoa.
-    async function mandarComando(acao) {
+    async function mandarComando(acao, opts) {
       if (!souODonoDoPalco()) return;
-      const tocando = _itensEvento.find(i => i.status === 'tocando');
-      const chamando = _itensEvento.find(i => i.status === 'confirmando' || i.status === 'pronto');
-      const alvoId = acao === 'pular' ? (tocando && tocando.id)
-        : acao === 'cantarNaProxima' ? ((tocando && tocando.id) || (chamando && chamando.id))
-        : null;
+      opts = opts || {};
+      let alvoId = opts.alvoId || null;
+      // Sem alvo explicito, as acoes de palco pegam o que esta tocando/chamando.
+      if (!alvoId && (acao === 'pular' || acao === 'cantarNaProxima')) {
+        const tocando = _itensEvento.find(i => i.status === 'tocando');
+        const chamando = _itensEvento.find(i => i.status === 'confirmando' || i.status === 'pronto');
+        alvoId = acao === 'pular' ? (tocando && tocando.id)
+          : ((tocando && tocando.id) || (chamando && chamando.id));
+      }
       if (VoxlyComando.ACOES[acao].alvo && !alvoId) {
         mostrarToast('Nada no palco para esse botão agora.', 3500);
         return;
       }
       try {
-        await db.collection('sessoes').doc(SESSAO_ID).collection('comandos').add({
+        const doc = {
           acao,
           alvoId: alvoId || null,
           por: VoxlyComando.normalizarEmail(currentUser.email),
           criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        if (opts.valor) doc.valor = String(opts.valor).slice(0, 200);
+        await db.collection('sessoes').doc(SESSAO_ID).collection('comandos').add(doc);
         mostrarToast('📱 Enviado para a Gerência', 2500);
       } catch (e) {
         console.error('[controle]', e);
         mostrarToast('Não consegui enviar o comando. Tente de novo.', 5000);
       }
+    }
+
+    // ── Tela de admin: a fila completa, como na estação do KJ ──────────────
+    let _filaAdminUnsub = null;
+    let _itensAdmin = [];
+    let _linkAdmin = {};   // itemId -> texto do campo de link (sobrevive ao redesenho)
+
+    function escutarFilaAdmin() {
+      if (!souODonoDoPalco() || !SESSAO_ID) return;
+      if (_filaAdminUnsub) return;   // já ouvindo
+      _filaAdminUnsub = db.collection('sessoes').doc(SESSAO_ID).collection('fila')
+        .onSnapshot(snap => {
+          _itensAdmin = snap.docs
+            .filter(d => VoxlySeguro.idSeguro(d.id))
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(d => !['cantada', 'pulada', 'cancelada'].includes(d.status));
+          desenharAdmin();
+        }, e => console.warn('[admin fila]', e.message));
+    }
+
+    function pararFilaAdmin() {
+      if (_filaAdminUnsub) { _filaAdminUnsub(); _filaAdminUnsub = null; }
+    }
+
+    const _STATUS_ADMIN = {
+      tocando: '▶ tocando', confirmando: '📣 chamando', confirmado: '📣 chamando',
+      pronto: '📣 pronto', aguardando: '⏳ na fila',
+    };
+    const _DL_ADMIN = {
+      baixando: '⬇ baixando…', escolher: '🔎 escolha a versão', erro: '⚠ erro no download', pronto: '✓ pronto',
+    };
+
+    function desenharAdmin() {
+      const el = document.getElementById('adminFila');
+      if (!el) return;
+      if (!_itensAdmin.length) { el.innerHTML = '<div class="empty">Fila vazia.</div>'; return; }
+      el.innerHTML = _itensAdmin
+        .slice()
+        .sort((a, b) => (Number(a.ordemFila) || 0) - (Number(b.ordemFila) || 0))
+        .map(it => {
+          const temArquivo = it.disponivel === true;
+          const dl = it.statusDownload;
+          const cands = Array.isArray(it.candidatos) ? it.candidatos : [];
+          const link = escHtml(_linkAdmin[it.id] || '');
+          const candHtml = (dl === 'escolher' && cands.length) ? `
+            <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+              ${cands.map((c, i) => `
+                <button class="btn-controle" style="text-align:left;font-weight:600;font-size:.78rem;padding:8px 10px;"
+                        onclick="baixarVersaoAdmin('${it.id}','${escHtml(c.id)}')">
+                  ⬇ ${escHtml((c.titulo || c.canal || c.id).slice(0, 48))}
+                  <span style="color:var(--muted);font-weight:400;"> · ${escHtml(c.canal || '')}</span>
+                </button>`).join('')}
+            </div>` : '';
+          return `
+          <div class="card" style="margin-bottom:10px;">
+            <div style="font-weight:700;">${escHtml(it.musica || '—')}</div>
+            <div style="font-size:.78rem;color:var(--muted);">${escHtml(it.artista || '')} · 🎤 ${escHtml(it.nomeArtistico || '—')}</div>
+            <div style="font-size:.72rem;color:var(--accent);margin-top:4px;">
+              ${_STATUS_ADMIN[it.status] || escHtml(it.status || '')}${dl ? ' · ' + (_DL_ADMIN[dl] || escHtml(dl)) : (temArquivo ? ' · ✓ no acervo' : ' · sem arquivo')}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+              <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('pular',{alvoId:'${it.id}'})">⏭ Pular</button>
+              <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('cantarNaProxima',{alvoId:'${it.id}'})">🚻 Na próxima</button>
+              <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('procurar',{alvoId:'${it.id}'})">🔎 ${temArquivo ? 'Trocar versão' : 'Procurar versões'}</button>
+              <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="removerAdmin('${it.id}')">✕ Remover</button>
+            </div>
+            ${candHtml}
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <input class="modal-input" style="flex:1;margin:0;font-size:.76rem;" placeholder="colar link do YouTube"
+                     value="${link}" oninput="_linkAdmin['${it.id}']=this.value">
+              <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="baixarLinkAdmin('${it.id}')">⬇ Baixar</button>
+            </div>
+          </div>`;
+        }).join('');
+    }
+
+    function baixarVersaoAdmin(itemId, videoId) {
+      mandarComando('baixarVersao', { alvoId: itemId, valor: videoId });
+    }
+    function baixarLinkAdmin(itemId) {
+      const link = (_linkAdmin[itemId] || '').trim();
+      const id = link && VoxlyLinkYoutube ? VoxlyLinkYoutube.idDoVideo(link) : null;
+      if (!id) { mostrarToast('Esse link não é de um vídeo do YouTube.', 4000); return; }
+      _linkAdmin[itemId] = '';
+      mandarComando('baixarVersao', { alvoId: itemId, valor: id });
+    }
+    function removerAdmin(itemId) {
+      if (!confirm('Tirar este pedido da fila?')) return;
+      mandarComando('remover', { alvoId: itemId });
     }
 
     async function pedirParaCantarJunto(item) {
@@ -2706,7 +2824,7 @@ function escutarFila() {
 
     // ── Navegação por tabs ───────────────────────────────────
     function mudarTab(tab) {
-      ['fila','catalogo','chat','historico'].forEach(t => {
+      ['fila','catalogo','chat','admin','historico'].forEach(t => {
         const el = document.getElementById('tab-' + t);
         const btn = document.getElementById('nav-' + t);
         if (el) el.style.display = t === tab ? 'block' : 'none';
@@ -2717,6 +2835,7 @@ function escutarFila() {
         carregarCatalogo();
       }
       if (tab === 'historico') carregarHistorico();
+      if (tab === 'admin') escutarFilaAdmin();
     }
 
     // ── Catálogo de Músicas ──────────────────────────────────
