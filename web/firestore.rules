@@ -96,14 +96,26 @@ service cloud.firestore {
     // Um comando e um toque de botao, nada mais: acao conhecida, alvo opcional
     // e a hora do SERVIDOR. A hora vem de request.time para o celular nao
     // conseguir gravar um comando "do futuro" que ficaria valendo a noite toda.
+    // O 'dados' (acao 'adicionar') e um mapa pequeno: cantor + musica
+    // obrigatorios, artista e a versao opcionais, cada um ate 120 chars.
+    function dadosBem(x) {
+      return x.keys().hasOnly(['cantor', 'musica', 'artista', 'valor'])
+             && x.keys().hasAll(['cantor', 'musica'])
+             && x.cantor is string && x.cantor.size() > 0 && x.cantor.size() <= 120
+             && x.musica is string && x.musica.size() > 0 && x.musica.size() <= 120
+             && (!('artista' in x) || (x.artista is string && x.artista.size() <= 120))
+             && (!('valor' in x)   || (x.valor   is string && x.valor.size()   <= 120));
+    }
     function comandoBem(d) {
-      return d.keys().hasOnly(['acao', 'alvoId', 'valor', 'criadoEm', 'por'])
+      return d.keys().hasOnly(['acao', 'alvoId', 'valor', 'dados', 'criadoEm', 'por'])
              && d.keys().hasAll(['acao', 'criadoEm'])
              && d.acao in ['tocar', 'pausar', 'pular', 'cantarNaProxima', 'chamarProximo',
-                           'procurar', 'baixarVersao', 'remover']
+                           'procurar', 'baixarVersao', 'remover', 'tocarItem', 'adicionar']
              && d.criadoEm == request.time
              && (!('alvoId' in d) || d.alvoId == null || (d.alvoId is string && d.alvoId.size() <= 200))
              && (!('valor' in d) || d.valor == null || (d.valor is string && d.valor.size() <= 200))
+             && (!('dados' in d) || (d.dados is map && dadosBem(d.dados)))
+             && (d.acao != 'adicionar' || ('dados' in d))
              && (!('por' in d) || d.por == emailDoToken());
     }
 

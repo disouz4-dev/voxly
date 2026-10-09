@@ -32,6 +32,8 @@ const ACOES = {
   procurar:       { alvo: true,  descricao: "Procura versoes no YouTube para o pedido" },
   baixarVersao:   { alvo: true,  valor: true, descricao: "Baixa a versao escolhida (id do video ou link)" },
   remover:        { alvo: true,  descricao: "Tira o pedido da fila" },
+  tocarItem:      { alvo: true,  descricao: "Toca JA um pedido especifico da fila" },
+  adicionar:      { dados: true, descricao: "Poe uma musica na fila a mao (inclusive fora da biblioteca)" },
 };
 
 const VALOR_MAX = 200;   // id de video ou link; nada gigante entra no comando
@@ -57,6 +59,16 @@ function comandoValido(cmd) {
   if (!def.alvo && cmd.alvoId != null && typeof cmd.alvoId !== "string") return false;
   if (def.valor && (typeof cmd.valor !== "string" || !cmd.valor || cmd.valor.length > VALOR_MAX)) return false;
   if (!def.valor && cmd.valor != null && typeof cmd.valor !== "string") return false;
+  if (def.dados) {
+    const d = cmd.dados;
+    if (!d || typeof d !== "object") return false;
+    // cantor e musica sao obrigatorios; artista e a versao (valor) opcionais.
+    const str = (x, obrig) => (x == null ? !obrig : (typeof x === "string" && x.length <= 120));
+    if (!d.cantor || !d.musica) return false;
+    if (!str(d.cantor, true) || !str(d.musica, true) || !str(d.artista, false) || !str(d.valor, false)) return false;
+    const chaves = Object.keys(d);
+    if (chaves.some(k => !["cantor", "musica", "artista", "valor"].includes(k))) return false;
+  }
   return true;
 }
 
@@ -85,7 +97,7 @@ function julgarComando(cmd, { agora = null, estado = {}, idadeMaximaS = IDADE_MA
     if (!alvoAtual) return { fazer: false, motivo: "nada no palco para esse comando" };
     if (alvoAtual !== cmd.alvoId) return { fazer: false, motivo: "a musica ja virou" };
   }
-  return { fazer: true, alvo: cmd.alvoId || null, valor: cmd.valor || null };
+  return { fazer: true, alvo: cmd.alvoId || null, valor: cmd.valor || null, dados: cmd.dados || null };
 }
 
 // O e-mail que a Gerencia guarda e o que o Google manda vem com caixa e

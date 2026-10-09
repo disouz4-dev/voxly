@@ -9,6 +9,7 @@ test("so as acoes conhecidas passam", () => {
   for (const acao of Object.keys(ACOES)) {
     const extra = ACOES[acao].alvo ? { alvoId: "item1" } : {};
     if (ACOES[acao].valor) extra.valor = "dQw4w9WgXcQ";
+    if (ACOES[acao].dados) extra.dados = { cantor: "Zé", musica: "Toxicity" };
     assert.ok(comandoValido({ acao, ...extra }), acao);
   }
   for (const ruim of [null, {}, { acao: "apagarTudo" }, { acao: "" }, "tocar"]) {
@@ -23,7 +24,7 @@ test("acao destrutiva sem alvo nao vale", () => {
 });
 
 test("o Play sobe quando o comando acabou de chegar", () => {
-  assert.deepStrictEqual(julgarComando(cmd(), { agora }), { fazer: true, alvo: null, valor: null });
+  assert.deepStrictEqual(julgarComando(cmd(), { agora }), { fazer: true, alvo: null, valor: null, dados: null });
 });
 
 test("comando velho e comando do futuro sao descartados", () => {

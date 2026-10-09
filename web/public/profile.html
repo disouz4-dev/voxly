@@ -425,6 +425,17 @@
         </div>
       </div>
       <div class="section">
+        <div class="section-title">➕ Pôr música na fila</div>
+        <div class="card" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="font-size:.74rem;color:var(--muted);">Para quem chegou sem celular, ou uma música que não está na biblioteca. Deixe o link em branco para a estação procolar no YouTube.</div>
+          <input class="modal-input" id="addCantor"  style="margin:0;font-size:.82rem;" placeholder="Cantor (nome)">
+          <input class="modal-input" id="addMusica"  style="margin:0;font-size:.82rem;" placeholder="Música">
+          <input class="modal-input" id="addArtista" style="margin:0;font-size:.82rem;" placeholder="Artista (opcional)">
+          <input class="modal-input" id="addLink"    style="margin:0;font-size:.82rem;" placeholder="Link do YouTube (opcional)">
+          <button class="btn-controle" onclick="adicionarMusicaAdmin()">➕ Adicionar à fila</button>
+        </div>
+      </div>
+      <div class="section">
         <div class="section-title">🎶 Fila completa</div>
         <div class="card" id="adminFila"><div class="loading">Carregando…</div></div>
       </div>
@@ -2348,6 +2359,7 @@ function escutarFila() {
           criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
         };
         if (opts.valor) doc.valor = String(opts.valor).slice(0, 200);
+        if (opts.dados) doc.dados = opts.dados;
         await db.collection('sessoes').doc(SESSAO_ID).collection('comandos').add(doc);
         mostrarToast('📱 Enviado para a Gerência', 2500);
       } catch (e) {
@@ -2415,6 +2427,7 @@ function escutarFila() {
               ${_STATUS_ADMIN[it.status] || escHtml(it.status || '')}${dl ? ' · ' + (_DL_ADMIN[dl] || escHtml(dl)) : (temArquivo ? ' · ✓ no acervo' : ' · sem arquivo')}
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+              <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('tocarItem',{alvoId:'${it.id}'})">▶ Tocar</button>
               <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('pular',{alvoId:'${it.id}'})">⏭ Pular</button>
               <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('cantarNaProxima',{alvoId:'${it.id}'})">🚻 Na próxima</button>
               <button class="btn-controle" style="font-size:.76rem;padding:8px 10px;" onclick="mandarComando('procurar',{alvoId:'${it.id}'})">🔎 ${temArquivo ? 'Trocar versão' : 'Procurar versões'}</button>
@@ -2443,6 +2456,23 @@ function escutarFila() {
     function removerAdmin(itemId) {
       if (!confirm('Tirar este pedido da fila?')) return;
       mandarComando('remover', { alvoId: itemId });
+    }
+
+    function adicionarMusicaAdmin() {
+      const cantor  = (document.getElementById('addCantor').value || '').trim();
+      const musica  = (document.getElementById('addMusica').value || '').trim();
+      const artista = (document.getElementById('addArtista').value || '').trim();
+      const link    = (document.getElementById('addLink').value || '').trim();
+      if (!cantor || !musica) { mostrarToast('Precisa do cantor e da música.', 3500); return; }
+      const dados = { cantor: cantor.slice(0, 120), musica: musica.slice(0, 120) };
+      if (artista) dados.artista = artista.slice(0, 120);
+      if (link) {
+        const id = VoxlyLinkYoutube ? VoxlyLinkYoutube.idDoVideo(link) : null;
+        if (!id) { mostrarToast('Esse link não é de um vídeo do YouTube. Deixe em branco para procurar.', 5000); return; }
+        dados.valor = id;
+      }
+      mandarComando('adicionar', { dados });
+      for (const campo of ['addCantor', 'addMusica', 'addArtista', 'addLink']) document.getElementById(campo).value = '';
     }
 
     async function pedirParaCantarJunto(item) {

@@ -4581,7 +4581,8 @@ https://www.youtube.com/@canal/videos"></textarea>
     diario('controle.executando', { acao: cmd.acao, alvo: cmd.alvoId || null, por: cmd.por || null });
     const nomes = { tocar: '▶ Play', pausar: '⏸ Pausa', pular: '⏭ Pular',
                     cantarNaProxima: '🚻 Cantar na próxima', chamarProximo: '📣 Chamar o próximo',
-                    procurar: '🔎 Procurar versões', baixarVersao: '⬇ Baixar versão', remover: '✕ Remover' };
+                    procurar: '🔎 Procurar versões', baixarVersao: '⬇ Baixar versão', remover: '✕ Remover',
+                    tocarItem: '▶ Tocar', adicionar: '➕ Música à mão' };
     mostrarToast(`📱 ${nomes[cmd.acao] || cmd.acao} — pelo seu celular`, 4000);
     try {
       if (cmd.acao === 'tocar')            await playAgora();
@@ -4596,6 +4597,11 @@ https://www.youtube.com/@canal/videos"></textarea>
       else if (cmd.acao === 'procurar')     await procurarVersoes(cmd.alvoId);
       else if (cmd.acao === 'remover')      await removerDaFilaPorId(cmd.alvoId);
       else if (cmd.acao === 'baixarVersao') await baixarVersaoRemota(cmd.alvoId, cmd.valor);
+      else if (cmd.acao === 'tocarItem') {
+        if (!filaData.find(i => i.id === cmd.alvoId)) { mostrarToast('📱 Esse pedido já saiu da fila', 4000); return; }
+        await tocarMusica(cmd.alvoId);
+      }
+      else if (cmd.acao === 'adicionar')    await adicionarMusicaRemota(cmd.dados);
     } catch (e) {
       diario('controle.falhou', { acao: cmd.acao, erro: e.message }, 'erro');
     }
@@ -4620,6 +4626,36 @@ https://www.youtube.com/@canal/videos"></textarea>
   async function removerDaFilaPorId(itemId) {
     if (!SESSAO_ID || !itemId) return;
     await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId).delete().catch(() => {});
+  }
+
+  // Poe uma musica na fila a mao, pelo celular do KJ — inclusive uma que nao
+  // esta na biblioteca (ele digita artista/musica, ou cola um link). O cantor
+  // entra como manual (sem conta). Se veio versao/link, ja baixa; senao fica
+  // 'escolher' para procurar/baixar depois.
+  async function adicionarMusicaRemota(dados) {
+    if (!SESSAO_ID || !dados || !dados.cantor || !dados.musica) return;
+    const id = 'manual_' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+    const idVideo = dados.valor ? VoxlyLinkYoutube.idDoVideo(dados.valor) : null;
+    const item = {
+      cantorUid: id, nomeArtistico: String(dados.cantor).slice(0, 120),
+      musica: String(dados.musica).slice(0, 120),
+      artista: String(dados.artista || 'Desconhecido').slice(0, 120),
+      disponivel: false,
+      videoId: idVideo || null,
+      status: 'aguardando', slot: 'ativa', tipo: 'normal',
+      ordemFila: VoxlyOrdem.ordemParaNovo(filaData),
+      statusDownload: idVideo ? 'baixando' : 'escolher',
+      adicionadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+    await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(id).set(item).catch(() => {});
+    diario('controle.adicionou', { id, cantor: item.nomeArtistico, musica: item.musica, comVersao: !!idVideo });
+    await new Promise(r => setTimeout(r, 400));   // deixa o item entrar em filaData
+    if (idVideo) {
+      await aplicarQualidadePadrao();
+      await baixarVersao({ ...item, id }, { id: idVideo, url: VoxlyLinkYoutube.urlDoVideo(idVideo), titulo: item.musica });
+    } else {
+      await procurarVersoes(id);   // sem versao: ja procura no YouTube
+    }
   }
 
   async function playAgora() {
