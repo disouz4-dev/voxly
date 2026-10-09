@@ -223,11 +223,17 @@ function construirCatalogo(folder) {
   // varredura, arquivo apagado): e o ponto unico para medir o que for novo.
   agendarMedicaoDoAcervo(arquivos);
   return arquivos.map(fullPath => {
-    const base   = path.basename(fullPath, path.extname(fullPath)).replace(RE_ID_SUFIXO, "").trim();
+    const nomeArq = path.basename(fullPath);
+    const base   = nomeArq.replace(path.extname(fullPath), "").replace(RE_ID_SUFIXO, "").trim();
     const { artista, musica } = separarArtistaMusica(base);
+    const mId = nomeArq.match(RE_ID_VIDEO);
     return {
       artista,
       musica,
+      // O id do video (do [..] no nome) viaja ate o pedido: assim o Palco toca
+      // o arquivo EXATO, sem adivinhar pelo nome — era a adivinhacao que punha
+      // musica errada no palco (09/10).
+      videoId:   mId ? mId[1] : null,
       arquivo:   path.relative(folder, fullPath),
       disponivel: true
     };

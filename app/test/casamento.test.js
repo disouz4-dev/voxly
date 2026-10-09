@@ -124,3 +124,34 @@ test("arquivo antigo sem artista continua sendo achado", () => {
   const legado = ["One - Sing King [aaaaaaaaaaa].mp4"];
   assert.match(escolherPorNome(legado, { musica: "One", artista: "U2" }) || "", /One/);
 });
+
+// ── Bug real de 09/10: "Cancer" da My Chemical Romance baixou/tocou
+// "Black Sabbath - N.I.B" (banda do Ozzy). Causa: decompor comia o "- N.I.B"
+// como se fosse extensão de arquivo, perdia o canal, e o portão do artista
+// deixava passar. ──
+const { decompor } = require("../src/versoes");
+
+test("decompor nao come titulo com ponto (N.I.B)", () => {
+  const d = decompor("Black Sabbath - N.I.B - CC Karaoke [ZTFzMHNfkbQ].mp4");
+  assert.strictEqual(d.artista, "Black Sabbath");
+  assert.strictEqual(d.musica, "N.I.B");
+  assert.strictEqual(d.canal, "CC Karaoke");
+  assert.strictEqual(d.videoId, "ZTFzMHNfkbQ");
+});
+
+test("nao toca a musica do Ozzy no lugar do My Chemical Romance", () => {
+  const acervo = ["Black Sabbath - N.I.B - CC Karaoke [ZTFzMHNfkbQ].mp4"];
+  assert.strictEqual(
+    escolherPorNome(acervo, { musica: "Cancer - CC Karaoke", artista: "My Chemical Romance" }), null,
+    "sem o Cancer no acervo, melhor nao achar do que tocar Black Sabbath");
+});
+
+test("com o arquivo certo no acervo, acha o certo", () => {
+  const acervo = [
+    "Black Sabbath - N.I.B - CC Karaoke [ZTFzMHNfkbQ].mp4",
+    "My Chemical Romance - Cancer - CC Karaoke [yhUf7JQ10k0].mp4",
+  ];
+  assert.match(
+    escolherPorNome(acervo, { musica: "Cancer - CC Karaoke", artista: "My Chemical Romance" }) || "",
+    /My Chemical Romance - Cancer/);
+});

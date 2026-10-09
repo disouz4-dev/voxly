@@ -8,7 +8,11 @@ const { normalizar } = require("./texto");
 
 // Nome no padrao "Artista - Musica - Canal [id].ext".
 function decompor(nomeArquivo) {
-  const semExt = String(nomeArquivo).replace(/\.[^.]+$/, "");
+  // So extensao de MIDIA de verdade: o /\.[^.]+$/ de antes comia parte de
+  // titulos com ponto — "N.I.B" virava "N.I" e o canal se perdia, e dai o
+  // portao do artista deixava passar a musica errada (Black Sabbath no lugar
+  // de My Chemical Romance, 09/10).
+  const semExt = String(nomeArquivo).replace(/\.(mp4|mkv|avi|webm|mov|m4a|mp3)$/i, "");
   const mId = semExt.match(/\[([A-Za-z0-9_-]{11})\]\s*$/);
   const videoId = mId ? mId[1] : null;
   const base = semExt.replace(/\s*\[[A-Za-z0-9_-]{11}\]\s*$/, "").trim();

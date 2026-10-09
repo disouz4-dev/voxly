@@ -2294,7 +2294,9 @@ https://www.youtube.com/@canal/videos"></textarea>
         const chave = (artista + '|' + musica).toLowerCase();
         if (vistos.has(chave)) continue;
         vistos.add(chave);
-        itens.push({ artista: artista || 'Desconhecido', musica });
+        // Leva o id do video: o celular grava ele no pedido e o Palco toca o
+        // arquivo exato, sem casar por nome (que punha música errada, 09/10).
+        itens.push({ artista: artista || 'Desconhecido', musica, videoId: s.videoId || null });
         if (itens.length >= LIMITE_CATALOGO) break;
       }
 

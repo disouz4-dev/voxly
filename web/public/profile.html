@@ -1236,7 +1236,7 @@ function escutarFila() {
     function selecionarMusicaIdx(i) {
       const el = document.getElementById('resultadosBusca');
       const r = el._resultados?.[i];
-      if (r) selecionarMusica(r.id, r.musica, r.artista, r.disponivel);
+      if (r) selecionarMusica(r.id, r.musica, r.artista, r.disponivel, r.videoId);
     }
 
     function mudarTom(delta) {
@@ -1247,11 +1247,13 @@ function escutarFila() {
       if (musicaSelecionada) musicaSelecionada.semitons = v;
     }
 
-    function selecionarMusica(id, musica, artista, disponivel) {
+    function selecionarMusica(id, musica, artista, disponivel, videoId) {
       semitonsEscolhido = 0;
       document.getElementById('tomValor').textContent = '0';
       document.getElementById('tomLabel').textContent = 'semitons (original)';
-      musicaSelecionada = { catalogoId: id, musica, artista, disponivel, semitons: 0 };
+      // videoId: o id do arquivo no acervo. Vai no pedido para o Palco tocar o
+      // arquivo exato, sem casar por nome (que punha música errada, 09/10).
+      musicaSelecionada = { catalogoId: id, musica, artista, disponivel, semitons: 0, videoId: videoId || null };
       document.getElementById('musicaSelecionadaNome').textContent   = musica;
       document.getElementById('musicaSelecionadaArtista').textContent= artista;
       document.getElementById('musicaSelecionadaStatus').innerHTML   = disponivel
@@ -3102,7 +3104,7 @@ function escutarFila() {
         return;
       }
       if ((await abrirModal(slot)) === false) return;
-      selecionarMusica(song.id || null, limparNome(song.musica || ''), song.artista || '', song.disponivel !== false);
+      selecionarMusica(song.id || null, limparNome(song.musica || ''), song.artista || '', song.disponivel !== false, song.videoId || null);
     }
 
     // ── Busca de foto/origem do artista via API + cache Firestore ──
