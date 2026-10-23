@@ -12,6 +12,9 @@ const { pastaDeDownload } = require("./pastas");
 const { escolherIdentidade, criarBuscaItunes, semCanal, escolherDoItunes } = require("./identificacao");
 const { criarConsultaLimitada } = require("./limite");
 const { escolherArquivoBaixado, idDaUrl, arquivoDaSaida } = require("./baixado");
+const { criarRegistroEmCurso } = require("./em-curso");
+const { criarFilaLimitada } = require("./fila-limitada");
+const { decidirDownload } = require("./download-duplo");
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const ytdlp = require("./ytdlp");
@@ -568,7 +571,24 @@ ipcMain.handle("piper-vozes", () => (piperDisponivel() ? vozesPiper() : []));
 ipcMain.handle("piper-falar", async (_, { texto, voz }) => sintetizarFala(texto, voz));
 
 // Consulta o YouTube e devolve so o que serve para uma fila de karaoke.
-async function buscarKaraokeYt(termo, artista) {
+// Tres portas levam a mesma busca (o KJ clicando, o pedido do app do cantor e
+// o download automatico), cada uma com a sua guarda e a sua chave: nenhuma via
+// a outra, e a mesma consulta de 162 s saia duplicada. A tranca fica aqui, onde
+// as tres passam. A validade curta serve ao clique repetido do KJ no show.
+const buscasEmCurso = criarRegistroEmCurso({ validadeMs: 90 * 1000 });
+const datasEmCurso  = criarRegistroEmCurso({ validadeMs: 10 * 60 * 1000 });
+// Teto de processos: sem ele cada clique largava um yt-dlp e a noite chegou a
+// 20 parados, disputando banda e nenhum terminando.
+const filaConsultas = criarFilaLimitada({ limite: 2 });
+const filaDownloads = criarFilaLimitada({ limite: 2 });
+
+function buscarKaraokeYt(termo, artista) {
+  const chave = `busca:${String(termo || "").trim().toLowerCase()}|${String(artista || "").trim().toLowerCase()}`;
+  return buscasEmCurso.obter(chave, () =>
+    filaConsultas.correr(() => buscarKaraokeYtBruto(termo, artista), { prioridade: 0 }));
+}
+
+async function buscarKaraokeYtBruto(termo, artista) {
   const ytDlp = resolverBinario("yt-dlp");
   if (!ytDlp) throw new Error("yt-dlp nao encontrado no host.");
 
@@ -688,24 +708,32 @@ function iniciarServidorCatalogo(tokenLan) {
       const ytDlp = resolverBinario("yt-dlp");
       if (!ytDlp) { res.statusCode = 500; res.end(JSON.stringify({ erro: "yt-dlp nao encontrado" })); return; }
 
-      const proc = spawn(ytDlp, [
-        "--skip-download", "--no-warnings", "--ignore-errors",
-        "--print", "%(id)s %(upload_date)s",
-        ...ids.map(i => `https://www.youtube.com/watch?v=${i}`),
-      ], { windowsHide: true });
+      // A data de publicacao de um video nao muda: vale a pena guardar, e o
+      // mesmo conjunto de ids era consultado de novo a cada reabrir do modal.
+      datasEmCurso.obter(`datas:${ids.join(",")}`, () => filaConsultas.correr(() => new Promise((ok, falha) => {
+        const proc = spawn(ytDlp, [
+          "--skip-download", "--no-warnings", "--ignore-errors",
+          "--print", "%(id)s %(upload_date)s",
+          ...ids.map(i => `https://www.youtube.com/watch?v=${i}`),
+        ], { windowsHide: true });
 
-      let saida = "";
-      proc.stdout.on("data", d => saida += d.toString());
-      proc.on("error", () => { res.statusCode = 500; res.end(JSON.stringify({ erro: "falha ao consultar" })); });
-      proc.on("close", () => {
-        const datas = {};
-        for (const linha of saida.split("\n")) {
-          const [id, data] = linha.trim().split(/\s+/);
-          if (id && /^\d{8}$/.test(data || "")) datas[id] = data;
-        }
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify(datas));
-      });
+        let saida = "";
+        proc.stdout.on("data", d => saida += d.toString());
+        proc.on("error", e => falha(e));
+        proc.on("close", () => {
+          const datas = {};
+          for (const linha of saida.split("\n")) {
+            const [id, data] = linha.trim().split(/\s+/);
+            if (id && /^\d{8}$/.test(data || "")) datas[id] = data;
+          }
+          ok(datas);
+        });
+      }), { prioridade: 1 }))
+        .then(datas => {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(datas));
+        })
+        .catch(() => { res.statusCode = 500; res.end(JSON.stringify({ erro: "falha ao consultar" })); });
       return;
     }
 
@@ -2131,8 +2159,23 @@ async function baixarUrl(opts) {
 const ytItensEmCurso = new Map();   // itemId -> quantos downloads
 ipcMain.handle("yt-em-andamento", () => [...ytItensEmCurso.keys()]);
 
+// Uma gravacao nao baixa duas vezes, e no maximo duas por vez.
+//
+// Show de 22/10: dois yt-dlp no mesmo video, escrevendo nos MESMOS arquivos de
+// saida — o .part do audio foi visto em zero byte, um truncando o do outro, com
+// jeito de download eterno. E a musica que ia tocar em tres minutos disputava
+// banda com a que tocaria em quarenta.
+const downloadsEmCurso = criarRegistroEmCurso();
+
+// Chave da gravacao, nao do pedido: dois pedidos diferentes podem querer o
+// mesmo video, e o mesmo pedido pode ser disparado por duas portas.
+function chaveDaGravacao(opts) {
+  const urls = (opts && opts.urls) || [];
+  if (urls.length !== 1) return null;   // leva de canal: so o teto vale
+  return `dl:${idDaUrl(urls[0]) || urls[0]}`;
+}
+
 ipcMain.handle("yt-download", async (_, opts) => {
-  ytCancelado = false;
   const itemId = (opts && opts.itemId) || null;
   if (itemId) ytItensEmCurso.set(itemId, (ytItensEmCurso.get(itemId) || 0) + 1);
   registrar("main", "download.inicio", { itemId, urls: opts && opts.urls, artista: opts && opts.artista, musica: opts && opts.musica, qualidade: opts && opts.qualidade });
@@ -2143,7 +2186,35 @@ ipcMain.handle("yt-download", async (_, opts) => {
     if (hostWindow && !hostWindow.isDestroyed()) hostWindow.webContents.send("yt-done", { ...r, itemId });
   };
   try {
-    const resultado = await baixarUrl(opts);
+    const chave = chaveDaGravacao(opts);
+    const urlUnica = chave ? (opts.urls || [])[0] : null;
+    const videoId = urlUnica ? idDaUrl(urlUnica) : null;
+    const pasta = store.get("musicFolder");
+    const decisao = decidirDownload({
+      videoId, url: urlUnica, itemId,
+      // Ja estar no disco encerra o assunto: foi assim que a mesma gravacao do
+      // RBD entrou duas vezes na pasta, baixada pelo app e por fora.
+      noDisco: videoId && pasta ? caminhoLocalDoVideo(pasta, videoId) : null,
+      emCurso: new Map(), agora: Date.now(),
+    });
+    if (decisao.acao === "ja-tenho") {
+      const resultado = { sucesso: true, arquivo: decisao.arquivo, jaTinha: true };
+      registrar("main", "download.ja-tinha", { itemId, arquivo: decisao.arquivo });
+      avisar(resultado);
+      return resultado;
+    }
+
+    // `prioridade` e a posicao na fila de canto, mandada pela Gerencia: quem
+    // canta antes baixa antes. Sem ela, vai para o fim.
+    const prioridade = Number.isFinite(opts && opts.prioridade) ? opts.prioridade : undefined;
+    const tarefa = () => filaDownloads.correr(() => {
+      // Cada download zera o cancelamento ao COMECAR de verdade, nao ao entrar
+      // na fila: senao um "cancelar" dado durante a espera se perdia.
+      ytCancelado = false;
+      return baixarUrl(opts);
+    }, { prioridade });
+    // Mesma gravacao pedida por duas portas: as duas esperam o mesmo download.
+    const resultado = chave ? await downloadsEmCurso.obter(chave, tarefa) : await tarefa();
     avisar(resultado);
     return resultado;
   } catch (e) {

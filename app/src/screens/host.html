@@ -2025,6 +2025,14 @@ https://www.youtube.com/@canal/videos"></textarea>
     return baixarVersao(item, { id, url: VoxlyLinkYoutube.urlDoVideo(id), titulo: 'link colado (' + id + ')' });
   }
 
+  // Quem canta antes baixa antes (pedido do dono, 22/10): a posicao na fila de
+  // canto vira a prioridade do download no processo principal. Pedido que nao
+  // esta na fila principal (em espera, ou que ja saiu) vai para o fim.
+  function prioridadeDeDownload(itemId) {
+    const i = filaData.findIndex(x => x.id === itemId);
+    return i >= 0 ? i + 1 : undefined;
+  }
+
   async function baixarVersao(item, c) {
     const itemId = item.id;
     const ref = db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId);
@@ -2040,6 +2048,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         itemId,
         urls: [c.url], pasta: pastaMusicasAtual || undefined,
         artista: item.artista, musica: item.musica,
+        prioridade: prioridadeDeDownload(itemId),
         qualidade: document.getElementById('candidatosQualidade').value,
         renomear: true, organizar: false, cookies: false, navegador: null, playlist: false,
       });
@@ -2574,6 +2583,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         urls: [item.videoUrl],
         pasta: pastaMusicasAtual || undefined,
         artista: item.artista, musica: item.musica,
+        prioridade: prioridadeDeDownload(item.id),
         cookies: false, navegador: null, playlist: false,
       });
       const ok = r && r.sucesso;
