@@ -910,6 +910,12 @@ function createPlayerWindow() {
   playerWindow.loadFile(path.join(__dirname, "screens", "player.html"));
   playerWindow.webContents.once("did-finish-load", () => {
     console.log("[MAIN] Player carregado e pronto.");
+    // Palco em TELA CHEIA de verdade na TV (pedido do dono, 15/10): o vídeo do
+    // karaokê ocupa o monitor inteiro, sem moldura. Com um monitor só, segue a
+    // divisão de janelas para o KJ enxergar tudo.
+    if (temMonitorExterno() && playerWindow && !playerWindow.isDestroyed()) {
+      playerWindow.setFullScreen(true);
+    }
   });
   playerWindow.on("closed", () => { playerWindow = null; arrumarJanelasTelaUnica(); });
   arrumarJanelasTelaUnica();
@@ -944,10 +950,11 @@ function createAudienceWindow() {
   audienceWindow.once("ready-to-show", () => {
     arrumarJanelasTelaUnica();
     audienceWindow.show();
-    // Na TV ela nasce ocupando o monitor inteiro (pedido do dono, 01/10): com
-    // a moldura, as bordas do display sobravam e a fila cortava embaixo. Com
-    // um monitor so, as janelas continuam divididas para o KJ enxergar tudo.
-    if (temMonitorExterno()) audienceWindow.maximize();
+    // Na TV ela abre em TELA CHEIA de verdade (pedido do dono, 15/10): sem
+    // moldura nem barra, o monitor inteiro e so o show. Maximizado ainda
+    // deixava a barra de titulo e as bordas do display. Com um monitor so, as
+    // janelas continuam divididas para o KJ enxergar tudo.
+    if (temMonitorExterno()) audienceWindow.setFullScreen(true);
     audienceWindow.moveTop();
     if (hostWindow) hostWindow.webContents.send("audiencia-estado", true);
   });
