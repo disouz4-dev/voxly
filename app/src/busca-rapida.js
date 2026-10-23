@@ -18,17 +18,47 @@ const RE_KARAOKE = /karaoke|karaoke|playback|instrumental/;
 // pedido antigo vem com o título inteiro do YouTube.
 const RE_RUIDO = /[([][^)\]]*[)\]]/g;
 
+// O título do vídeo e o nome do canal são campos diferentes e distantes um do
+// outro no JSON da página — entre o videoId e o título vem o bloco de
+// miniaturas, com URL de centenas de caracteres. A primeira versão disto
+// emparelhava "o videoId com o próximo texto" e pegava o nome do CANAL: no
+// show de 22/10 isso me fez dizer que não existia karaokê de uma música que
+// tinha instrumental, porque eu comparava o nome dela contra "Karaoke Anime".
+// Agora lê o JSON de verdade e anda nos videoRenderer.
+const RE_DADOS = /var ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/;
+
+function textoDe(campo) {
+  if (!campo) return "";
+  if (Array.isArray(campo.runs)) return campo.runs.map(r => (r && r.text) || "").join("");
+  return campo.simpleText || "";
+}
+
 function extrairCandidatos(html) {
-  const txt = String(html == null ? "" : html);
+  const m = String(html == null ? "" : html).match(RE_DADOS);
+  if (!m) return [];
+  let dados;
+  // Página com outro formato (YouTube mudou, resposta de erro) devolve vazio:
+  // quem chama diz "não achei" e o KJ decide, em vez de baixar um palpite.
+  try { dados = JSON.parse(m[1]); } catch (_) { return []; }
+
   const vistos = new Set();
   const saida = [];
-  // O título vem no primeiro "text" depois do videoId no JSON embutido da página.
-  for (const m of txt.matchAll(/"videoId":"([\w-]{11})"[\s\S]{0,400}?"text":"([^"]{3,160})"/g)) {
-    const id = m[1];
-    if (vistos.has(id)) continue;
-    vistos.add(id);
-    saida.push({ id, titulo: m[2] });
-  }
+  (function andar(no) {
+    if (!no || typeof no !== "object") return;
+    if (Array.isArray(no)) { for (const x of no) andar(x); return; }
+    // Só videoRenderer: canal e playlist também aparecem nos resultados e não
+    // são gravações para baixar.
+    const v = no.videoRenderer;
+    if (v && v.videoId && !vistos.has(v.videoId)) {
+      vistos.add(v.videoId);
+      saida.push({
+        id: v.videoId,
+        titulo: textoDe(v.title),
+        canal: textoDe(v.ownerText) || textoDe(v.longBylineText),
+      });
+    }
+    for (const x of Object.values(no)) andar(x);
+  })(dados);
   return saida;
 }
 

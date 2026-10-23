@@ -19,20 +19,80 @@ const assert = require("node:assert");
 const { extrairCandidatos, escolherCandidato, nomeDeArquivo } = require("../src/busca-rapida");
 
 // ── Ler a página de resultados ────────────────────────────────────────────
-const HTML = `lixo{"videoId":"gzCuqSOY4aM","x":1,"text":"Haruka Kanata – ASIAN KUNG-FU GENERATION (Romaji Karaoke)"}
-  mais lixo {"videoId":"Vn4CCoTW0QM","text":"Karaoke Anime"}
-  {"videoId":"gzCuqSOY4aM","text":"repetido, nao conta"}`;
+// O título do vídeo e o nome do canal são campos diferentes e DISTANTES um do
+// outro no JSON da página: entre o videoId e o título vem o bloco de
+// miniaturas, com URLs que passam de 400 caracteres. Emparelhar "o videoId com
+// o próximo texto" pegava o nome do CANAL — foi assim que eu concluí, no show
+// de 22/10, que não existia karaokê de "O Cantor e o Taxista" do Fresno quando
+// existia um instrumental: os candidatos chegavam aqui como "Karaoke Anime" e
+// "KARAOKE UtaCchaO", nomes de canal, e a comparação com o nome da música
+// nunca tinha chance.
 
-test("tira id e titulo da pagina de resultados", () => {
-  const c = extrairCandidatos(HTML);
-  assert.strictEqual(c.length, 2, "o id repetido entra uma vez so");
-  assert.deepStrictEqual(c[0], { id: "gzCuqSOY4aM", titulo: "Haruka Kanata – ASIAN KUNG-FU GENERATION (Romaji Karaoke)" });
-  assert.strictEqual(c[1].id, "Vn4CCoTW0QM");
+// Monta uma página como a que o YouTube serve, com o JSON embutido.
+function paginaDeResultados(itens) {
+  const conteudo = itens.map(it => {
+    if (it.canalRenderer) return { channelRenderer: { channelId: "UC123", title: { simpleText: it.canalRenderer } } };
+    return {
+      videoRenderer: {
+        videoId: it.id,
+        // Miniatura com URL longa: é ela que separa o id do título.
+        thumbnail: { thumbnails: [{ url: "https://i.ytimg.com/vi/" + it.id + "/hq720.jpg?sqp=" + "x".repeat(420), width: 360, height: 202 }] },
+        title: { runs: [{ text: it.titulo }], accessibility: { accessibilityData: { label: it.titulo + " 4 minutos" } } },
+        ownerText: { runs: [{ text: it.canal }] },
+        lengthText: { simpleText: "4:02" },
+      },
+    };
+  });
+  return `<html><script>var ytInitialData = ${JSON.stringify({
+    contents: { twoColumnSearchResultsRenderer: { primaryContents: { sectionListRenderer: {
+      contents: [{ itemSectionRenderer: { contents: conteudo } }] } } } },
+  })};</script></html>`;
+}
+
+test("le o TITULO do video, nao o nome do canal", () => {
+  const html = paginaDeResultados([
+    { id: "hzHySxXnSXU", titulo: "Fresno - O Cantor e o Taxista (instrumental)", canal: "Adeeh" },
+  ]);
+  const c = extrairCandidatos(html);
+  assert.strictEqual(c.length, 1);
+  assert.strictEqual(c[0].id, "hzHySxXnSXU");
+  assert.strictEqual(c[0].titulo, "Fresno - O Cantor e o Taxista (instrumental)");
+  assert.strictEqual(c[0].canal, "Adeeh", "o canal tambem vem, para a tela mostrar de quem e");
 });
 
-test("pagina sem resultado nao quebra", () => {
-  for (const vazio of ["", "<html></html>", null, undefined]) {
-    assert.deepStrictEqual(extrairCandidatos(vazio), []);
+test("titulo partido em varios pedacos vem inteiro", () => {
+  // O YouTube quebra o titulo em "runs" quando ha realce da busca.
+  const html = `<script>var ytInitialData = ${JSON.stringify({
+    contents: [{ videoRenderer: { videoId: "aaaaaaaaaaa",
+      title: { runs: [{ text: "Haruka " }, { text: "Kanata" }, { text: " (Karaoke)" }] },
+      ownerText: { runs: [{ text: "Canal X" }] } } }],
+  })};</script>`;
+  assert.strictEqual(extrairCandidatos(html)[0].titulo, "Haruka Kanata (Karaoke)");
+});
+
+test("id repetido entra uma vez so", () => {
+  const html = paginaDeResultados([
+    { id: "gzCuqSOY4aM", titulo: "Haruka Kanata (Karaoke)", canal: "Um" },
+    { id: "gzCuqSOY4aM", titulo: "o mesmo video de novo", canal: "Dois" },
+  ]);
+  assert.strictEqual(extrairCandidatos(html).length, 1);
+});
+
+test("canal e playlist nos resultados nao entram como candidato", () => {
+  const html = paginaDeResultados([
+    { canalRenderer: "Karaoke Anime" },
+    { id: "bbbbbbbbbbb", titulo: "Sobakasu (Karaoke)", canal: "Anime Karaoke HQ" },
+  ]);
+  const c = extrairCandidatos(html);
+  assert.strictEqual(c.length, 1, "so videoRenderer e candidato");
+  assert.strictEqual(c[0].titulo, "Sobakasu (Karaoke)");
+});
+
+// Falhar devolvendo vazio e melhor que adivinhar: quem chama avisa "nao achei"
+// e o KJ decide, em vez de baixar o palpite errado.
+test("pagina que nao tem o JSON esperado devolve vazio", () => {
+  for (const ruim of ["", "<html>sem nada</html>", null, undefined, "var ytInitialData = {quebrado"]) {
+    assert.deepStrictEqual(extrairCandidatos(ruim), [], `devia devolver vazio: ${String(ruim).slice(0, 30)}`);
   }
 });
 
