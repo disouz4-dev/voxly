@@ -1881,7 +1881,17 @@ function escutarFila() {
         mostrarToast(`📩 Convite enviado para ${pessoa.nomeArtistico}`, 3500);
       } catch (e) {
         console.error('[convite] falhou:', e);
-        mostrarToast('Não consegui enviar o convite. Tente de novo.', 5000);
+        // "Tente de novo" fazia o KJ tentar a noite toda o que nunca ia passar.
+        // Pedido com prioridade nao aceita edicao do proprio dono (regra do
+        // fila olha o tipo do documento resultante), e o convite grava no fila
+        // e no convites no mesmo lote: o lote inteiro e recusado.
+        const semPermissao = e && e.code === 'permission-denied';
+        const comPrioridade = (item.tipo || 'normal') === 'prioridade';
+        mostrarToast(
+          semPermissao && comPrioridade
+            ? '⚠️ Pedido com ☕ prioridade não aceita dueto — defeito conhecido, não é você.'
+            : `Não consegui enviar o convite${e && e.code ? ` (${e.code})` : ''}.`,
+          7000);
       }
     }
 
@@ -1913,9 +1923,14 @@ function escutarFila() {
       document.getElementById('recusaQuem').textContent =
         `Escolha como responder a ${c.deNome || (c.tipo === 'pedido' ? 'quem pediu' : 'quem convidou')}:`;
       const el = document.getElementById('recusaOpcoes');
+      // Recusar nao obriga a justificar (pedido do dono, 22/10): a resposta
+      // pronta e uma gentileza oferecida, nao um pedagio para dizer "nao".
       el.innerHTML = VoxlyChat.RECUSAS.map((r, i) =>
-        `<button class="recusa-opcao" data-resposta="${i}">${escHtml(r)}</button>`).join('');
+        `<button class="recusa-opcao" data-resposta="${i}">${escHtml(r)}</button>`).join('')
+        + `<button class="recusa-opcao" data-sem-resposta="1"
+             style="border-style:dashed;color:var(--muted);">Recusar sem dizer nada</button>`;
       el.onclick = ev => {
+        if (ev.target.closest('[data-sem-resposta]')) { recusarConvite(_recusando); return; }
         const b = ev.target.closest('[data-resposta]');
         if (b) recusarConvite(_recusando, Number(b.dataset.resposta));
       };
@@ -1932,7 +1947,7 @@ function escutarFila() {
       fecharRecusa();
       try {
         await db.collection('sessoes').doc(SESSAO_ID).collection('convites').doc(c.id)
-          .update({ status: 'recusado', resposta });
+          .update(VoxlyChat.atualizacaoDaRecusa(resposta));
         // Pedido para cantar junto: a musica e minha e nunca teve o duo gravado.
         if (c.tipo !== 'pedido') {
           await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(c.filaItemId)

@@ -157,3 +157,28 @@ test("aceitar convites de dueto vem ligado; so quem desligou nao recebe", () => 
   assert.equal(chat.aceitaDueto(null), false, "sem perfil nao da para convidar");
   assert.match(chat.AVISO_SEM_DUETO, /não tem habilitado convites para cantar/);
 });
+
+// ── Recusar sem justificar ───────────────────────────────────────────────
+// Pedido do Diego (22/10): "caso eu precise cancelar eu não sou obrigado a
+// justificar". A recusa so oferecia as cinco respostas prontas.
+//
+// O que o banco aceita decide a forma: a regra exige `resposta is int` entre 0
+// e 4 QUANDO o campo existe. Entao recusar calado e OMITIR o campo. Mandar
+// null quebra a regra; mandar undefined o Firestore recusa na hora.
+test("recusar sem justificar nao manda o campo resposta", () => {
+  const u = chat.atualizacaoDaRecusa();
+  assert.deepStrictEqual(u, { status: "recusado" });
+  assert.ok(!("resposta" in u), "campo ausente, nunca null nem undefined");
+});
+
+test("recusar escolhendo uma resposta manda o numero dela", () => {
+  assert.deepStrictEqual(chat.atualizacaoDaRecusa(0), { status: "recusado", resposta: 0 });
+  assert.deepStrictEqual(chat.atualizacaoDaRecusa("4"), { status: "recusado", resposta: 4 });
+});
+
+test("resposta fora da lista vira recusa calada, e nao um numero que o banco nega", () => {
+  for (const ruim of [5, -1, 1.5, "abc", null, undefined, {}]) {
+    assert.deepStrictEqual(chat.atualizacaoDaRecusa(ruim), { status: "recusado" },
+      `devia virar recusa calada: ${JSON.stringify(ruim)}`);
+  }
+});

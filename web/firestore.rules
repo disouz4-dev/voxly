@@ -210,7 +210,15 @@ service cloud.firestore {
                                       || (resource.data.cantorUid == eu()
                                           && !(resource.data.status in ['tocando', 'cantada', 'pulada'])
                                           && !(request.resource.data.status in ['tocando', 'cantada'])
-                                          && request.resource.data.get('tipo', 'normal') != 'prioridade')
+                                          // Nao pode MUDAR o tipo (dar ou tirar prioridade de si
+                                          // mesmo). A versao anterior olhava o tipo do documento
+                                          // RESULTANTE e, com isso, um pedido que JA tinha
+                                          // prioridade virava congelado para o proprio dono: nem
+                                          // trocar a musica, nem o tom, nem convidar para dueto —
+                                          // o convite grava no fila e no convites no mesmo lote, e
+                                          // o lote inteiro era recusado (achado no show de 22/10).
+                                          && request.resource.data.get('tipo', 'normal')
+                                             == resource.data.get('tipo', 'normal'))
                                       || (resource.data.duoUid == eu() && entradaPaga(sid)
                                           && soMudou(['duoPendente', 'duoNomeConfirmado', 'duoPhotoURL', 'duoUid', 'duoNome'])));
         allow delete: if logado() && (souDono(sid) || resource.data.cantorUid == eu());

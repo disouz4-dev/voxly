@@ -41,6 +41,18 @@ function respostaDaRecusa(indice) {
   return Number.isInteger(i) && i >= 0 && i < RECUSAS.length ? RECUSAS[i] : "O convite foi recusado.";
 }
 
+// Recusar sem justificar (pedido do dono, 22/10): o campo `resposta` e
+// OMITIDO, nunca null. A regra do banco exige `resposta is int` de 0 a 4
+// quando o campo existe, e o Firestore recusa `undefined` na hora da escrita.
+// Resposta fora da lista tambem vira recusa calada: melhor a pessoa recusar do
+// que a escrita ser negada por um numero que nao existe.
+function atualizacaoDaRecusa(indice) {
+  const i = Number(indice);
+  const vale = indice !== null && indice !== undefined && indice !== ""
+               && Number.isInteger(i) && i >= 0 && i < RECUSAS.length;
+  return vale ? { status: "recusado", resposta: i } : { status: "recusado" };
+}
+
 // Aceitar convites e pedidos de dueto. Tambem ligado por padrao. Desligado,
 // ninguem convida a pessoa nem pede para cantar na musica dela — e quem tenta
 // e avisado, em vez de ficar esperando uma resposta que nunca vem.
@@ -165,7 +177,7 @@ function textoDaResposta(c) {
 
 const api = {
   LIMITE_TEXTO, LIMITE_MENSAGENS, LIMITE_NOME, RAJADA, RECUSAS, AVISO_SEM_DUETO, aceitaDueto,
-  respostaDaRecusa, aceitaConversa, podeOferecerConversa, limparTexto, novaMensagem,
+  respostaDaRecusa, atualizacaoDaRecusa, aceitaConversa, podeOferecerConversa, limparTexto, novaMensagem,
   podeEnviar, conversaCheia, conversaAberta, outroParticipante, naoLidas, conversaDoConvite,
   idDoPedidoParaCantar, podePedirParaCantar, pedidosParaFechar, textoDaResposta,
 };
