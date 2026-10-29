@@ -155,3 +155,45 @@ test("com o arquivo certo no acervo, acha o certo", () => {
     escolherPorNome(acervo, { musica: "Cancer - CC Karaoke", artista: "My Chemical Romance" }) || "",
     /My Chemical Romance - Cancer/);
 });
+
+// Musica errada no palco, show de 22/10. Cruzando os 60 Play do diario com o
+// arquivo que o Palco abriu, 3 casos tinham a mesma assinatura: o pedido
+// trazia o NOME DO CANAL colado na musica ("Na Sua Estante - PARTY TYME
+// KARAOKE em portugues") e tocou outra musica do MESMO canal. O canal e um
+// pedaco como qualquer outro em pedacos(), entao "party tyme karaoke em
+// portugues" casava com "party tyme karaoke em portugues" e pronto: Mariana
+// pediu "Na Sua Estante" e a casa ouviu "Mascara".
+//
+// O canal nunca identifica musica. Dois arquivos do mesmo canal nao sao a
+// mesma musica, e e isso que estes casos reais cobram.
+test("canal de karaoke igual nao faz duas musicas serem a mesma", () => {
+  const reais = [
+    ["Na Sua Estante - PARTY TYME KARAOKE em português",
+     "Pitty - Máscara - PARTY TYME KARAOKE em português"],
+    ["Diga, Parte 2 - Karaokefy Brasil",
+     "Fresno & Tuyo - Cada Acidente - Karaokefy Brasil"],
+    ["Você Me Vira a Cabeça (me Tira do Sério) - Clubinho do Karaokê",
+     "Alcione - A Loba - Clubinho do Karaokê"],
+  ];
+  for (const [pedido, arquivo] of reais) {
+    assert.strictEqual(mesmaMusica(pedido, arquivo), false,
+      `"${pedido}" casou com "${arquivo}" — foi assim que tocou a musica errada`);
+  }
+});
+
+// A outra metade da correcao: tirar o canal nao pode cegar o casamento certo.
+test("o arquivo certo do mesmo canal continua casando", () => {
+  assert.strictEqual(
+    mesmaMusica("Na Sua Estante - PARTY TYME KARAOKE em português",
+                "Pitty - Na Sua Estante - PARTY TYME KARAOKE em português"), true,
+    "o pedido da Mariana tem de achar o arquivo dela");
+  assert.strictEqual(
+    mesmaMusica("Diga, Parte 2 - Karaokefy Brasil",
+                "Fresno - Diga, Parte 2 - Karaokefy Brasil"), true);
+});
+
+// E o acervo legado, onde o pedido guardou titulo do YouTube e o arquivo tem
+// tres pedacos: continua achando pelo nome da musica, nao pelo canal.
+test("pedido legado com titulo do youtube ainda acha pelo nome da musica", () => {
+  assert.strictEqual(mesmaMusica("Satellites - JustusVidyo", "Periphery - Satellites - JustusVidyo"), true);
+});

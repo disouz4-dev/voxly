@@ -55,9 +55,22 @@ const RE_RUIDO_MUSICA = /\s*[\[(](?:[^\])]*(?:karaoke|karaoke|playback|instrumen
 // pedaco maior" nao resolve: em "Satellites - JustusVidyo" o canal e mais
 // longo que a musica. Comparamos TODOS os pedacos dos dois lados — se algum
 // casar, e a mesma musica.
+// Nome de canal de karaoke. O canal NAO identifica musica: "PARTY TYME KARAOKE
+// em portugues" e o pedaco final de centenas de arquivos do acervo, e comparar
+// pedaco a pedaco fazia duas musicas do MESMO canal casarem. Show de 22/10:
+// Mariana pediu "Na Sua Estante - PARTY TYME KARAOKE em portugues" e a casa
+// ouviu "Pitty - Mascara - PARTY TYME KARAOKE em portugues" — o unico pedaco
+// igual entre os dois era o canal.
+const RE_CANAL = /karaoke|karafun|playback|instrumental|sing king/;
+
 function pedacos(txt) {
   const limpo = String(txt || "").replace(RE_RUIDO_MUSICA, " ");
-  const partes = limpo.split(/\s+-\s+/).map(x => normalizar(x)).filter(Boolean);
+  // O pedaco que e canal sai da comparacao. O texto INTEIRO continua, e nele o
+  // canal vale como palavra entre as outras: duas musicas diferentes do mesmo
+  // canal seguem com textos inteiros diferentes, e o arquivo certo ainda casa
+  // pelo pedaco do nome da musica.
+  const partes = limpo.split(/\s+-\s+/).map(x => normalizar(x))
+    .filter(x => x && !RE_CANAL.test(x));
   const inteiro = normalizar(limpo);
   return [...new Set([inteiro, ...partes])].filter(x => x.length > 2);
 }
