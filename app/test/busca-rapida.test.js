@@ -169,3 +169,62 @@ test("sem canal, o nome sai com dois pedacos e o id", () => {
     nomeDeArquivo({ artista: "Pitty", musica: "Na Sua Estante", id: "zFiXXhxXtLs" }),
     "Pitty - Na Sua Estante [zFiXXhxXtLs]");
 });
+
+// Duracao e views vinham so do yt-dlp, e era por elas que a busca pagava 7 s de
+// desafio JS por consulta (medido em 29/10; na noite de 22/10 chegou a 162 s).
+// A pagina de resultados ja traz as duas, no formato do navegador: "3:53" e
+// "1.383.788 visualizacoes". Lendo daqui, o ranqueador continua o mesmo e a
+// busca passa a custar menos de 1 s.
+test("le duracao no formato da pagina", () => {
+  const { segundosDe } = require("../src/busca-rapida");
+  assert.strictEqual(segundosDe("3:53"), 233);
+  assert.strictEqual(segundosDe("1:02:33"), 3753);
+  assert.strictEqual(segundosDe("0:45"), 45);
+  // Transmissao ao vivo e estreia nao tem duracao: nulo, nunca zero. Zero
+  // faria o ranqueador tratar como musica de duracao invalida.
+  assert.strictEqual(segundosDe(""), null);
+  assert.strictEqual(segundosDe(undefined), null);
+  assert.strictEqual(segundosDe("ao vivo"), null);
+});
+
+test("le views com separador de milhar do pt-BR e do ingles", () => {
+  const { viewsDe } = require("../src/busca-rapida");
+  assert.strictEqual(viewsDe("1.383.788 visualizações"), 1383788);
+  assert.strictEqual(viewsDe("1,383,788 views"), 1383788);
+  assert.strictEqual(viewsDe("12 visualizações"), 12);
+  assert.strictEqual(viewsDe("Nenhuma visualização"), 0);
+  assert.strictEqual(viewsDe(undefined), 0);
+});
+
+// A pagina traz "há 2 anos", que nao da data. O ranqueador usa data para
+// desempatar por idade, e quem preenche isso e o /datas depois, com os cards
+// ja na tela: aqui fica nulo de proposito, nunca uma data inventada.
+test("candidato traz duracao e views, e data fica para o /datas", () => {
+  const { extrairCandidatos } = require("../src/busca-rapida");
+  const pagina = `<script>var ytInitialData = ${JSON.stringify({
+    conteudo: [{ videoRenderer: {
+      videoId: "aaaaaaaaaaa",
+      title: { runs: [{ text: "Na Sua Estante - Karaokê" }] },
+      ownerText: { simpleText: "Canal do Karaokê" },
+      lengthText: { simpleText: "3:53" },
+      viewCountText: { simpleText: "1.383.788 visualizações" },
+      publishedTimeText: { simpleText: "há 2 anos" },
+    } }],
+  })};</script>`;
+  const [c] = extrairCandidatos(pagina);
+  assert.strictEqual(c.titulo, "Na Sua Estante - Karaokê");
+  assert.strictEqual(c.canal, "Canal do Karaokê");
+  assert.strictEqual(c.duracao, 233);
+  assert.strictEqual(c.views, 1383788);
+  assert.strictEqual(c.postadoEm, null);
+});
+
+test("video ao vivo entra sem duracao em vez de ficar de fora", () => {
+  const { extrairCandidatos } = require("../src/busca-rapida");
+  const pagina = `<script>var ytInitialData = ${JSON.stringify({
+    c: [{ videoRenderer: { videoId: "bbbbbbbbbbb", title: { runs: [{ text: "Karaokê ao vivo" }] } } }],
+  })};</script>`;
+  const [c] = extrairCandidatos(pagina);
+  assert.strictEqual(c.duracao, null);
+  assert.strictEqual(c.views, 0);
+});

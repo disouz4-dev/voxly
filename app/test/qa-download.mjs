@@ -13,7 +13,7 @@
 // Roda com: npm run qa-download   (o Voxly instalado tem de estar FECHADO)
 
 import { spawn, execSync } from "child_process";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, rmSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -133,6 +133,20 @@ try {
   const antes = processosYtDlp().length;
   confere("nenhum yt-dlp sobrando antes do teste", antes === 0, `havia ${antes}`);
 
+  // O numero que o show cobra: quanto custa UMA busca nova, sem cache.
+  // Em 22/10 uma chegou a 162 s. Com o ytsearch12 do yt-dlp o piso era ~7 s, so
+  // de desafio JS. Pela pagina de resultados, medido fora do app, 0,7 a 0,9 s.
+  console.log("\n== uma busca NOVA responde rapido ==");
+  const fria = "http://127.0.0.1:7432/buscar?q=" + encodeURIComponent("Ai Se Eu Te Pego")
+    + "&artista=" + encodeURIComponent("Michel Telo");
+  const t0fria = Date.now();
+  let corpoFrio = "";
+  try { corpoFrio = await (await fetch(fria)).text(); } catch (e) { corpoFrio = "erro:" + e.message; }
+  const msFria = Date.now() - t0fria;
+  const candFrios = (() => { try { return (JSON.parse(corpoFrio).candidatos || []).length; } catch { return 0; } })();
+  confere("busca nova responde em menos de 5 s", msFria < 5000, `${msFria} ms`);
+  confere("busca nova devolveu candidatos de karaoke", candFrios > 0, `${candFrios} candidatos`);
+
   console.log("\n== tres pedidos da MESMA busca viram UMA consulta ==");
   // Era exatamente isto que duplicava: o KJ clicando, o app do cantor pedindo e
   // o download automatico, os tres para a mesma musica.
@@ -160,8 +174,14 @@ try {
   console.log(`  (assuntos vistos: ${[...vistos].join(" | ") || "nenhum"})`);
 
   confere("nenhuma consulta identica rodando em paralelo", !duplicataVista, duplicataVista || "");
-  confere("teto de 2 trabalhos pesados respeitado", pico <= 2, `pico observado: ${pico}`);
-  confere("alguma consulta de fato rodou (o teste nao passou no vazio)", pico >= 1, `pico ${pico}`);
+
+  // Esta e a melhoria, e da para afirmar olhando o ps: a busca passou a ler a
+  // pagina de resultados e NAO abre yt-dlp nenhum. Antes cada busca pagava ~7 s
+  // de desafio JS; em 22/10, 162 s. O que sobra do yt-dlp e o "--version", que
+  // dura menos de um segundo e nao e trabalho de rede.
+  const pesadosDeBusca = [...vistos].filter(a => a.startsWith("busca:"));
+  confere("a busca nao abre mais yt-dlp", pesadosDeBusca.length === 0,
+    pesadosDeBusca.join(" | ") || "nenhum processo de busca, como esperado");
 
   // As tres respostas da mesma busca tem de ser a MESMA resposta.
   const corpos = await Promise.all(tres.map(p => p.then(r => r.text()).catch(e => "erro:" + e.message)));
@@ -178,8 +198,71 @@ try {
   confere("resposta repetida veio na hora", demorou < 3000, `${demorou} ms`);
   confere("resposta repetida e a mesma", repetida === corpos[0]);
 
-  // Encerra as buscas diferentes que ainda estiverem em voo, para nao vazar.
-  await Promise.allSettled(outras);
+  // Com a busca fora do yt-dlp, "rodou de verdade?" nao se mede mais contando
+  // processo: mede-se na resposta. Sem isto o teste passaria no vazio.
+  const corposOutras = await Promise.all(
+    outras.map(p => p.then(r => r.text()).catch(e => "erro:" + e.message)));
+  const comCandidatos = corposOutras.filter(c => {
+    try { return (JSON.parse(c).candidatos || []).length > 0; } catch { return false; }
+  }).length;
+  confere("as buscas distintas responderam de verdade", comCandidatos >= 3,
+    `${comCandidatos} de ${corposOutras.length} trouxeram candidatos`);
+
+  // O teto de 2 pesados vale para DOWNLOAD, que e quem abre yt-dlp agora. Sem
+  // exercitar download, dizer "teto respeitado" nao provaria nada: tres pedidos
+  // de uma vez, em pasta separada para nao sujar o acervo do KJ.
+  console.log("\n== teto de 2 downloads simultaneos ==");
+  // Os ids NAO podem ser fixos: na primeira versao deste teste eu peguei tres
+  // gravacoes que ja estavam no acervo do KJ, o atalho de disco cortou os tres
+  // downloads e o pico deu zero — o teste media a deduplicacao e dizia que
+  // media o teto. Agora busca de verdade e usa o que ainda nao esta baixado.
+  const paraBaixar = await (async () => {
+    const termos = ["Ai Se Eu Te Pego", "Evidencias", "Garota de Ipanema", "Wonderwall"];
+    const ids = [];
+    for (const t of termos) {
+      if (ids.length >= 3) break;
+      try {
+        const r = await (await fetch("http://127.0.0.1:7432/buscar?q=" + encodeURIComponent(t))).json();
+        for (const c of r.candidatos || []) {
+          if (!c.jaBaixado && !ids.includes(c.id)) { ids.push(c.id); break; }
+        }
+      } catch { /* proximo termo */ }
+    }
+    return ids;
+  })();
+
+  const hostTeto = paraBaixar.length >= 2 ? await alvoHost() : null;
+  if (paraBaixar.length < 2) {
+    console.log(`  (pulado: achei so ${paraBaixar.length} gravacao nova para exercitar o teto)`);
+  } else if (!hostTeto) {
+    console.log("  (pulado: nao achei a Gerência no CDP)");
+  } else {
+    const pastaTeste = path.join(RAIZ, "test", "_qa-download-tmp");
+    // O app so aceita pasta que existe (pastaDeDownload), entao cria antes.
+    mkdirSync(pastaTeste, { recursive: true });
+    const trio = paraBaixar.map((id, i) => `
+      window.electronAPI.ytDownload({ itemId: 'qa-teto-${i}', pasta: ${JSON.stringify(pastaTeste)},
+        urls: ['https://www.youtube.com/watch?v=${id}'], prioridade: ${i + 1},
+        renomear: false, organizar: false, cookies: false, navegador: null, playlist: false })`).join(",");
+    let terminou = false;
+    const correndo = avaliar(hostTeto, `Promise.allSettled([${trio}]).then(r => r.map(x => x.status === 'fulfilled' ? JSON.stringify(x.value) : String(x.reason)))`, 300000)
+      .catch(e => "erro: " + e.message)
+      .finally(() => { terminou = true; });
+
+    // Amostra enquanto os tres downloads correm. O sinalizador e explicito de
+    // proposito: corrida de promessas aqui so rendia teste que mede o nada.
+    let picoDl = 0;
+    for (let i = 0; i < 180 && !terminou; i++) {
+      picoDl = Math.max(picoDl, processosYtDlp().filter(p => p.pesado).length);
+      await espera(1000);
+    }
+    const desfecho = await correndo;
+    const okDl = Array.isArray(desfecho) ? desfecho.filter(x => /"sucesso":true/.test(x)).length : 0;
+    console.log(`  (baixou ${okDl} de ${paraBaixar.length}: ${paraBaixar.join(", ")})`);
+    confere("teto de 2 downloads pesados respeitado", picoDl >= 1 && picoDl <= 2,
+      `pico observado: ${picoDl}`);
+    try { rmSync(pastaTeste, { recursive: true, force: true }); } catch { /* nada a limpar */ }
+  }
 
   console.log("\n== gravacao que ja esta no disco nem tenta baixar ==");
   // Sem o acervo montado nao ha o que estar no disco: pular e honesto, acusar

@@ -33,6 +33,25 @@ function textoDe(campo) {
   return campo.simpleText || "";
 }
 
+// "3:53" e "1:02:33" — o formato que a pagina mostra. Ao vivo e estreia nao
+// trazem duracao: devolve nulo, nunca zero, porque zero faria o ranqueador
+// tratar o video como gravacao de duracao invalida e descartar.
+function segundosDe(texto) {
+  const partes = String(texto == null ? "" : texto).trim().split(":");
+  if (partes.length < 2 || partes.length > 3) return null;
+  if (!partes.every(p => /^\d{1,2}$/.test(p))) return null;
+  return partes.reduce((total, p) => total * 60 + Number(p), 0);
+}
+
+// "1.383.788 visualizacoes" no pt-BR, "1,383,788 views" no ingles: o separador
+// de milhar muda com o idioma da pagina, entao conta digito e ignora o resto.
+// Nao serve para "1,3 mi" (shortViewCountText), que viraria 13 — por isso quem
+// chama le viewCountText, que vem sempre inteiro.
+function viewsDe(texto) {
+  const digitos = String(texto == null ? "" : texto).replace(/\D/g, "");
+  return digitos ? Number(digitos) : 0;
+}
+
 function extrairCandidatos(html) {
   const m = String(html == null ? "" : html).match(RE_DADOS);
   if (!m) return [];
@@ -55,6 +74,12 @@ function extrairCandidatos(html) {
         id: v.videoId,
         titulo: textoDe(v.title),
         canal: textoDe(v.ownerText) || textoDe(v.longBylineText),
+        duracao: segundosDe(textoDe(v.lengthText)),
+        views: viewsDe(textoDe(v.viewCountText)),
+        // A pagina so diz "ha 2 anos", que nao e data. Quem preenche a data de
+        // publicacao e o /datas depois, com os cards ja na tela — inventar uma
+        // aqui faria o desempate por idade mentir.
+        postadoEm: null,
       });
     }
     for (const x of Object.values(no)) andar(x);
@@ -101,4 +126,4 @@ function nomeDeArquivo({ artista, musica, canal, id } = {}) {
   return `${pedacos.join(" - ")} [${limpar(id)}]`;
 }
 
-module.exports = { extrairCandidatos, escolherCandidato, nomeDeArquivo, RE_KARAOKE };
+module.exports = { extrairCandidatos, escolherCandidato, nomeDeArquivo, segundosDe, viewsDe, RE_KARAOKE };

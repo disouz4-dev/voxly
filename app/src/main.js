@@ -15,6 +15,8 @@ const { escolherArquivoBaixado, idDaUrl, arquivoDaSaida } = require("./baixado")
 const { criarRegistroEmCurso } = require("./em-curso");
 const { criarFilaLimitada } = require("./fila-limitada");
 const { decidirDownload } = require("./download-duplo");
+const buscaRapida = require("./busca-rapida");
+const { formatoSeguro } = require("./qualidade");
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const ytdlp = require("./ytdlp");
@@ -588,13 +590,45 @@ function buscarKaraokeYt(termo, artista) {
     filaConsultas.correr(() => buscarKaraokeYtBruto(termo, artista), { prioridade: 0 }));
 }
 
-async function buscarKaraokeYtBruto(termo, artista) {
+// Busca pela pagina de resultados do YouTube, sem yt-dlp nenhum.
+//
+// Medido em 29/10, na mesma rede e no mesmo acervo: a pagina responde em 0,7 a
+// 0,9 s; o ytsearch12 do yt-dlp custa ~7 s so de extracao, porque resolve um
+// desafio JS com o deno em CADA invocacao, e nenhum cliente do YouTube escapa
+// disso (testados default, web_safari, tv, ios, android_vr, web_embedded: todos
+// entre 6,5 e 7,1 s). Na noite de 22/10 uma busca chegou a 162 s.
+const UA_BUSCA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+async function videosDaPagina(consulta) {
+  const resp = await fetch(
+    "https://www.youtube.com/results?search_query=" + encodeURIComponent(consulta),
+    {
+      headers: { "user-agent": UA_BUSCA, "accept-language": "pt-BR,pt;q=0.9" },
+      // Show nao espera: melhor cair no yt-dlp do que pendurar a busca.
+      signal: AbortSignal.timeout(12000),
+    });
+  if (!resp.ok) throw new Error(`a pagina de resultados respondeu ${resp.status}`);
+  const achados = buscaRapida.extrairCandidatos(await resp.text());
+  if (!achados.length) throw new Error("pagina de resultados sem videos");
+
+  // Entregue na MESMA forma que o yt-dlp, para passar pelo mesmo ranqueador:
+  // uma segunda regra de ordenacao seria uma segunda chance de errar, e trocar
+  // musica no palco foi o que mais doeu nos shows.
+  return achados.map(c => ({
+    id: c.id,
+    title: c.titulo,
+    channel: c.canal,
+    duration: c.duracao,
+    view_count: c.views,
+    upload_date: c.postadoEm,
+    webpage_url: `https://www.youtube.com/watch?v=${c.id}`,
+  }));
+}
+
+async function videosDoYtDlp(consulta) {
   const ytDlp = resolverBinario("yt-dlp");
   if (!ytDlp) throw new Error("yt-dlp nao encontrado no host.");
-
-  // Artista separado da musica: com ele vazio, a pontuacao por artista somava
-  // sempre zero e versoes de OUTROS cantores empatavam com a certa.
-  const consulta = ytBusca.montarConsulta({ musica: termo, artista: artista || "" });
 
   const saida = await new Promise((resolve, reject) => {
     // --flat-playlist: 2s contra 18s. A diferenca e que o yt-dlp deixa de
@@ -615,9 +649,11 @@ async function buscarKaraokeYtBruto(termo, artista) {
     proc.on("close", () => out.trim() ? resolve(out) : reject(new Error(err.trim() || "busca sem resultado")));
   });
 
-  const videos = saida.split("\n").map(l => l.trim()).filter(Boolean)
+  return saida.split("\n").map(l => l.trim()).filter(Boolean)
     .flatMap(l => { try { return [JSON.parse(l)]; } catch { return []; } });
+}
 
+function ranquearBusca(videos, termo, artista, consulta) {
   const pasta = store.get("musicFolder");
   const jaTemos = idsBaixados(pasta);
 
@@ -629,6 +665,36 @@ async function buscarKaraokeYtBruto(termo, artista) {
   // encontrado" nao distingue busca vazia de busca cheia de resultados que nao
   // eram karaoke — e o KJ fica sem saber se o problema e o termo.
   return { candidatos, brutos: videos.length, consulta };
+}
+
+async function buscarKaraokeYtBruto(termo, artista) {
+  // Artista separado da musica: com ele vazio, a pontuacao por artista somava
+  // sempre zero e versoes de OUTROS cantores empatavam com a certa.
+  const consulta = ytBusca.montarConsulta({ musica: termo, artista: artista || "" });
+
+  let pelaPagina = null;
+  try {
+    pelaPagina = ranquearBusca(await videosDaPagina(consulta), termo, artista, consulta);
+    if (pelaPagina.candidatos.length) return pelaPagina;
+    // Pagina cheia e nenhum karaoke: pode ser mesmo que nao exista, mas dizer
+    // "nao achei" errado foi o que travou o show de 22/10. O yt-dlp consulta
+    // outro endereco e as vezes traz o que a pagina nao traz, e os 7 s so saem
+    // nesse caso — nunca no caminho comum.
+    registrar("main", "busca.pagina-sem-karaoke", { consulta, brutos: pelaPagina.brutos }, "aviso");
+  } catch (e) {
+    // O HTML do YouTube nao e contrato: se mudar no meio do show, a busca tem
+    // de continuar de pe pelo caminho antigo.
+    registrar("main", "busca.pagina-falhou", { consulta, erro: e.message }, "aviso");
+  }
+
+  try {
+    return ranquearBusca(await videosDoYtDlp(consulta), termo, artista, consulta);
+  } catch (e) {
+    // O yt-dlp tambem falhou. Se a pagina ao menos respondeu, entrega o que ela
+    // deu (mesmo vazio) em vez de estourar: o KJ ve "nada encontrado" e segue.
+    if (pelaPagina) return pelaPagina;
+    throw e;
+  }
 }
 
 function iniciarServidorCatalogo(tokenLan) {
@@ -1805,7 +1871,11 @@ async function baixarUrl(opts) {
   try { fs.mkdirSync(pasta, { recursive: true }); }
   catch (e) { throw new Error(`Não consegui usar a pasta "${pasta}": ${e.message}`); }
   const prefs = { ...PREFS_PADRAO, ...(store.get("prefsDownload") || {}) };
-  const qualidade = opts.qualidade || prefs.qualidade;
+  // formatoSeguro troca os presets da tela pelo equivalente sem HLS e com
+  // H.264 na frente. Fica aqui, e nao na tela, porque o preset antigo ja esta
+  // gravado no config do KJ: consertar so a tela deixaria a maquina dele com o
+  // formato velho ate alguem mexer no seletor.
+  const qualidade = formatoSeguro(opts.qualidade || prefs.qualidade);
   const renomear  = opts.renomear  !== undefined ? opts.renomear  : prefs.renomear;
   const organizar = opts.organizar !== undefined ? opts.organizar : prefs.organizar;
 
