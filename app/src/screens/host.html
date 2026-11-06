@@ -624,6 +624,10 @@ footer strong { color:var(--ambar); font-weight:700; }
           <label>Ativar prioridade:</label>
           <label class="rule-toggle"><input type="checkbox" id="prioridade-ativa"><span class="rule-slider"></span></label>
         </div>
+        <div class="rule-row">
+          <label title="A prioridade só vale para quem, pela previsão, vai esperar mais do que isto desde que pôs a música na fila. 0 = sem tempo mínimo (regra antiga).">Só acima de (min):</label>
+          <input type="number" id="prioridade-min-espera" class="rule-input" min="0" max="600" value="30">
+        </div>
         <div style="font-size:.7rem;color:var(--mudo);line-height:1.45;margin:-2px 0 4px;">
           Depois que o pessoal da fila já cantou, quem ainda não cantou entra intercalado: uma da fila, uma prioridade.
         </div>
@@ -1283,7 +1287,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   let escutarSessaoDocUnsub = null;
   let regras           = {
     musicasPorCiclo: 1, duetasPorCiclo: 1, maxFila: 20, segundosConfirmacao: 15,
-    prioridadeAtiva: true,
+    prioridadeAtiva: true, prioridadeMinEsperaMin: 30,
     permitirDuo: true, maxParticipacoesDuo: 1
   };
   let cicloAtual       = 1;
@@ -1350,6 +1354,9 @@ https://www.youtube.com/@canal/videos"></textarea>
     // musicasPorCiclo é sempre 1 — gerenciado automaticamente pelo sistema de slots
     document.getElementById('max-queue').value                = regras.maxFila;
     document.getElementById('prioridade-ativa').checked       = regras.prioridadeAtiva !== false;
+    // 0 e escolha valida (sem tempo minimo): "|| 30" apagaria o zero.
+    document.getElementById('prioridade-min-espera').value    =
+      Number.isFinite(Number(regras.prioridadeMinEsperaMin)) ? Number(regras.prioridadeMinEsperaMin) : 30;
     document.getElementById('permitir-duo').checked           = regras.permitirDuo !== false;
     document.getElementById('duo-ilimitado').checked          = regras.maxParticipacoesDuo === 0;
     document.getElementById('max-participacoes-duo').value    = regras.maxParticipacoesDuo || 1;
@@ -2005,7 +2012,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   // ── Fila ──────────────────────────────────────────────────
   // Download do candidato que o KJ escolheu para um item da fila.
   async function baixarEscolhido(itemId, indice) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (!item || !item.candidatos || !item.candidatos[indice]) return;
     return baixarVersao(item, item.candidatos[indice]);
   }
@@ -2016,13 +2023,21 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (ev && ev.key !== 'Enter') return;
     const modal = document.getElementById('modalCandidatos');
     const campo = document.getElementById('candidatosLink');
-    const item = filaData.find(i => i.id === modal._itemId);
+    const item = pedidoDaFila(modal._itemId);
     if (!item) return;
     const id = VoxlyLinkYoutube.idDoVideo(campo.value);
     if (!id) { mostrarToast('Esse link não é de um vídeo do YouTube'); campo.focus(); return; }
     await aplicarQualidadePadrao();
     campo.value = '';
     return baixarVersao(item, { id, url: VoxlyLinkYoutube.urlDoVideo(id), titulo: 'link colado (' + id + ')' });
+  }
+
+  // Acao por id acha o pedido em QUALQUER vaga. filaData e a ordem do palco e
+  // deixa a espera de fora; quem procura la nao alcanca a segunda musica do
+  // cantor. Era por isso que baixar/procurar versao pelo celular (e pela tela)
+  // morria calado na vaga de espera: 28 comandos em 05/11, os 28 em espera.
+  function pedidoDaFila(id) {
+    return VoxlyFila.acharPedido(id, { fila: filaData, completa: _filaCompleta });
   }
 
   // Quem canta antes baixa antes (pedido do dono, 22/10): a posicao na fila de
@@ -2064,7 +2079,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function vincularArquivo(itemId) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (!item || !window.electronAPI) return;
     const caminho = await window.electronAPI.linkMusicFile(itemId);
     if (!caminho) return;
@@ -2081,7 +2096,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   const _procurando = new Set();
 
   async function procurarVersoes(itemId) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (!item) return;
     if (_procurando.has(itemId)) { mostrarToast('Já estou procurando — aguarde'); return; }
     _procurando.add(itemId);
@@ -2132,7 +2147,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   // Versoes da musica ja baixadas. Quem decide o que vai tocar e o KJ.
   async function abrirVersoesLocais(itemId) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (!item) return;
     document.getElementById('candidatosLink').value = '';
     const versoes = await window.electronAPI.versoesLocais({ musica: item.musica, artista: item.artista });
@@ -2179,7 +2194,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
     // Se o item apontava para o arquivo apagado, limpa para o fluxo procurar
     // de novo em vez de tentar tocar algo que nao existe mais.
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (item && (item.arquivoEscolhido === v.arquivo || item.videoId === v.videoId)) {
       await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
         .update({ arquivoEscolhido: null, videoId: null, disponivel: false, statusDownload: null })
@@ -2201,7 +2216,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function abrirModalCandidatos(itemId) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (!item || !item.candidatos || !item.candidatos.length) {
       mostrarToast('Nenhuma versão encontrada para esta música');
       return;
@@ -2248,7 +2263,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       const datas = await r.json();
       if (!Object.keys(datas).length) return;
 
-      const item = filaData.find(i => i.id === itemId);
+      const item = pedidoDaFila(itemId);
       if (!item) return;
       const atualizados = (item.candidatos || []).map(c =>
         datas[c.id] ? { ...c, postadoEm: datas[c.id] } : c);
@@ -2794,10 +2809,67 @@ https://www.youtube.com/@canal/videos"></textarea>
       (_progresso.pausado ? '⏸ ' : '') + 'faltam ' + VoxlyPrevisao.minutosESegundos((total - atual) / (velocidadeAtual || 1));
   }
 
-  function atualizarHorasDaFila() {
-    const restanteS = currentSong && _progresso.total > 0
+  // Quanto falta da musica que esta no palco, em segundos.
+  function restanteDoPalcoS() {
+    return currentSong && _progresso.total > 0
       ? Math.max(0, _progresso.total - _progresso.atual) / (velocidadeAtual || 1) : 0;
-    const previsto = VoxlyPrevisao.horariosPrevistos({ fila: filaData, agora: Date.now(), restanteS, duracaoDe });
+  }
+
+  // Horario previsto de cada pedido da fila principal (Map id -> ms).
+  function horariosPrevistosDaFila() {
+    return VoxlyPrevisao.horariosPrevistos({
+      fila: filaData, agora: Date.now(), restanteS: restanteDoPalcoS(), duracaoDe,
+    });
+  }
+
+  // Espera prevista de um pedido, em minutos, contada da ENTRADA dele na fila
+  // — e nao de agora. Regra do dono (05/11): "se eu colocar 30min a prioridade
+  // so vai ser habilitada se a pessoa tiver que esperar mais que 30 min a
+  // partir da colocacao da musica na fila".
+  function esperaPrevistaMinCom(previsto) {
+    return item => {
+      if (!item) return null;
+      const toca = previsto.get(item.id);
+      const t = item.adicionadoEm;
+      const entrou = t && t.toDate ? t.toDate().getTime() : Number(t);
+      if (!toca || !Number.isFinite(entrou) || !entrou) return null;
+      return (toca - entrou) / 60000;
+    };
+  }
+
+  // Quando a ULTIMA musica da fila deve TERMINAR. E o que o app do cantor usa
+  // para recusar pedido que nao caberia na noite (sessao-regras.js
+  // cabeOutraMusica) — sem isso ele so sabe o horario do fim, nao o tamanho da
+  // fila, e aceitava tudo.
+  function fimPrevistoDaFila() {
+    const previsto = horariosPrevistosDaFila();
+    let fim = 0;
+    for (const item of filaData) {
+      const inicio = previsto.get(item.id);
+      if (!inicio) continue;
+      const d = duracaoDe(item);
+      const dur = (Number.isFinite(d) && d > 0 ? d : VoxlyPrevisao.PADRAO_S) * 1000;
+      fim = Math.max(fim, inicio + dur);
+    }
+    return fim || null;
+  }
+
+  let _fimPublicado = 0;
+  async function publicarFimDaFila() {
+    if (!SESSAO_ID || modoOffline) return;
+    const fim = fimPrevistoDaFila();
+    const valor = fim || null;
+    // Escreve so quando muda de verdade: a previsao oscila alguns segundos a
+    // cada atualizacao, e nao se grava no Firestore a cada respiro.
+    if (Math.abs((valor || 0) - _fimPublicado) < 60e3) return;
+    _fimPublicado = valor || 0;
+    await db.collection('sessoes').doc(SESSAO_ID)
+      .update({ filaFimPrevistoEm: valor }).catch(() => {});
+  }
+
+  function atualizarHorasDaFila() {
+    publicarFimDaFila();
+    const previsto = horariosPrevistosDaFila();
     document.querySelectorAll('[data-previsto]').forEach(el => {
       const ms = previsto.get(el.dataset.previsto);
       el.textContent = ms ? '~' + VoxlyPrevisao.horaCurta(ms) : '';
@@ -2982,14 +3054,20 @@ https://www.youtube.com/@canal/videos"></textarea>
       const daPresenca = p ? (p.musicasCantadas || (p.primeiraMusicaCantada ? 1 : 0)) : 0;
       return Math.max(_cantadasPor.get(uid) || 0, daPresenca);
     };
+    // A espera prevista sai da MESMA conta que mostra a hora na fila
+    // (previsao.js). Sem isso, 05/11 promoveu 30 pessoas numa noite com a fila
+    // curta e a ordem ficou incompreensivel.
+    const previsto = horariosPrevistosDaFila();
     const ids = VoxlyOrdem.promocoesDeCafe(itens, {
       prioridadeAtiva: regras.prioridadeAtiva !== false,
       jaCantou: uid => cantadas(uid) > 0,
       cantadas,
       // Decisao do dono (18/09): quem chega entra na vez quando todo mundo da
-      // fila ja cantou pelo menos 1.
+      // fila ja cantou pelo menos 1. Vale so com o tempo minimo desligado.
       cederApos: 1,
       ultimoFoiCafe: _ultimoFoiCafe,
+      esperaMinimaMin: Number(regras.prioridadeMinEsperaMin) || 0,
+      esperaPrevistaMin: esperaPrevistaMinCom(previsto),
     });
     if (!ids.length) return;
     _promovendoCafe = true;
@@ -3642,6 +3720,12 @@ https://www.youtube.com/@canal/videos"></textarea>
       maxFila:             parseInt(document.getElementById('max-queue').value) || 20,
       segundosConfirmacao: 15,
       prioridadeAtiva:     document.getElementById('prioridade-ativa').checked,
+      // Minutos de espera prevista a partir dos quais a prioridade vale. 0 e
+      // escolha valida (sem tempo minimo), por isso o Number.isFinite.
+      prioridadeMinEsperaMin: (() => {
+        const n = parseInt(document.getElementById('prioridade-min-espera').value, 10);
+        return Number.isFinite(n) && n >= 0 ? n : 30;
+      })(),
       // 0 e uma escolha valida (cafe com leite sempre); "|| 40" a apagava.
       permitirDuo:         document.getElementById('permitir-duo').checked,
       maxParticipacoesDuo: document.getElementById('duo-ilimitado').checked ? 0 : (parseInt(document.getElementById('max-participacoes-duo').value) || 1),
@@ -4334,7 +4418,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   const monitorAudio = () => document.getElementById('monitorAudio');
 
   async function ouvirPrevia(itemId, indice) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     const c = item && item.candidatos && item.candidatos[indice];
     if (!c || !window.electronAPI || !window.electronAPI.ytPrevia) return;
     const seguro = VoxlySaidas.monitoriaSegura({
@@ -4608,7 +4692,16 @@ https://www.youtube.com/@canal/videos"></textarea>
       else if (cmd.acao === 'remover')      await removerDaFilaPorId(cmd.alvoId);
       else if (cmd.acao === 'baixarVersao') await baixarVersaoRemota(cmd.alvoId, cmd.valor);
       else if (cmd.acao === 'tocarItem') {
-        if (!filaData.find(i => i.id === cmd.alvoId)) { mostrarToast('📱 Esse pedido já saiu da fila', 4000); return; }
+        // Tocar e so da fila principal: subir a segunda musica do cantor fora
+        // da vez quebraria a regra das vagas. Mas a mensagem tem de dizer a
+        // verdade — antes dizia "ja saiu da fila" para quem estava em espera.
+        if (!filaData.find(i => i.id === cmd.alvoId)) {
+          const emEspera = pedidoDaFila(cmd.alvoId);
+          mostrarToast(emEspera
+            ? '📱 Essa é a música em espera de ' + (emEspera.nomeArtistico || 'alguém') + ' — ela sobe quando a primeira for cantada'
+            : '📱 Esse pedido já saiu da fila', 5000);
+          return;
+        }
         await tocarMusica(cmd.alvoId);
       }
       else if (cmd.acao === 'adicionar')    await adicionarMusicaRemota(cmd.dados);
@@ -4620,8 +4713,15 @@ https://www.youtube.com/@canal/videos"></textarea>
   // Baixa a versao que o celular escolheu (id do video, ou um link colado). O
   // trabalho — yt-dlp, arquivo — e tudo nesta maquina; o celular so apontou.
   async function baixarVersaoRemota(itemId, valor) {
-    const item = filaData.find(i => i.id === itemId);
-    if (!item) { diario('controle.baixar-sem-item', { itemId }, 'aviso'); return; }
+    const item = pedidoDaFila(itemId);
+    // Agora que a busca alcanca a vaga de espera, cair aqui significa que o
+    // pedido saiu mesmo. Mas tem de APARECER: eram 28 comandos por noite
+    // morrendo so com uma linha no diario, e no celular nada acontecia.
+    if (!item) {
+      diario('controle.baixar-sem-item', { itemId }, 'aviso');
+      mostrarToast('📱 Não achei esse pedido na fila — ele já saiu', 5000);
+      return;
+    }
     const id = VoxlyLinkYoutube.idDoVideo(valor);
     if (!id) { diario('controle.baixar-valor-ruim', { valor: String(valor).slice(0, 60) }, 'aviso'); return; }
     // Se o id esta entre os candidatos ja buscados, usa a URL de la (canal,
@@ -5244,7 +5344,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   const travaManual = VoxlyTrava.criarTrava();
 
   function trocarMusicaFila(itemId) {
-    const item = filaData.find(i => i.id === itemId);
+    const item = pedidoDaFila(itemId);
     if (!item) return;
     abrirModalMusica(item.cantorUid || '', item.nomeArtistico || '');
     trocandoItemId = itemId;
@@ -5321,7 +5421,7 @@ https://www.youtube.com/@canal/videos"></textarea>
   }
 
   async function confirmarDuoFila() {
-    const item = filaData.find(d => d.id === duoFilaItemId);
+    const item = pedidoDaFila(duoFilaItemId);
     if (!item) return;
     const sel     = document.getElementById('selectDuoFila');
     const duoUid  = sel.value;
@@ -5340,7 +5440,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 
   async function removerDuoFila(itemId) {
     if (modoOffline) {
-      const it = filaData.find(d => d.id === itemId);
+      const it = pedidoDaFila(itemId);
       if (it) { it.duoUid = null; it.duoNome = null; }
       renderQueue(); salvarBackupLocal();
     } else {
@@ -5479,7 +5579,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         videoId: null, videoUrl: null, arquivoEscolhido: null,
       };
       // Item antigo posto pelo KJ nao tinha foto: aproveita a troca para completar.
-      const atual = filaData.find(d => d.id === trocandoItemId);
+      const atual = pedidoDaFila(trocandoItemId);
       if (atual && !atual.photoURL) {
         const foto = fotoDaPresenca(atual.cantorUid);
         if (foto) novo.photoURL = foto;
@@ -5544,8 +5644,13 @@ https://www.youtube.com/@canal/videos"></textarea>
       salvarBackupLocal();
       renderQueue();
     }
+    // O nome fica guardado ANTES de fechar: fecharModalMusica() zera
+    // musicaModalSelecionada, e ler .musica dela depois estourava
+    // "Cannot read properties of null". O pedido ja estava gravado acima, entao
+    // o KJ via "falhou" para uma musica que entrou na fila — 5 vezes em 05/11.
+    const oQueEntrou = musicaModalSelecionada.musica;
     fecharModalMusica();
-    mostrarToast(`${musicaModalSelecionada.musica} → ${nome}${duoNome ? ' & ' + duoNome : ''}`);
+    mostrarToast(`${oQueEntrou} → ${nome}${duoNome ? ' & ' + duoNome : ''}`);
   }
 
   async function selectFolder() {

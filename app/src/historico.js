@@ -60,7 +60,34 @@ function slotParaPedido({ ativa, espera } = {}) {
   return null;
 }
 
-const api = { entradaDoHistorico, agruparPorNoite, slotParaPedido };
+// ── As vagas do cantor, a partir de TODOS os pedidos dele ──
+// O app do celular guardava a vaga com atribuicao simples dentro do laco do
+// snapshot ("if (d.slot === 'ativa') filhaAtiva = d"). Com mais de um pedido no
+// mesmo slot — e acontece: a NamiiKath teve cinco pendentes em 05/11 — ficava
+// so o ULTIMO do snapshot, e os outros desapareciam da trava da musica
+// repetida. Foi assim que o Daemon pos "Broken" duas vezes (22:08 e 22:47),
+// cantou uma e a outra continuou na fila: para a casa, "a musica cantada voltou".
+//
+// Devolve as duas vagas (o pedido MAIS ANTIGO de cada uma, pela ordem de
+// chegada) e `pendentes`, com todos — e `pendentes` que vai para a trava.
+const FORA = new Set(["cantada", "pulada", "cancelada"]);
+
+function vagasDoCantor(pedidos) {
+  const lista = (Array.isArray(pedidos) ? pedidos : [])
+    .filter(i => i && typeof i === "object" && !FORA.has(i.status));
+  const ordem = i => (Number.isFinite(i.ordemFila) ? i.ordemFila : Infinity);
+  // Ordem de chegada, com o indice do snapshot como desempate.
+  const pendentes = lista
+    .map((item, idx) => ({ item, idx }))
+    .sort((a, b) => (ordem(a.item) - ordem(b.item)) || (a.idx - b.idx))
+    .map(x => x.item);
+  // Pedido antigo, de antes de o campo slot existir, conta como da vaga ativa.
+  const daVaga = nome => pendentes.find(i =>
+    (i.slot || "ativa") === nome) || null;
+  return { ativa: daVaga("ativa"), espera: daVaga("espera"), pendentes };
+}
+
+const api = { entradaDoHistorico, agruparPorNoite, slotParaPedido, vagasDoCantor };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyHistorico = api;
 

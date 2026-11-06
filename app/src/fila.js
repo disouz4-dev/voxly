@@ -29,9 +29,25 @@ function escolherParaTocar(fila, estado) {
   return proximo ? { acao: "tocar", id: proximo.id } : { acao: "nada" };
 }
 
+// ── Achar o pedido pelo id, em qualquer vaga ───────────────
+// A Gerencia tem duas listas: a da ordem do palco (`filaData`), que deixa a
+// vaga de espera de fora, e a completa (`_filaCompleta`), com todos os pedidos
+// pendentes. Toda acao POR ID procurava na primeira, e por isso nao alcancava a
+// segunda musica do cantor: no show de 05/11 foram 28 comandos de download
+// mortos, os 28 em `slot: "espera"`, sem nenhum aviso de volta ao celular.
+//
+// A completa vem primeiro porque e a que tem o dado mais novo: ela sai direto
+// do snapshot, enquanto a outra passa pela ordenacao.
+function acharPedido(id, { fila, completa } = {}) {
+  if (!id) return null;
+  const busca = lista => (Array.isArray(lista) ? lista : [])
+    .find(i => i && i.id === id) || null;
+  return busca(completa) || busca(fila);
+}
+
 // A Gerencia carrega por <script> (e file://, nao tem require); os testes
 // carregam por require.
-const api = { escolherParaTocar };
+const api = { escolherParaTocar, acharPedido };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyFila = api;
 

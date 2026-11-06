@@ -327,6 +327,15 @@
       <div style="font-size:.72rem;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;">Aproveite para pedir suas músicas — o KJ dá o play na hora marcada!</div>
     </div>
 
+    <!-- Tempo que falta da noite. Pedido do dono (06/11): "o tempo da sessao tem
+         que aparecer para todos os usuarios, para eles saberem quando vai
+         terminar, um timer com o tempo restante". -->
+    <div class="card" id="sessao-restante-card" style="display:none;">
+      <div class="slot-label">⏳ A noite acaba em</div>
+      <div id="sessao-restante" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.6rem;color:var(--accent);letter-spacing:.04em;font-variant-numeric:tabular-nums;">--:--</div>
+      <div id="sessao-restante-aviso" style="font-size:.72rem;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;"></div>
+    </div>
+
     <!-- TAB: FILA (padrão) -->
     <div id="tab-fila">
       <div class="section">
@@ -706,6 +715,9 @@
     let slotAtivo   = null;
     let filhaAtiva  = null;
     let filhaEspera = null;
+    // Todos os pedidos pendentes deste cantor. E esta lista que vai para a
+    // trava da musica repetida — as duas vagas acima nao bastam.
+    let meusPendentes = [];
     let filaAberta  = true;
 
     const avatarColors = ['#e040fb','#7c4dff','#4285f4','#00bcd4','#00e676','#ff9100','#ff5252'];
@@ -912,14 +924,20 @@ function escutarFila() {
       db.collection('sessoes').doc(SESSAO_ID).collection('fila')
         .where('cantorUid', '==', currentUser.uid)
         .onSnapshot(snap => {
-          filhaAtiva = null; filhaEspera = null;
+          // TODOS os pedidos pendentes, nao so um por vaga. A atribuicao simples
+          // de antes ("if (d.slot === 'ativa') filhaAtiva = d") guardava apenas o
+          // ultimo do snapshot, e com dois pedidos na mesma vaga os outros
+          // desapareciam da trava da musica repetida. Foi assim que o Daemon pos
+          // "Broken" duas vezes em 05/11, cantou uma e a outra ficou na fila.
+          const meus = [];
           snap.forEach(doc => {
             if (!VoxlySeguro.idSeguro(doc.id)) return;   // id forjado nao entra na tela
-            const d = { id: doc.id, ...doc.data() };
-            if (['cantada','pulada','cancelada'].includes(d.status)) return;
-            if (d.slot === 'ativa')  filhaAtiva  = d;
-            if (d.slot === 'espera') filhaEspera = d;
+            meus.push({ id: doc.id, ...doc.data() });
           });
+          const vagas = VoxlyHistorico.vagasDoCantor(meus);
+          filhaAtiva    = vagas.ativa;
+          filhaEspera   = vagas.espera;
+          meusPendentes = vagas.pendentes;
           renderFila();
         });
     }
@@ -1323,7 +1341,7 @@ function escutarFila() {
       if (!escolhida) { errEl.textContent = 'Selecione uma música.'; return; }
       // A mesma musica duas vezes (show de 17/09: a Lady Lu mandou "Plush" de
       // novo achando que o primeiro nao tinha ido, e foi chamada duas vezes).
-      const repetido = VoxlyTrava.pedidoRepetido([filhaAtiva, filhaEspera],
+      const repetido = VoxlyTrava.pedidoRepetido(meusPendentes,
         { musica: escolhida.musica, artista: escolhida.artista }, trocando && trocando.id);
       if (repetido) {
         errEl.textContent = `Você já pediu essa música — ela está ${repetido.slot === 'espera' ? 'em espera' : 'na sua fila'}.`;
@@ -1336,6 +1354,20 @@ function escutarFila() {
       if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
         errEl.textContent = 'A sessão desta casa já encerrou — não dá mais para colocar música.';
         return;
+      }
+      // A fila nao pode passar do fim da noite. Antes so o relogio era
+      // conferido, e no show de 05/11 entraram 40 pedidos numa sessao que
+      // acabava 01:00 — a fila terminaria 03:31 e 36 pessoas nao iam cantar.
+      if (!trocando) {
+        const cabe = VoxlySessao.cabeOutraMusica({
+          termino: sessaoTermino,
+          fimDaFila: sessaoAtualDoc && sessaoAtualDoc.filaFimPrevistoEm,
+        });
+        if (!cabe.cabe) {
+          errEl.textContent = 'A fila já está cheia até o fim da noite — sua música só começaria '
+            + cabe.atrasoMin + ' min depois do encerramento. Fale com o KJ.';
+          return;
+        }
       }
       // Bloqueia ocupação de slot somente quando não é troca
       if (!trocando) {
@@ -1514,6 +1546,14 @@ function escutarFila() {
       if (!filaAberta) { mostrarAvisoFilaFechada(); return; }
       if (!VoxlySessao.podePedirMusica(sessaoTermino, Date.now())) {
         mostrarToast('A sessão desta casa já encerrou — não dá mais para colocar música.', 4000);
+        return;
+      }
+      const cabeDeNovo = VoxlySessao.cabeOutraMusica({
+        termino: sessaoTermino,
+        fimDaFila: sessaoAtualDoc && sessaoAtualDoc.filaFimPrevistoEm,
+      });
+      if (!cabeDeNovo.cabe) {
+        mostrarToast('A fila já está cheia até o fim da noite — não dá mais para entrar.', 5000);
         return;
       }
       const slot = VoxlyHistorico.slotParaPedido({ ativa: filhaAtiva, espera: filhaEspera });
@@ -2657,6 +2697,8 @@ function escutarFila() {
         // celulares ja conectados seguiam pela regra velha.
         if (data.regras) sessaoRegras = { ...sessaoRegras, ...data.regras };
         sessaoTermino = data.horarioTermino || null;
+        atualizarRestanteDaSessao();
+        if (!_restanteTimer) _restanteTimer = setInterval(atualizarRestanteDaSessao, 30 * 1000);
         const novaFilaAberta = data.filaAberta !== false;
         if (novaFilaAberta !== filaAberta) {
           filaAberta = novaFilaAberta;
@@ -2698,6 +2740,34 @@ function escutarFila() {
       const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
       const ss = String(s % 60).padStart(2, '0');
       time.textContent = hh + ':' + mm + ':' + ss;
+    }
+
+    // Tempo que falta da noite, para todo mundo ver. E o mesmo card que avisa
+    // quando a fila ja esta cheia ate o fim — antes a pessoa pedia, esperava a
+    // noite toda e nao cantava.
+    let _restanteTimer = null;
+    function atualizarRestanteDaSessao() {
+      const card = document.getElementById('sessao-restante-card');
+      const alvo = document.getElementById('sessao-restante');
+      const aviso = document.getElementById('sessao-restante-aviso');
+      if (!card) return;
+      if (!sessaoAtiva || !sessaoTermino) { card.style.display = 'none'; return; }
+      const r = VoxlySessao.cabeOutraMusica({
+        termino: sessaoTermino,
+        fimDaFila: sessaoAtualDoc && sessaoAtualDoc.filaFimPrevistoEm,
+      });
+      card.style.display = 'block';
+      if (r.restamMin == null) { card.style.display = 'none'; return; }
+      if (r.restamMin <= 0) {
+        alvo.textContent = 'acabou';
+        aviso.textContent = 'A sessão desta casa encerrou.';
+        return;
+      }
+      const hh = Math.floor(r.restamMin / 60);
+      alvo.textContent = (hh ? hh + 'h' : '') + String(r.restamMin % 60).padStart(hh ? 2 : 1, '0') + 'min';
+      aviso.textContent = r.cabe
+        ? 'Dá tempo de pedir música.'
+        : 'A fila já está cheia até o fim da noite — não dá mais para entrar.';
     }
 
     // ── Ativar conteúdo após entrar na sessão ────────────────

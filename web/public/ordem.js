@@ -128,18 +128,36 @@ function ordemParaNovo(fila) {
 //
 // `jaCantou(uid)` diz se a pessoa ja cantou nesta noite; `cantadas(uid)`,
 // quantas.
-function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeAtiva = true, ultimoFoiCafe = null } = {}) {
+function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeAtiva = true,
+  ultimoFoiCafe = null, esperaMinimaMin = 0, esperaPrevistaMin = null } = {}) {
   if (prioridadeAtiva === false) return [];
   const lista = (Array.isArray(itens) ? itens : []).filter(Boolean);
   const esperando = i => i.status === "aguardando" && i.slot !== "espera";
   const cantou = typeof jaCantou === "function" ? jaCantou : () => false;
   const quantas = typeof cantadas === "function" ? cantadas : (uid => (cantou(uid) ? 1 : 0));
 
-  const jaTemCafe = lista.some(i => esperando(i) && ehCafe(i));
-  const veteranos = lista.filter(i => esperando(i) && i.cantorUid && cantou(i.cantorUid));
-  const todosJaCantaram = cederApos > 0 && veteranos.length > 0
-    && veteranos.every(i => quantas(i.cantorUid) >= cederApos);
-  if (!jaTemCafe && !todosJaCantaram) return [];   // a fila nao virou prioridade
+  // Regra do dono (05/11): a prioridade so existe quando a espera PREVISTA do
+  // pedido passa dos minutos que o KJ marcou, contados da entrada do pedido na
+  // fila. Antes o gatilho era so "todo veterano esperando ja cantou", e no show
+  // de 05/11 isso promoveu 30 pessoas numa noite — quase sempre com a fila
+  // curta, no comeco da noite. A fila inteira virava prioridade, a intercalacao
+  // embaralhava tudo e ele nao entendia mais a ordem.
+  // Campo em zero (ou sem a conta da espera): vale o gatilho antigo.
+  const porTempo = Number(esperaMinimaMin) > 0 && typeof esperaPrevistaMin === "function";
+  const esperaBasta = item => {
+    const m = Number(esperaPrevistaMin(item));
+    // Espera desconhecida nao promove: errar promovendo e o que deixou a fila
+    // caotica, e nao mexer na ordem e sempre o lado seguro.
+    return Number.isFinite(m) && m > Number(esperaMinimaMin);
+  };
+
+  if (!porTempo) {
+    const jaTemCafe = lista.some(i => esperando(i) && ehCafe(i));
+    const veteranos = lista.filter(i => esperando(i) && i.cantorUid && cantou(i.cantorUid));
+    const todosJaCantaram = cederApos > 0 && veteranos.length > 0
+      && veteranos.every(i => quantas(i.cantorUid) >= cederApos);
+    if (!jaTemCafe && !todosJaCantaram) return [];   // a fila nao virou prioridade
+  }
 
   const pendente = new Set(["aguardando", "confirmando", "confirmado", "pronto", "tocando"]);
   const comCafe = new Set(lista.filter(i => ehCafe(i) && pendente.has(i.status)).map(i => i.cantorUid));
@@ -147,7 +165,8 @@ function promocoesDeCafe(itens, { jaCantou, cantadas, cederApos = 0, prioridadeA
   // Candidatos em ordem de chegada, um por cantor.
   const vistos = new Set();
   const candidatos = lista
-    .filter(i => esperando(i) && !ehCafe(i) && i.cantorUid && !cantou(i.cantorUid) && !comCafe.has(i.cantorUid))
+    .filter(i => esperando(i) && !ehCafe(i) && i.cantorUid && !cantou(i.cantorUid) && !comCafe.has(i.cantorUid)
+      && (!porTempo || esperaBasta(i)))
     .sort((a, b) => ordemDe(a) - ordemDe(b))
     .filter(i => (vistos.has(i.cantorUid) ? false : (vistos.add(i.cantorUid), true)));
 
