@@ -1208,6 +1208,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../orfaos.js"></script>
 <script src="../entrada.js"></script>
 <script src="../previsao.js"></script>
+<script src="../catalogo.js"></script>
 <script src="../link-youtube.js"></script>
 <script src="../comando.js"></script>
 <script src="../autoplay.js"></script>
@@ -2332,7 +2333,30 @@ https://www.youtube.com/@canal/videos"></textarea>
       itens.sort((a, b) => a.artista.localeCompare(b.artista, 'pt-BR') ||
                            a.musica.localeCompare(b.musica, 'pt-BR'));
 
-      await db.collection('catalogo').doc('musicas').set({
+      // A copia no banco E o acervo do app do cantor (ele busca ali, nao no
+      // disco). Publicar de forma burra apaga o acervo inteiro quando o HD
+      // externo esta desconectado: a varredura devolve ZERO e o set() grava
+      // vazio por cima. Em 06/11 as 03:38 o servidor do catalogo respondeu
+      // "0 musicas" exatamente por isso. A regra esta em src/catalogo.js.
+      const ref = db.collection('catalogo').doc('musicas');
+      let publicados = 0;
+      try {
+        const atual = await ref.get();
+        publicados = atual.exists ? Number(atual.data().total) || (atual.data().itens || []).length : 0;
+      } catch (e) { /* sem leitura, trata como primeira publicacao */ }
+
+      const juizo = VoxlyCatalogo.devePublicarCatalogo({ novos: itens.length, publicados });
+      if (!juizo.publicar) {
+        const aviso = juizo.motivo === 'vazio'
+          ? `A varredura achou 0 músicas e há ${publicados} no banco — o acervo publicado foi PRESERVADO. Confira se o HD do acervo está conectado.`
+          : `A varredura achou ${itens.length} músicas e há ${publicados} no banco — queda grande, o acervo publicado foi PRESERVADO. Confira a pasta na Config.`;
+        diario('catalogo.publicacao-barrada', { motivo: juizo.motivo, novos: itens.length, publicados }, 'aviso');
+        console.warn('[CATALOGO] nao publiquei:', juizo.motivo, { novos: itens.length, publicados });
+        mostrarToast('⚠️ ' + aviso, 10000);
+        return;
+      }
+
+      await ref.set({
         itens,
         total: itens.length,
         atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),

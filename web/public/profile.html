@@ -350,22 +350,27 @@
       <div class="section">
         <div class="section-title">🎤 Sua Fila</div>
         <div class="card">
-          <div class="fila-label">NA FILA PRINCIPAL</div>
+          <button class="btn-pedir" id="btnPedir" onclick="pedirMusicaBtn()"
+                  style="margin-top:0;">🎵 Pedir Música</button>
+
+          <div class="fila-label" style="margin-top:14px;">NA FILA PRINCIPAL</div>
           <div class="fila-slot vazia" id="slotAtiva">
             <span class="fila-vazia-txt">Vazio</span>
           </div>
+
+          <button onclick="mudarTab('catalogo')" class="btn-pedir" style="margin-top:10px;">
+            🎵 Catálogo de Músicas
+          </button>
+
+          <div class="fila-label" style="margin-top:14px;">EM ESPERA</div>
+          <div class="fila-slot vazia" id="slotEspera">
+            <span class="fila-vazia-txt">Vazio</span>
+          </div>
+
           <button class="btn-trocar-vagas" id="btnTrocarVagas" onclick="trocarMinhasVagas()"
                   title="Trocar a ordem: a música em espera vai para a fila principal e vice-versa"
                   style="display:none;">
             <span aria-hidden="true">↑↓</span> Trocar a ordem
-          </button>
-          <div class="fila-label" style="margin-top:12px;">EM ESPERA</div>
-          <div class="fila-slot vazia" id="slotEspera">
-            <span class="fila-vazia-txt">Vazio</span>
-          </div>
-          <button class="btn-pedir" id="btnPedir" onclick="pedirMusicaBtn()">🎵 Pedir Música</button>
-          <button onclick="mudarTab('catalogo')" class="btn-pedir" style="margin-top:8px;">
-            🎵 Catálogo de Músicas
           </button>
         </div>
       </div>
