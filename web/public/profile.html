@@ -1286,26 +1286,66 @@ function escutarFila() {
       }
     }
 
+    // O acervo da BUSCA vem do banco, nao do disco — decisao dele em 06/11:
+    // "uma copia do acervo deve ficar tbm no banco de dados" e "a busca deve
+    // ser diretamente no bd e nao no disco".
+    //
+    // O caminho antigo ia ao servidor local do host (porta 7432) e so caia na
+    // nuvem quando nem havia LAN. Quebrava de tres jeitos, os tres vistos no
+    // show de 05/11: o /catalogo responde 403 quando o token da LAN mudou (e
+    // ele muda a cada reinicio do app), o celular em HTTPS nao alcanca http
+    // local, e no wi-fi fraco do bar o fetch ficava pendurado sem prazo. E a
+    // falha nao era cacheada: cada tecla digitada disparava requisicao nova —
+    // era isso a busca "lenta" daquela noite, com o filtro em memoria custando
+    // microssegundos.
+    //
+    // Agora o banco primeiro: uma leitura de um documento so, que o host
+    // republica a cada varredura. O servidor local fica como plano B, para a
+    // noite em que a casa esta sem internet.
     async function garantirCatalogo() {
       if (_catalogoLocalCache) return _catalogoLocalCache;
-      const url = urlCatalogoLocal();
-      if (!url) {
-        // Pelo link publicado nao ha rede local alcancavel: usa o catalogo que
-        // o host mantem no Firestore.
-        _catalogoLocalCache = await catalogoPublicado();
-        _catalogoIndisponivel = _catalogoLocalCache.length ? null : 'vazio';
-        return _catalogoLocalCache;
-      }
-      try {
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        _catalogoLocalCache = await resp.json();
+
+      const doBanco = await catalogoPublicado();
+      if (doBanco.length) {
+        _catalogoLocalCache = doBanco;
         _catalogoIndisponivel = null;
         return _catalogoLocalCache;
-      } catch (e) {
-        console.warn('[CATALOGO] servidor local inacessivel:', e);
-        _catalogoIndisponivel = 'offline';
-        return null;
+      }
+
+      // Sem internet, ou o host nunca publicou: tenta a rede local.
+      const url = urlCatalogoLocal();
+      if (url) {
+        try {
+          _catalogoLocalCache = await buscarComPrazo(url, 4000);
+          _catalogoIndisponivel = null;
+          console.warn('[CATALOGO] banco indisponivel — usando o servidor local');
+          return _catalogoLocalCache;
+        } catch (e) {
+          console.warn('[CATALOGO] servidor local tambem inacessivel:', e);
+        }
+      }
+
+      _catalogoIndisponivel = 'offline';
+      // Cacheia a FALHA por pouco tempo: nao se tenta de novo a cada tecla, e o
+      // acervo volta sozinho quando a internet (ou o host) voltar.
+      _catalogoLocalCache = [];
+      setTimeout(() => {
+        if (!_catalogoLocalCache || !_catalogoLocalCache.length) _catalogoLocalCache = null;
+      }, 20000);
+      return _catalogoLocalCache;
+    }
+
+    // fetch com prazo: sem isto, um wi-fi ruim deixa a busca pendurada sem
+    // nunca falhar nem responder.
+    async function buscarComPrazo(url, ms) {
+      const corta = new AbortController();
+      const t = setTimeout(() => corta.abort(), ms);
+      try {
+        const resp = await fetch(url, { signal: corta.signal });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return await resp.json();
+      } finally {
+        clearTimeout(t);
       }
     }
     let _catalogoIndisponivel = null;
