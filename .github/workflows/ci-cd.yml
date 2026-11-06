@@ -36,6 +36,63 @@ jobs:
         run: npm test
         working-directory: app
 
+  # ---- Teste de fumaca: sobe o app de verdade ----
+  # Os testes de unidade cobrem modulos puros, e nenhum defeito grave dos shows
+  # vivia num modulo puro: janela nascendo empilhada, Play sem efeito, onclick
+  # apontando para funcao que nao existe, tela morrendo na carga. Tudo fiacao
+  # entre o Electron, as telas e o processo principal — e e isso que a fumaca
+  # cobre. Rodava so na maquina do KJ; aqui ela roda em toda PR.
+  fumaca:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      # O Electron precisa de tela (xvfb) e de bibliotecas de sistema que o
+      # runner nao traz. O ffmpeg e o yt-dlp a fumaca confere de proposito: sem
+      # eles o app nao baixa nem mede volume, e um release assim nao presta.
+      - name: Dependencias de sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb ffmpeg libgtk-3-0 libnss3 libasound2t64 libgbm1 libxss1 \
+            libatk-bridge2.0-0 libatspi2.0-0 libdrm2 libxkbcommon0 libxcomposite1 \
+            libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2
+      - name: yt-dlp
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/yt-dlp \
+            https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
+
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: app
+
+      # A pasta de musicas nao precisa ter musica: a fumaca so confere que o app
+      # resolve ALGUMA pasta. Criar a padrao evita depender do $HOME do runner.
+      - name: Pasta de musicas
+        run: mkdir -p "$HOME/Music/Voxly"
+
+      - name: Fumaca
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npm run fumaca
+        working-directory: app
+        env:
+          ELECTRON_DISABLE_SANDBOX: '1'
+
+      - name: Diario do app, se falhar
+        if: failure()
+        run: |
+          for f in "$HOME/.config/voxly/logs"/*.jsonl; do
+            [ -f "$f" ] || continue
+            echo "===== $f (ultimas 80 linhas) ====="
+            tail -80 "$f"
+          done
+
   # ---- Build Docker ----
   build:
     needs: test
