@@ -2401,7 +2401,30 @@ const VALIDADE_PREVIA_MS = 3 * 3600e3;   // o YouTube expira esses enderecos em 
 //
 // So aceita id de video: o endereco vem da tela, e texto livre ali viraria
 // argumento do yt-dlp.
-async function enderecoDoAudio(id) {
+// Clientes do YouTube cujo endereco de audio um leitor comum consegue abrir.
+//
+// Medido em 06/11/2026 com o yt-dlp 2026.10.26 (a copia do proprio Voxly, que e
+// MAIS NOVA que a do sistema), no video Vox5N195B68:
+//
+//   padrao (TVHTML5)  403 Forbidden
+//   visionos          ok
+//   tv_simply         ok
+//   mweb              403 Forbidden
+//   android_vr        403 Forbidden
+//   web / ios         nem devolvem endereco
+//
+// O endereco do cliente padrao e amarrado a cabecalhos que so aquele cliente
+// manda; passar o User-Agent que o proprio yt-dlp declara NAO resolve (testado).
+// A versao antiga do yt-dlp escolhia visionos por conta propria, e era por isso
+// que funcionava — ou seja, isto quebrou numa atualizacao do yt-dlp, nao no
+// Voxly.
+//
+// Isto nao afeta o DOWNLOAD: ali o yt-dlp busca o audio ele mesmo e manda os
+// cabecalhos certos. Afeta quem recebe o endereco cru — a nota de qualidade e
+// o botao "Ouvir" do fone do KJ, que tocava esse endereco num <audio>.
+const CLIENTES_AUDIO = "visionos,tv_simply";
+
+async function enderecoDoAudio(id, { padrao = false } = {}) {
   if (!/^[\w-]{11}$/.test(String(id || ""))) return { erro: "Endereço de vídeo inválido." };
   const guardada = _previas.get(id);
   if (guardada && Date.now() - guardada.em < VALIDADE_PREVIA_MS) return { url: guardada.url };
@@ -2410,6 +2433,10 @@ async function enderecoDoAudio(id) {
   try {
     const { stdout } = await execFile(ytDlp, [
       "-f", "bestaudio[ext=m4a]/bestaudio/best", "-g", "--no-playlist", "--no-warnings",
+      // `padrao` existe para a segunda tentativa: se amanha o YouTube derrubar
+      // os dois clientes escolhidos, o padrao do yt-dlp ainda e tentado em vez
+      // de a candidata sumir da lista.
+      ...(padrao ? [] : ["--extractor-args", `youtube:player_client=${CLIENTES_AUDIO}`]),
       `https://www.youtube.com/watch?v=${id}`,
     ], { timeout: 45000 });
     const url = String(stdout).trim().split("\n")[0];
@@ -2497,15 +2524,22 @@ function pcmDoAudio(entrada, { de = 0, duracao = 0 } = {}) {
       if (total > TETO) { try { child.kill(); } catch (_) {} return; }
       pedacos.push(d);
     });
-    child.stderr.resume();
-    const limite = setTimeout(() => { try { child.kill(); } catch (_) {} }, 45000);
+    // O stderr do ffmpeg e GUARDADO, nao descartado: era ele que dizia por que
+    // tres de quatro candidatas nao pontuavam, e eu o jogava fora. Falha calada
+    // ja custou caro aqui — o atualizador do yt-dlp falhou em silencio por
+    // semanas.
+    let erro = "";
+    child.stderr.on("data", d => { if (erro.length < 2000) erro += d; });
+    const limite = setTimeout(() => { erro += "\n[voxly] 45 s sem terminar"; try { child.kill(); } catch (_) {} }, 45000);
     const terminar = (v) => { clearTimeout(limite); resolve(v); };
-    child.on("error", () => terminar(null));
+    child.on("error", e => { pcmDoAudio.ultimoErro = e.message; terminar(null); });
     child.on("close", () => {
-      if (!pedacos.length) return terminar(null);
-      const b = Buffer.concat(pedacos);
+      const b = pedacos.length ? Buffer.concat(pedacos) : Buffer.alloc(0);
       const amostras = Math.floor(b.length / 4);
-      if (!amostras) return terminar(null);
+      if (!amostras) {
+        pcmDoAudio.ultimoErro = erro.trim().split("\n").filter(Boolean).pop() || "sem audio e sem motivo";
+        return terminar(null);
+      }
       // Copia para um ArrayBuffer proprio: o Buffer do concat pode vir de um
       // pool com byteOffset nao multiplo de 4, e o Float32Array recusa.
       const ab = new ArrayBuffer(amostras * 4);
@@ -2571,15 +2605,22 @@ ipcMain.handle("yt-notas", async (_, pedido) => {
   // tres leituras sequenciais do mesmo endereco), e o endereco guardado pode
   // ter vencido. Sem a segunda tentativa, a candidata desaparece calada da
   // lista, e na rodada em que isso aconteceu desapareceu justamente a melhor.
-  async function medirUma(id, segundaChance) {
-    const { url } = await enderecoDoAudio(id);
+  async function medirUma(id, segundaChance, opcoes) {
+    const { url } = await enderecoDoAudio(id, opcoes);
     if (!url) return false;
     const m = medidasDoPcm(await pcmDoAudio(url, { de: INICIO_ANALISE, duracao: JANELA_ANALISE }));
     if (!m) {
-      if (!segundaChance) return false;
+      const motivo = pcmDoAudio.ultimoErro || "";
+      if (!segundaChance) {
+        registrar("main", "selo.candidata-falhou", { id, motivo }, "aviso");
+        return false;
+      }
       _previas.delete(id);          // o endereco guardado e o suspeito
-      registrar("main", "selo.retentando", { id }, "aviso");
-      return medirUma(id, false);
+      registrar("main", "selo.retentando", { id, motivo }, "aviso");
+      // A segunda tentativa vai pelo cliente PADRAO do yt-dlp: se o problema
+      // for justamente nos clientes que eu escolhi, insistir neles so repete o
+      // mesmo 403.
+      return medirUma(id, false, { padrao: true });
     }
     try {
       const r = espectro.notaDeQualidade(mOriginal, m);
