@@ -490,9 +490,12 @@ function procurarTrecho(longo, curto, { reducao = 8 } = {}) {
 // ── a nota ────────────────────────────────────────────────
 const pct = v => Math.max(0, Math.min(100, Math.round(v * 100)));
 
+// O minimo para haver nota: croma (acha ONDE o trecho do master cai) e graves
+// (a unica medida com peso). O mfcc e o fluxo sao opcionais — alimentam so
+// timbre e tempo, ambos de peso 0, e custam 118 dos 790 ms por candidata
+// (medido em 06/11). Quem quer a nota rapido manda sem eles.
 function completa(m) {
-  return !!(m && m.croma && m.croma.length && m.mfcc && m.mfcc.length
-            && m.graves && m.graves.length);
+  return !!(m && m.croma && m.croma.length && m.graves && m.graves.length);
 }
 
 function distanciaMfcc(a, b) {
@@ -539,26 +542,32 @@ function notaDeQualidade(original, versao) {
     janela(longo.graves, inicio, n),
     janela(curto.graves, 0, n));
 
-  // Timbre: distancia do MFCC medio na mesma janela.
-  const timbre = Math.exp(-distanciaMfcc(
+  // Timbre: distancia do MFCC medio na mesma janela. So quando o MFCC veio.
+  const temMfcc = !!(longo.mfcc && longo.mfcc.length && curto.mfcc && curto.mfcc.length);
+  const timbre = temMfcc ? Math.exp(-distanciaMfcc(
     janela(longo.mfcc, inicio, n),
-    janela(curto.mfcc, 0, n)) / ESCALA_TIMBRE);
+    janela(curto.mfcc, 0, n)) / ESCALA_TIMBRE) : null;
 
   // Tempo: a semelhanca entre os PERFIS de andamento, do fluxo inteiro de cada
   // um (andamento e global, nao da janela). Nao se extrai um BPM para comparar,
   // porque isso exigia decidir antes "tem batida?" e o tempo evaporava da nota
   // nos casos duvidosos — era o `bpm ?/?` de 06/11.
-  const perfilA = perfilDeTempo(original.fluxo, fps);
-  const perfilB = perfilDeTempo(versao.fluxo, fps);
+  const temFluxo = !!(original.fluxo && original.fluxo.length
+                      && versao.fluxo && versao.fluxo.length);
+  const perfilA = temFluxo ? perfilDeTempo(original.fluxo, fps) : [];
+  const perfilB = temFluxo ? perfilDeTempo(versao.fluxo, fps) : [];
   const tempo = (perfilA.length && perfilB.length) ? Math.max(0, cosseno(perfilA, perfilB)) : null;
   // O BPM continua sendo calculado, mas so para MOSTRAR ao KJ quando existe.
-  const bpmA = bpmDe(original.fluxo, fps), bpmB = bpmDe(versao.fluxo, fps);
+  const bpmA = temFluxo ? bpmDe(original.fluxo, fps) : null;
+  const bpmB = temFluxo ? bpmDe(versao.fluxo, fps) : null;
 
   const partes = {
     harmonia: pct(Math.max(0, harmonia)),
     grave: pct(Math.max(0, grave)),
-    timbre: pct(timbre),
   };
+  // Parte ausente nao entra como 0: o laco dos pesos renormaliza. Gravar 0 para
+  // o que nao foi medido baixaria a nota de quem pediu a medida rapida.
+  if (timbre !== null) partes.timbre = pct(timbre);
   if (tempo !== null) partes.tempo = pct(tempo);
 
   let soma = 0, peso = 0;

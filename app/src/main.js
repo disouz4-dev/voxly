@@ -2448,7 +2448,10 @@ ipcMain.handle("yt-previa", async (_, urlVideo) => {
 const TAXA_ANALISE = 22050;
 const INICIO_ANALISE = 20;        // pula contagem e logo do canal
 const JANELA_ANALISE = 150;       // janela onde o trecho do master e procurado
-const NOTAS_EM_PARALELO = 4;
+// 8 e nao 4: o tempo por candidata e 350 ms de REDE e ~310 ms de conta, entao
+// o que paga e esperar a rede de varias ao mesmo tempo. O ffmpeg roda em
+// prioridade minima, e o teto de 8 ids ja limita o pior caso.
+const NOTAS_EM_PARALELO = 8;
 
 // Resultados crus do iTunes, para `referencia.escolherOriginal` poder exigir que
 // o ARTISTA bata. `buscaItunes` nao serve aqui: ela ja devolve escolhido e sem
@@ -2512,15 +2515,20 @@ function pcmDoAudio(entrada, { de = 0, duracao = 0 } = {}) {
   });
 }
 
+// So croma e graves. O mfcc e o fluxo alimentam timbre e tempo, que tem peso 0
+// na nota, e custam 118 dos 790 ms por candidata (medido em 06/11). O croma
+// NAO e descartavel apesar do peso 0: e ele que acha onde na musica o trecho do
+// master cai, e sem isso a comparacao compara refrao com introducao.
+//
+// Decisao dele em 06/11, vendo os numeros: cortar conta inutil em vez de levar
+// o FFT para a GPU, que atacaria 306 ms de um total de ~12 s dominado por rede.
 function medidasDoPcm(x) {
   if (!x || !x.length) return null;
   const e = espectro.espectrograma(x);
   if (!e.length) return null;
   return {
     croma: espectro.croma(e, TAXA_ANALISE),
-    mfcc: espectro.mfcc(e, TAXA_ANALISE),
     graves: espectro.gravesDe(e, TAXA_ANALISE),
-    fluxo: espectro.fluxoEspectral(e),
     taxa: TAXA_ANALISE,
   };
 }
@@ -2556,18 +2564,32 @@ ipcMain.handle("yt-notas", async (_, pedido) => {
 
   const notas = {};
   const fila = [...ids];
-  async function trabalhar() {
-    while (fila.length) {
-      const id = fila.shift();
-      const { url } = await enderecoDoAudio(id);
-      if (!url) continue;
-      const m = medidasDoPcm(await pcmDoAudio(url, { de: INICIO_ANALISE, duracao: JANELA_ANALISE }));
-      if (!m) continue;
-      try {
-        const r = espectro.notaDeQualidade(mOriginal, m);
-        if (selo.notaValida(r.nota)) notas[id] = r.nota;
-      } catch (_) { /* uma candidata ilegivel nao derruba as outras */ }
+  // Uma segunda tentativa com endereco NOVO.
+  //
+  // Medido em 06/11: o YouTube devolve 403 de vez em quando num endereco que
+  // funcionava — nao foi o paralelismo (zero 403 em duas rodadas seguidas e em
+  // tres leituras sequenciais do mesmo endereco), e o endereco guardado pode
+  // ter vencido. Sem a segunda tentativa, a candidata desaparece calada da
+  // lista, e na rodada em que isso aconteceu desapareceu justamente a melhor.
+  async function medirUma(id, segundaChance) {
+    const { url } = await enderecoDoAudio(id);
+    if (!url) return false;
+    const m = medidasDoPcm(await pcmDoAudio(url, { de: INICIO_ANALISE, duracao: JANELA_ANALISE }));
+    if (!m) {
+      if (!segundaChance) return false;
+      _previas.delete(id);          // o endereco guardado e o suspeito
+      registrar("main", "selo.retentando", { id }, "aviso");
+      return medirUma(id, false);
     }
+    try {
+      const r = espectro.notaDeQualidade(mOriginal, m);
+      if (selo.notaValida(r.nota)) { notas[id] = r.nota; return true; }
+    } catch (_) { /* uma candidata ilegivel nao derruba as outras */ }
+    return false;
+  }
+
+  async function trabalhar() {
+    while (fila.length) await medirUma(fila.shift(), true);
   }
   await Promise.all(Array.from({ length: Math.min(NOTAS_EM_PARALELO, ids.length) }, trabalhar));
 

@@ -551,3 +551,51 @@ test("as outras tres medidas continuam sendo calculadas, como diagnostico", () =
   for (const k of ["harmonia", "timbre", "tempo"]) assert.ok(k in PESOS, `${k} tem de continuar em PESOS`);
   assert.strictEqual(PESOS.grave, 1, "o grave e a nota");
 });
+
+// ── medir so o que a nota usa ─────────────────────────────
+// Medido em 06/11/2026: dos 790 ms por candidata, 102 ms sao mfcc e 16 ms sao
+// fluxo espectral — e os dois alimentam APENAS partes de peso 0 (timbre e
+// tempo). O croma NAO entra nessa conta: ele parece descartavel pelo peso, mas
+// e ele que acha ONDE na musica o trecho do master cai (`procurarTrecho`).
+//
+// A decisao dele em 06/11, depois de ver os numeros: cortar conta inutil em vez
+// de levar o FFT para a GPU, porque a GPU atacaria 306 ms de um total de ~12 s
+// em que o resto e rede.
+test("a nota sai IDENTICA com e sem mfcc e fluxo", () => {
+  // Este e o teste que importa: se a nota mudar, eu nao cortei conta inutil —
+  // mudei a medida.
+  const a = soma(seno(110, 2.5), seno(220, 2.5), ruido(2.5));
+  const b = soma(seno(110, 2.5), seno(330, 2.5), ruido(2.5, TAXA, 9));
+  const eA = espectrograma(a), eB = espectrograma(b);
+  const completo = (e) => ({
+    croma: croma(e, TAXA), mfcc: mfcc(e, TAXA),
+    graves: gravesDe(e, TAXA), fluxo: fluxoEspectral(e), taxa: TAXA,
+  });
+  const magro = (e) => ({ croma: croma(e, TAXA), graves: gravesDe(e, TAXA), taxa: TAXA });
+
+  const cheia = notaDeQualidade(completo(eA), completo(eB));
+  const seca  = notaDeQualidade(magro(eA), magro(eB));
+  assert.strictEqual(seca.nota, cheia.nota);
+  assert.strictEqual(seca.partes.grave, cheia.partes.grave);
+  assert.strictEqual(seca.partes.harmonia, cheia.partes.harmonia);
+  assert.deepStrictEqual(seca.trecho, cheia.trecho);
+});
+
+test("sem mfcc nao inventa timbre, e sem fluxo nao inventa tempo", () => {
+  const e = espectrograma(soma(seno(110, 2.5), seno(220, 2.5), ruido(2.5)));
+  const magro = { croma: croma(e, TAXA), graves: gravesDe(e, TAXA), taxa: TAXA };
+  const r = notaDeQualidade(magro, magro);
+  assert.strictEqual(r.partes.timbre, undefined);
+  assert.strictEqual(r.partes.tempo, undefined);
+  assert.ok(Number.isInteger(r.nota), "a nota continua existindo");
+});
+
+test("croma e graves continuam obrigatorios: sem eles nao ha nota", () => {
+  const e = espectrograma(soma(seno(110, 2.5), seno(220, 2.5), ruido(2.5)));
+  const bom = { croma: croma(e, TAXA), graves: gravesDe(e, TAXA), taxa: TAXA };
+  for (const falta of ["croma", "graves"]) {
+    const ruim = { ...bom }; delete ruim[falta];
+    assert.strictEqual(notaDeQualidade(bom, ruim).nota, null, `sem ${falta}`);
+    assert.strictEqual(notaDeQualidade(ruim, bom).nota, null, `sem ${falta}`);
+  }
+});

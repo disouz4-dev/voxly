@@ -2348,14 +2348,20 @@ https://www.youtube.com/@canal/videos"></textarea>
         return;
       }
 
-      const atualizados = (item.candidatos || []).map(c =>
-        VoxlySelo.notaValida(notas[c.id]) ? { ...c, nota: notas[c.id] } : c);
+      // A base do merge é a lista que ESTA chamada recebeu, não a cópia local
+      // da fila: no caminho automático (medir antes de o KJ abrir o modal) a
+      // cópia local ainda não tem as candidatas, e gravar a partir dela
+      // escreveria `candidatos: []` e apagaria a lista inteira.
+      const atualizados = (candidatos || []).map(c =>
+        (c && VoxlySelo.notaValida(notas[c.id])) ? { ...c, nota: notas[c.id] } : c);
+      if (!atualizados.length) return;   // nunca gravar lista vazia
       await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
         .update({ candidatos: atualizados }).catch(() => {});
 
       const modal = document.getElementById('modalCandidatos');
       if (modal.classList.contains('open') && modal._itemId === itemId) {
-        item.candidatos = atualizados;
+        const atual = pedidoDaFila(itemId);
+        if (atual) atual.candidatos = atualizados;
         abrirModalCandidatos(itemId);
       }
     } catch (_) {
@@ -2718,11 +2724,12 @@ https://www.youtube.com/@canal/videos"></textarea>
         const resp = await fetch(`http://127.0.0.1:7432/buscar?q=${encodeURIComponent(item.musica)}` +
                                  `&artista=${encodeURIComponent(art)}`);
         const { candidatos } = await resp.json();
-        await ref.update({
-          statusDownload: 'escolher',
-          candidatos: (candidatos || []).slice(0, 6),
-        }).catch(() => {});
+        const seis = (candidatos || []).slice(0, 6);
+        await ref.update({ statusDownload: 'escolher', candidatos: seis }).catch(() => {});
         mostrarToast(`🎬 "${item.musica}" precisa de download — escolha a versão`);
+        // Mede agora, sem esperar ele abrir o modal: são ~9 s, e assim as notas
+        // já estão lá quando ele olhar. Sem await — o toast não espera medida.
+        medirCandidatos(item.id, seis);
       } catch (e) {
         await ref.update({ statusDownload: 'erro', erro: e.message }).catch(() => {});
       } finally {
