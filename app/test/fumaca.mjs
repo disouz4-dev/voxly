@@ -55,6 +55,10 @@ function confere(nome, condicao, detalhe = "") {
 // handler pode escutar so num dos dois.
 let base = null;        // ex.: "http://127.0.0.1:9333"
 let comoAchou = "";     // para a mensagem de falha
+// Erro da ultima tentativa de avaliar na janela. Ficava engolido por um
+// `.catch(() => false)`, e por isso "WebSocket is not defined" no runner virava
+// "app nao subiu" — sintoma que acusava o app de um defeito do teste.
+let _ultimoErroAvaliar = "";
 
 function pedir(url, limiteMs = 4000) {
   return new Promise(resolve => {
@@ -105,6 +109,7 @@ function diagnostico() {
   return [
     `depurador: ${comoAchou || "nao respondeu em nenhuma porta/endereco"}`,
     `DevToolsActivePort: ${p ? `${p} (${ARQUIVO_PORTA})` : `AUSENTE em ${ARQUIVO_PORTA}`}`,
+    `ultimo erro ao avaliar na janela: ${_ultimoErroAvaliar || "(nenhum)"}`,
     `saida do app:\n${saidaApp.slice(-2000) || "(vazia)"}`,
   ].join("\n  ");
 }
@@ -146,7 +151,7 @@ async function achar(qual, tentativas = 30) {
     if (t) {
       const pronto = await avaliar(t,
         `document.readyState === "complete" && location.href.includes("${qual === "host" ? "host.html" : "player.html"}")`
-      ).catch(() => false);
+      ).catch(e => { _ultimoErroAvaliar = e.message; return false; });
       if (pronto === true) return t;
     }
     await espera(1000);
@@ -158,6 +163,15 @@ async function achar(qual, tentativas = 30) {
 // GitHub ele nao sobe sem --no-sandbox (processo sem privilegio para criar o
 // sandbox) e reclama de GPU que nao existe. A maquina do KJ nao usa nada disto.
 const extras = (process.env.VOXLY_FUMACA_ARGS || "").split(" ").filter(Boolean);
+
+// Sem WebSocket global nao ha como falar com o Electron — e o sintoma era
+// mentiroso: "app nao subiu" com o app no ar e o depurador respondendo. O
+// global existe a partir do Node 22, e a esteira vinha fixada no 20.
+if (typeof WebSocket !== "function") {
+  console.error(`\n  ERRO: este Node (${process.version}) nao tem WebSocket global.`);
+  console.error("  A fumaca fala com o Electron pelo protocolo do DevTools, que exige Node 22+.\n");
+  process.exit(2);
+}
 
 // Arquivo de uma execucao anterior aponta para uma porta morta. O Electron o
 // apaga ao sair limpo, mas nao quando e morto a SIGTERM, como aqui.
