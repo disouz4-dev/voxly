@@ -89,7 +89,12 @@ async function achar(qual, tentativas = 30) {
   return null;
 }
 
-const app = spawn("npx", ["electron", ".", `--remote-debugging-port=${PORTA}`],
+// Argumentos extras para o Electron, so para ambiente de esteira. No runner do
+// GitHub ele nao sobe sem --no-sandbox (processo sem privilegio para criar o
+// sandbox) e reclama de GPU que nao existe. A maquina do KJ nao usa nada disto.
+const extras = (process.env.VOXLY_FUMACA_ARGS || "").split(" ").filter(Boolean);
+
+const app = spawn("npx", ["electron", ".", `--remote-debugging-port=${PORTA}`, ...extras],
   { cwd: RAIZ, stdio: ["ignore", "pipe", "pipe"] });
 let saidaApp = "";
 app.stdout.on("data", d => saidaApp += d);

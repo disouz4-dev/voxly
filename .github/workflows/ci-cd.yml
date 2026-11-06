@@ -59,7 +59,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            xvfb ffmpeg libgtk-3-0 libnss3 libasound2t64 libgbm1 libxss1 \
+            xvfb dbus-x11 ffmpeg libgtk-3-0 libnss3 libasound2t64 libgbm1 libxss1 \
             libatk-bridge2.0-0 libatspi2.0-0 libdrm2 libxkbcommon0 libxcomposite1 \
             libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2
       - name: yt-dlp
@@ -78,11 +78,18 @@ jobs:
       - name: Pasta de musicas
         run: mkdir -p "$HOME/Music/Voxly"
 
+      # dbus-run-session: sem barramento o Electron reclama em loop e nao sobe.
+      # --no-sandbox: o processo do runner nao tem privilegio para criar o
+      # sandbox. --disable-gpu e --disable-dev-shm-usage: nao ha GPU, e o
+      # /dev/shm do runner e pequeno. Nada disso vale na maquina do KJ — vai por
+      # variavel de ambiente, lida so pelo teste.
       - name: Fumaca
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npm run fumaca
+        run: |
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            dbus-run-session -- npm run fumaca
         working-directory: app
         env:
-          ELECTRON_DISABLE_SANDBOX: '1'
+          VOXLY_FUMACA_ARGS: '--no-sandbox --disable-gpu --disable-dev-shm-usage'
 
       - name: Diario do app, se falhar
         if: failure()
