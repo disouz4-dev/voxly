@@ -20,3 +20,9 @@ out/
 Thumbs.db
 app/dist/
 app/out/
+
+# Saida do comparador de qualidade: audio recortado para calibrar o selo pelo
+# ouvido. Sao dezenas de MB de trecho de musica, regerados por
+# test/comparador.mjs quando precisar.
+app/comparador/
+comparador/
