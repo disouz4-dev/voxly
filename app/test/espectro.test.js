@@ -435,7 +435,9 @@ test("o tempo entra na nota mesmo sem batida clara", () => {
 // separacao perfeita. O segundo lote desmentiu — que e exatamente para isso que
 // serve um lote de validacao. O grave continua sendo a melhor MEDIDA de audio,
 // e o canal e um sinal mais forte que ela.
-const { LIMITE_SELO, PESOS } = require("../src/espectro");
+// O corte do selo mora em selo.js (regra de tela); os PESOS, na medida.
+const { LIMITE_SELO } = require("../src/selo");
+const { PESOS } = require("../src/espectro");
 
 const GABARITO = [
   // lote 1

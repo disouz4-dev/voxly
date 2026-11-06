@@ -1233,6 +1233,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../previsao.js"></script>
 <script src="../catalogo.js"></script>
 <script src="../imagens.js"></script>
+<script src="../selo.js"></script>
 <script src="../link-youtube.js"></script>
 <script src="../comando.js"></script>
 <script src="../autoplay.js"></script>
@@ -2253,18 +2254,35 @@ https://www.youtube.com/@canal/videos"></textarea>
     document.getElementById('candidatosSubtitulo').textContent =
       'Versões de karaokê encontradas no YouTube. Clique para baixar.';
     document.getElementById('candidatosQualidadeBox').style.display = '';
-    document.getElementById('candidatosLista').innerHTML = item.candidatos.map((c, i) => {
+    // Ordenada pela nota: mais perto do original primeiro. O índice do onclick
+    // continua sendo o do ARRAY original — ordenar a tela sem levar o índice
+    // junto baixaria a versão errada.
+    const ordenadas = VoxlySelo.ordenarCandidatas(item.candidatos);
+    document.getElementById('candidatosLista').innerHTML = ordenadas.map((c) => {
+      const i = c.indice;
       const mm = Math.floor(c.duracao / 60) + ':' + String(c.duracao % 60).padStart(2, '0');
       return `<div class="modal-result-item" onclick="baixarEscolhido('${itemId}', ${i})">
         <div style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;">
           <div style="font-weight:600;margin-bottom:2px;">${escHtml(c.titulo)}</div>
-          <button class="btn-previa" onclick="event.stopPropagation(); ouvirPrevia('${itemId}', ${i})" title="Ouvir no fone de monitoria antes de baixar">🎧 Ouvir</button>
+          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+            ${selinhoDaNota(c.nota, c.melhor)}
+            <button class="btn-previa" onclick="event.stopPropagation(); ouvirPrevia('${itemId}', ${i})" title="Ouvir no fone de monitoria antes de baixar">🎧 Ouvir</button>
+          </div>
         </div>
         <div style="font-size:.7rem;color:var(--mudo);">${escHtml(c.canal)} · ${mm} · ${(c.views||0).toLocaleString('pt-BR')} views${idadeVideo(c.postadoEm) ? ' · <span style="color:var(--azul);">' + idadeVideo(c.postadoEm) + '</span>' : ''}</div>
       </div>`;
     }).join('');
+    // Quando as notas ficam todas juntas, dizer isso vale mais que fingir
+    // certeza: ali a escolha é de ouvido, no fone.
+    const notas = ordenadas.map(c => c.nota).filter(n => VoxlySelo.notaValida(n));
+    if (notas.length >= 2 && !VoxlySelo.decideSozinha(notas)) {
+      document.getElementById('candidatosSubtitulo').textContent =
+        'Versões de karaokê encontradas no YouTube. As notas ficaram parecidas — '
+        + 'vale ouvir no fone antes de escolher.';
+    }
     document.getElementById('modalCandidatos').classList.add('open');
     completarDatasDosCards(itemId, item.candidatos);
+    medirCandidatos(itemId, item.candidatos);
   }
 
   // Deixa o select na qualidade que o KJ definiu em Ajustes. Sem isto ele abria
@@ -2274,6 +2292,77 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (!sel || !window.electronAPI || !window.electronAPI.getPrefsDownload) return;
     const p = await window.electronAPI.getPrefsDownload();
     if (p && p.qualidade) sel.value = p.qualidade;
+  }
+
+  // ── Nota de qualidade das candidatas ─────────────────────
+  // Quao perto do master original cada versao esta, de 0 a 100. Medida sem
+  // baixar nada: o ffmpeg le o mesmo endereco de audio que leva a previa ao
+  // fone, pedindo so a faixa de bytes do trecho.
+  //
+  // A nota é RELATIVA à busca, não absoluta. Medido em 06/11 sobre 5 músicas:
+  // Man in the Box espalhou de 60 a 90, Skyfall comprimiu tudo entre 86 e 100 e
+  // Zóio de Lula entre 37 e 52. Um corte fixo aprovaria as seis versões de uma
+  // música e reprovaria as seis da outra — e nos dois casos não diria nada.
+  //
+  // Então a coroa é de quem lidera ESTA busca, e a cor sai da posição dentro
+  // dela, não de um número mágico.
+  function selinhoDaNota(nota, melhor) {
+    if (!VoxlySelo.notaValida(nota)) return '';
+    const cor = melhor ? 'var(--ok)' : 'var(--mudo)';
+    const titulo = melhor
+      ? `${nota}/100 — a mais perto do original entre as encontradas`
+      : `${nota}/100 — mais longe do original que a primeira da lista`;
+    return `<span title="${titulo}" style="font-size:.7rem;font-weight:800;color:${cor};`
+         + `border:1px solid ${cor};border-radius:6px;padding:1px 5px;white-space:nowrap;">`
+         + `${melhor ? '🏆 ' : ''}${nota}</span>`;
+  }
+
+  // Mede em segundo plano e reordena o modal que ja esta aberto — o mesmo
+  // caminho das datas. Prender o modal ~12 s esperando a medida era o que
+  // fazia a busca parecer travada, e o KJ escolhe versao com o show rodando.
+  const _medindoNotas = new Set();
+  async function medirCandidatos(itemId, candidatos) {
+    if (!window.electronAPI || !window.electronAPI.ytNotas) return;
+    const semNota = (candidatos || []).filter(c => c && c.id && !VoxlySelo.notaValida(c.nota));
+    if (!semNota.length || _medindoNotas.has(itemId)) return;
+    const item = pedidoDaFila(itemId);
+    if (!item || !item.artista || !item.musica) return;
+
+    _medindoNotas.add(itemId);
+    try {
+      const r = await window.electronAPI.ytNotas({
+        artista: item.artista, musica: item.musica, ids: semNota.map(c => c.id),
+      });
+      const notas = (r && r.notas) || {};
+      if (!Object.keys(notas).length) {
+        // Sem original no iTunes nao e falha: e a regra recusando dar nota
+        // contra a gravacao errada. Dizer isso e melhor que deixar a tela muda.
+        if (r && r.semOriginal) {
+          const sub = document.getElementById('candidatosSubtitulo');
+          const modal = document.getElementById('modalCandidatos');
+          if (sub && modal.classList.contains('open') && modal._itemId === itemId) {
+            sub.textContent = 'Versões de karaokê encontradas no YouTube. '
+              + 'Sem a gravação original no catálogo, não dá para pontuar estas versões.';
+          }
+        }
+        return;
+      }
+
+      const atualizados = (item.candidatos || []).map(c =>
+        VoxlySelo.notaValida(notas[c.id]) ? { ...c, nota: notas[c.id] } : c);
+      await db.collection('sessoes').doc(SESSAO_ID).collection('fila').doc(itemId)
+        .update({ candidatos: atualizados }).catch(() => {});
+
+      const modal = document.getElementById('modalCandidatos');
+      if (modal.classList.contains('open') && modal._itemId === itemId) {
+        item.candidatos = atualizados;
+        abrirModalCandidatos(itemId);
+      }
+    } catch (_) {
+      /* sem nota a lista continua util: e a mesma lista de antes do selo */
+    } finally {
+      _medindoNotas.delete(itemId);
+    }
   }
 
   // Busca as datas em segundo plano e preenche os cards ja abertos. Prender a

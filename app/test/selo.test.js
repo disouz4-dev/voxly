@@ -224,3 +224,79 @@ test("nome fora do padrao devolve nulo", () => {
     assert.strictEqual(q.partesDoNome(n), null, String(n));
   }
 });
+
+// ── a nota e RELATIVA: medido em 06/11/2026 ──────────────
+// Cinco musicas, 6 candidatas cada, medidas sem baixar:
+//
+//   musica                 menor  maior   com selo (corte 85)
+//   Man in the Box            60     90     4 de 6
+//   Skyfall                   86    100     6 de 6   <- todas
+//   Tempo Perdido             39    100     3 de 6
+//   Zoio de Lula              37     52     0 de 6   <- nenhuma
+//   Sweet Child O' Mine       17    100     3 de 5
+//
+// O numero ABSOLUTO nao se compara entre musicas: depende de quanto grave a
+// musica tem e de qual trecho do master o iTunes entrega. No Zoio de Lula o KJ
+// veria seis versoes todas reprovadas; no Skyfall, seis todas aprovadas. Nos
+// dois casos o selo nao informa nada.
+//
+// O que funciona e a ORDEM dentro da mesma musica — que e o que ele pediu:
+// "elencar as musicas para serem baixadas do mais proximo do original ate o
+// menos proximo". Entao a coroa e de quem lidera AQUELA busca, e nao de quem
+// passa de um corte fixo.
+
+test("a melhor da busca e coroada mesmo quando todas as notas sao baixas", () => {
+  // O caso Zoio de Lula: 37 a 52, nenhuma passaria de 85. Ainda assim uma
+  // delas e a mais perto do original, e e essa que ele deve baixar.
+  const r = q.ordenarCandidatas([
+    { id: "a", nota: 44 }, { id: "b", nota: 52 }, { id: "c", nota: 37 },
+  ]);
+  assert.deepStrictEqual(r.map(x => x.id), ["b", "a", "c"]);
+  assert.strictEqual(r[0].melhor, true);
+  assert.strictEqual(r[1].melhor, false);
+});
+
+test("a coroa e de uma so, mesmo com empate no topo", () => {
+  // O caso Skyfall: duas com 100. Duas coroas nao ajudam a escolher.
+  const r = q.ordenarCandidatas([{ id: "a", nota: 100 }, { id: "b", nota: 100 }]);
+  assert.strictEqual(r.filter(x => x.melhor).length, 1);
+});
+
+test("quem nao tem nota vai para o fim, e nao vale zero", () => {
+  // 0 e nota de verdade (versao sem nada a ver com o original) e nao pode
+  // empatar com "ainda nao medi".
+  const r = q.ordenarCandidatas([
+    { id: "sem" }, { id: "zero", nota: 0 }, { id: "boa", nota: 70 },
+  ]);
+  assert.deepStrictEqual(r.map(x => x.id), ["boa", "zero", "sem"]);
+  assert.strictEqual(r[0].melhor, true);
+});
+
+test("sem nenhuma nota medida, ninguem e coroado e a ordem nao muda", () => {
+  const r = q.ordenarCandidatas([{ id: "a" }, { id: "b" }, { id: "c" }]);
+  assert.deepStrictEqual(r.map(x => x.id), ["a", "b", "c"]);
+  assert.strictEqual(r.filter(x => x.melhor).length, 0);
+});
+
+test("o indice original viaja junto — ordenar a tela nao pode baixar a versao errada", () => {
+  const r = q.ordenarCandidatas([{ id: "ruim", nota: 20 }, { id: "boa", nota: 90 }]);
+  assert.strictEqual(r[0].indice, 1);   // a boa era a segunda do array
+  assert.strictEqual(r[1].indice, 0);
+});
+
+test("lista vazia ou torta nao explode", () => {
+  for (const l of [[], null, undefined, "nao e lista"]) {
+    assert.deepStrictEqual(q.ordenarCandidatas(l), []);
+  }
+  assert.deepStrictEqual(q.ordenarCandidatas([null, 3]).map(x => x.melhor), [false, false]);
+});
+
+test("distancia ate a melhor diz se vale olhar as outras", () => {
+  // Quando a lider esta muito a frente, a escolha e obvia. Quando estao todas
+  // juntas, a nota nao decide e o KJ tem de ouvir no fone.
+  assert.strictEqual(q.decideSozinha([90, 60, 55]), true);
+  assert.strictEqual(q.decideSozinha([100, 100, 96]), false);   // o caso Skyfall
+  assert.strictEqual(q.decideSozinha([52, 44, 37]), false);      // o caso Zoio de Lula
+  assert.strictEqual(q.decideSozinha([90]), false);              // uma so nao se compara
+  assert.strictEqual(q.decideSozinha([]), false);
+});

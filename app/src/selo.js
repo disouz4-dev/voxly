@@ -17,7 +17,17 @@
 // esconderia justamente o caso em que ele quer decidir olhando: musica boa num
 // canal ruim, ou o contrario.
 
-const { LIMITE_SELO } = require("./espectro");
+(function (raiz) {
+
+// O corte do selo. Calibrado contra os rotulos que ele deu de ouvido: 85 acerta
+// 21 dos 24 pares rotulados — um selo falso (A Loba, do Clubinho, grave 94) e
+// dois selos perdidos (Like a Stone 77 e R U Mine 81, do CC Karaoke X, que ele
+// ouviu como master). Nao existe vao limpo entre master e regravado por musica,
+// e e por isso que a reputacao do canal entra como segunda informacao.
+//
+// Morava em espectro.js, que nunca o usou: medir e uma coisa, decidir o que
+// mostrar e outra. E aqui ele carrega no navegador, sem require.
+const LIMITE_SELO = 85;
 
 // A regra gravada junto da nota. Quando a calibracao mudar, este numero sobe e
 // o que foi medido pela regra velha e medido de novo. Sem isso nao ha como
@@ -164,6 +174,52 @@ function oQueMostrarDoAcervo(musica, tabela) {
   return { selo: temSelo(nota), nota, canal };
 }
 
+// Distancia que a lider precisa ter da segunda para a nota decidir sozinha.
+//
+// Medido em 06/11 sobre 5 musicas: a nota ABSOLUTA nao se compara entre
+// musicas. Man in the Box espalhou de 60 a 90; Skyfall comprimiu tudo entre 86
+// e 100; Zoio de Lula, entre 37 e 52. Um corte fixo aprovava as seis versoes de
+// uma musica e reprovava as seis da outra.
+//
+// O que se sustenta e a ORDEM dentro da mesma busca. Quando a lider esta bem a
+// frente, a escolha e obvia; quando estao todas juntas, a nota nao decide e o
+// KJ tem de ouvir no fone — e a tela deve dizer isso em vez de fingir certeza.
+//
+// 15 fica entre os dois casos medidos (8 no Zoio de Lula, 30 no Man in the
+// Box). Com 5 musicas medidas este numero e provisorio: os testes fixam os
+// casos reais, nao o valor.
+const MARGEM_DECISIVA = 15;
+
+// Ordena as candidatas da mais perto do original para a mais longe, coroando a
+// lider. O indice no array ORIGINAL viaja junto: ordenar a tela sem levar o
+// indice baixaria a versao errada.
+//
+// Quem nao tem nota vai para o fim com -1, e nao com 0: zero e nota de verdade
+// (versao que nao tem nada a ver com o original) e nao pode empatar com "ainda
+// nao medi".
+function ordenarCandidatas(candidatas) {
+  if (!Array.isArray(candidatas)) return [];
+  const comIndice = candidatas.map((c, indice) => {
+    const o = c && typeof c === "object" ? c : {};
+    return { ...o, indice, melhor: false, _n: notaValida(o.nota) ? o.nota : -1 };
+  });
+  // Ordem estavel: empate mantem a ordem que o YouTube devolveu (relevancia).
+  const ordenadas = comIndice
+    .map((c, i) => [c, i])
+    .sort((a, b) => (b[0]._n - a[0]._n) || (a[1] - b[1]))
+    .map(([c]) => c);
+  // Uma coroa so, mesmo com empate no topo: duas coroas nao ajudam a escolher.
+  if (ordenadas.length && ordenadas[0]._n >= 0) ordenadas[0].melhor = true;
+  return ordenadas.map(({ _n, ...resto }) => resto);
+}
+
+// A nota decide sozinha, ou o KJ precisa ouvir?
+function decideSozinha(notas) {
+  const boas = (Array.isArray(notas) ? notas : []).filter(notaValida).sort((a, b) => b - a);
+  if (boas.length < 2) return false;
+  return boas[0] - boas[1] >= MARGEM_DECISIVA;
+}
+
 // Esta musica precisa ser medida?
 //
 // `semOriginal` marca o que o iTunes nao tem (6 de 60). Sem essa marca, cada
@@ -197,9 +253,15 @@ function partesDoNome(arquivo) {
   return musica ? { artista: partes[0], musica, canal } : null;
 }
 
-module.exports = {
+const api = {
   REGRA_QUALIDADE, MINIMO_PARA_REPUTACAO, CORTE_REPUTACAO, LIMITE_SELO,
   notaValida, temSelo, chaveDoCanal, canalDeTitulo,
   reputacaoDoCanal, reputacoesDoAcervo,
   oQueMostrarAntesDeBaixar, oQueMostrarDoAcervo, precisaMedir, partesDoNome,
+  ordenarCandidatas, decideSozinha, MARGEM_DECISIVA,
 };
+
+if (typeof module !== "undefined" && module.exports) module.exports = api;
+else raiz.VoxlySelo = api;
+
+})(typeof globalThis !== "undefined" ? globalThis : this);

@@ -21,6 +21,9 @@ const { criarFilaLimitada } = require("./fila-limitada");
 const { decidirDownload } = require("./download-duplo");
 const buscaRapida = require("./busca-rapida");
 const { formatoSeguro } = require("./qualidade");
+const espectro = require("./espectro");
+const referencia = require("./referencia");
+const selo = require("./selo");
 const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const ytdlp = require("./ytdlp");
@@ -2392,9 +2395,14 @@ ipcMain.handle("yt-download", async (_, opts) => {
 // viraria argumento do yt-dlp.
 const _previas = new Map();   // id -> { url, em }
 const VALIDADE_PREVIA_MS = 3 * 3600e3;   // o YouTube expira esses enderecos em ~6 h
-ipcMain.handle("yt-previa", async (_, urlVideo) => {
-  const id = idDaUrl(urlVideo);
-  if (!id) return { erro: "Endereço de vídeo inválido." };
+// O endereco do audio de um video, com cache. Serve ao fone do KJ (yt-previa) e
+// a nota de qualidade (yt-notas): se ele ja ouviu a versao, medir nao gasta uma
+// segunda chamada ao yt-dlp, que e a parte lenta (~2,5 s medidos em 06/11).
+//
+// So aceita id de video: o endereco vem da tela, e texto livre ali viraria
+// argumento do yt-dlp.
+async function enderecoDoAudio(id) {
+  if (!/^[\w-]{11}$/.test(String(id || ""))) return { erro: "Endereço de vídeo inválido." };
   const guardada = _previas.get(id);
   if (guardada && Date.now() - guardada.em < VALIDADE_PREVIA_MS) return { url: guardada.url };
   const ytDlp = resolverBinario("yt-dlp");
@@ -2407,13 +2415,167 @@ ipcMain.handle("yt-previa", async (_, urlVideo) => {
     const url = String(stdout).trim().split("\n")[0];
     if (!/^https?:\/\//.test(url)) return { erro: "O YouTube não devolveu o áudio desta versão." };
     _previas.set(id, { url, em: Date.now() });
-    registrar("main", "previa.pronta", { id });
     return { url };
   } catch (e) {
-    const erro = motivoFalha(1, String(e.stderr || e.message)) || "Não consegui a prévia desta versão.";
-    registrar("main", "previa.falhou", { id, erro }, "aviso");
-    return { erro };
+    return { erro: motivoFalha(1, String(e.stderr || e.message)) || "Não consegui o áudio desta versão." };
   }
+}
+
+ipcMain.handle("yt-previa", async (_, urlVideo) => {
+  const id = idDaUrl(urlVideo);
+  if (!id) return { erro: "Endereço de vídeo inválido." };
+  const r = await enderecoDoAudio(id);
+  if (r.erro) registrar("main", "previa.falhou", { id, erro: r.erro }, "aviso");
+  else registrar("main", "previa.pronta", { id });
+  return r;
+});
+
+// ── Nota de qualidade das candidatas, SEM baixar nenhuma ───
+// Pedido dele em 06/11: "tem que mostrar numa nota de 0 a 100 o mais próximo da
+// música original e elencar as músicas para serem baixadas do mais próximo do
+// original até o menos próximo. Não tem como dar play no vídeo e você ouvir o
+// streaming e comparar sem precisar baixar?"
+//
+// Tem. Eu havia dito que nao tinha, e estava errado: o mesmo endereco que leva
+// o audio ao fone dele (`enderecoDoAudio`) o ffmpeg le direto, pedindo so a
+// faixa de bytes do trecho. Nada toca o disco.
+//
+// Medido em 06/11, 6 candidatas de "Man in the Box": busca 2,5 s, enderecos em
+// paralelo 2,9 s, 0,85 s por candidata. A ordem saiu igual ao que ele rotulou de
+// ouvido no teste cego, e o VIDEO OFICIAL da banda, que entrou na busca por
+// acidente, tirou 89 — ou seja, 90 do CC Karaoke quer dizer "indistinguivel do
+// master". A regua esta no lugar.
+const TAXA_ANALISE = 22050;
+const INICIO_ANALISE = 20;        // pula contagem e logo do canal
+const JANELA_ANALISE = 150;       // janela onde o trecho do master e procurado
+const NOTAS_EM_PARALELO = 4;
+
+// Resultados crus do iTunes, para `referencia.escolherOriginal` poder exigir que
+// o ARTISTA bata. `buscaItunes` nao serve aqui: ela ja devolve escolhido e sem
+// previewUrl, que e justamente o audio do master.
+//
+// Sem `country`: foi assim que a nota foi calibrada contra o ouvido dele, e
+// trocar a loja troca a gravacao de referencia.
+const buscaOriginal = criarConsultaLimitada({
+  consultar: async (termo) => {
+    const url = "https://itunes.apple.com/search?term=" + encodeURIComponent(termo)
+              + "&entity=musicTrack&limit=12";
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`iTunes respondeu ${res.status}`);
+    return (await res.json()).results || [];
+  },
+});
+
+// Decodifica audio — arquivo ou endereco http — em mono 22050 float32.
+//
+// Com `-ss` antes do `-i` num endereco, o ffmpeg pede ao YouTube so a faixa de
+// bytes daquele trecho: puxar 150 s de uma musica de 4 min custou 0,5 a 1,8 s.
+function pcmDoAudio(entrada, { de = 0, duracao = 0 } = {}) {
+  const ffmpeg = resolverBinario("ffmpeg");
+  if (!ffmpeg) return Promise.resolve(null);
+  const args = ["-v", "error", "-nostdin"];
+  if (de) args.push("-ss", String(de));
+  args.push("-i", entrada);
+  if (duracao) args.push("-t", String(duracao));
+  args.push("-vn", "-ac", "1", "-ar", String(TAXA_ANALISE), "-f", "f32le", "-");
+  return new Promise(resolve => {
+    let child;
+    try { child = spawn(ffmpeg, args, { windowsHide: true }); }
+    catch (_) { return resolve(null); }
+    // O KJ escolhe versao com o show rodando: isto nao pode disputar CPU com o
+    // video no telao.
+    try { os.setPriority(child.pid, os.constants.priority.PRIORITY_LOW); } catch (_) {}
+
+    const pedacos = [];
+    let total = 0;
+    const TETO = 96 * 1024 * 1024;   // ~18 min de audio; acima disso algo esta errado
+    child.stdout.on("data", d => {
+      total += d.length;
+      if (total > TETO) { try { child.kill(); } catch (_) {} return; }
+      pedacos.push(d);
+    });
+    child.stderr.resume();
+    const limite = setTimeout(() => { try { child.kill(); } catch (_) {} }, 45000);
+    const terminar = (v) => { clearTimeout(limite); resolve(v); };
+    child.on("error", () => terminar(null));
+    child.on("close", () => {
+      if (!pedacos.length) return terminar(null);
+      const b = Buffer.concat(pedacos);
+      const amostras = Math.floor(b.length / 4);
+      if (!amostras) return terminar(null);
+      // Copia para um ArrayBuffer proprio: o Buffer do concat pode vir de um
+      // pool com byteOffset nao multiplo de 4, e o Float32Array recusa.
+      const ab = new ArrayBuffer(amostras * 4);
+      Buffer.from(ab).set(b.subarray(0, amostras * 4));
+      terminar(new Float32Array(ab));
+    });
+  });
+}
+
+function medidasDoPcm(x) {
+  if (!x || !x.length) return null;
+  const e = espectro.espectrograma(x);
+  if (!e.length) return null;
+  return {
+    croma: espectro.croma(e, TAXA_ANALISE),
+    mfcc: espectro.mfcc(e, TAXA_ANALISE),
+    graves: espectro.gravesDe(e, TAXA_ANALISE),
+    fluxo: espectro.fluxoEspectral(e),
+    taxa: TAXA_ANALISE,
+  };
+}
+
+// Mede as candidatas e devolve { notas: {id: nota}, original, semOriginal }.
+//
+// `semOriginal` nao e falha: foi o caso de 6 de 60 musicas do acervo em que o
+// iTunes nao tem a gravacao da banda (o "artista" era o nome de um filme, ou
+// uma produtora de karaoke). Sem original nao ha nota — e dar nota contra a
+// gravacao errada foi exatamente o defeito que ele pegou de ouvido.
+ipcMain.handle("yt-notas", async (_, pedido) => {
+  const p = pedido && typeof pedido === "object" ? pedido : {};
+  const artista = String(p.artista || "").trim();
+  const musica = String(p.musica || "").trim();
+  const ids = (Array.isArray(p.ids) ? p.ids : [])
+    .map(x => String(x || "")).filter(x => /^[\w-]{11}$/.test(x)).slice(0, 8);
+  if (!artista || !musica || !ids.length) return { notas: {} };
+  if (!resolverBinario("ffmpeg")) return { notas: {}, erro: "ffmpeg não encontrado." };
+
+  const comeco = Date.now();
+  const resultados = await buscaOriginal(imagens.termoDaCapa(artista, musica));
+  const faixa = referencia.escolherOriginal(resultados || [], { artista, musica });
+  if (!faixa) {
+    registrar("main", "selo.sem-original", { artista, musica }, "aviso");
+    return { notas: {}, semOriginal: true };
+  }
+
+  const mOriginal = medidasDoPcm(await pcmDoAudio(faixa.previewUrl));
+  if (!mOriginal) {
+    registrar("main", "selo.original-ilegivel", { artista, musica }, "aviso");
+    return { notas: {}, semOriginal: true };
+  }
+
+  const notas = {};
+  const fila = [...ids];
+  async function trabalhar() {
+    while (fila.length) {
+      const id = fila.shift();
+      const { url } = await enderecoDoAudio(id);
+      if (!url) continue;
+      const m = medidasDoPcm(await pcmDoAudio(url, { de: INICIO_ANALISE, duracao: JANELA_ANALISE }));
+      if (!m) continue;
+      try {
+        const r = espectro.notaDeQualidade(mOriginal, m);
+        if (selo.notaValida(r.nota)) notas[id] = r.nota;
+      } catch (_) { /* uma candidata ilegivel nao derruba as outras */ }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(NOTAS_EM_PARALELO, ids.length) }, trabalhar));
+
+  registrar("main", "selo.medido", {
+    artista, musica, original: `${faixa.artistName} — ${faixa.trackName}`,
+    pedidas: ids.length, medidas: Object.keys(notas).length, ms: Date.now() - comeco,
+  });
+  return { notas, original: `${faixa.artistName} — ${faixa.trackName}` };
 });
 
 // ── IPC: procura candidatos de karaoke no YouTube ──────────

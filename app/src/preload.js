@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   ytCancel:           () => ipcRenderer.invoke("yt-cancel"),
   ytEmAndamento:      () => ipcRenderer.invoke("yt-em-andamento"),
   ytPrevia:           (url) => ipcRenderer.invoke("yt-previa", url),
+  ytNotas:            (pedido) => ipcRenderer.invoke("yt-notas", pedido),
   // Diario: send, nao invoke — registrar nunca pode fazer a tela esperar.
   diario:             (evento, dados, nivel) => ipcRenderer.send("diario", { evento, dados, nivel }),
   pixGerar:              (dados) => ipcRenderer.invoke("pix-gerar", dados),

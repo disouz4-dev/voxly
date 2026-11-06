@@ -81,7 +81,9 @@ const PESOS = { harmonia: 0, grave: 1, timbre: 0, tempo: 0 };
 //
 // Por isso o selo nao deve sair so desta nota: nos mesmos 24 itens, a
 // REPUTACAO DO CANAL acertou 24/24, e esta disponivel antes de baixar.
-const LIMITE_SELO = 85;
+//
+// O corte (LIMITE_SELO) mora em src/selo.js: ele e regra de TELA e nunca foi
+// usado aqui dentro, e o selo.js precisa carregar no navegador, sem require.
 
 // ── janela ────────────────────────────────────────────────
 // Sem janela, o corte do quadro inventa frequencia que nao existe no som
@@ -578,5 +580,5 @@ module.exports = {
   croma, mfcc, fluxoEspectral, bpmDe,
   correlacaoPearson, cosseno, alinhar, notaDeQualidade,
   gravesDe, reduzirSerie, procurarTrecho, semelhancaEm, perfilDeTempo,
-  TAMANHO, SALTO, TETO_GRAVE_HZ, PESOS, ESCALA_TIMBRE, CV_MINIMO, LIMITE_SELO,
+  TAMANHO, SALTO, TETO_GRAVE_HZ, PESOS, ESCALA_TIMBRE, CV_MINIMO,
 };
