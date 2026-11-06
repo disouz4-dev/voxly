@@ -1,4 +1,8 @@
-const { app, BrowserWindow, ipcMain, dialog, screen, powerSaveBlocker } = require("electron");
+// `net` faltava aqui desde 01/07/2026, e com ele toda chamada a net.fetch
+// estourava "net is not defined": a foto de artista (baixarFotoArtista) nunca
+// baixou uma vez, e o IPC fetch-image sempre devolveu null. Sao 240 erros no
+// diario de uma noite so, engolidos pelo catch.
+const { app, BrowserWindow, ipcMain, dialog, screen, powerSaveBlocker, net } = require("electron");
 const path   = require("path");
 const Store  = require("electron-store");
 const chokidar = require("chokidar");
@@ -418,7 +422,12 @@ async function baixarFotoArtista(nome, folder) {
   const dest = fotoArtistaPath(folder, nome);
   if (fs.existsSync(dest)) return;
   try {
-    const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=musicArtist&limit=3`;
+    // `entity=musicArtist` NUNCA devolve artworkUrl100 — medido em 06/11 com
+    // Pitty, Seether e Legiao Urbana: 0 resultados com arte. Com isso, mesmo
+    // depois de consertar o `net` que faltava, todo download morria calado no
+    // "if (!match?.artworkUrl100) return". Em `entity=album` a arte vem em
+    // todos, e o artistName continua vindo para conferir o nome.
+    const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=album&limit=5`;
     const searchResp = await net.fetch(searchUrl);
     if (!searchResp.ok) return;
     const data = await searchResp.json();

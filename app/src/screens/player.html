@@ -2162,7 +2162,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const onde = () => ({ arquivo: decodeURI(String(video.currentSrc || '')).split('/').pop(), tempo: Math.round(video.currentTime * 10) / 10 });
     video.addEventListener("error",   () => diario('video.erro', { ...onde(), codigo: video.error && video.error.code, msg: video.error && video.error.message }, 'erro'));
     video.addEventListener("stalled", () => diario('video.engasgou', onde(), 'aviso'));
-    video.addEventListener("waiting", () => diario('video.esperando-dados', onde(), 'aviso'));
+    // 'waiting' dispara sempre ANTES de o video comecar: nos diarios de 29/10 e
+    // 05/11 sao 73 ocorrencias, TODAS com tempo 0, e nenhuma musica travou no
+    // ar. Como aviso, enchia o diario e escondia aviso de verdade.
+    video.addEventListener("waiting", () => diario('video.esperando-dados', onde()));
     video.addEventListener("playing", () => diario('video.tocando', onde()));
     video.addEventListener("pause",   () => { if (video.currentSrc) diario('video.pausou', onde()); });
     video.addEventListener("ended",   () => diario('video.fim', onde()));
