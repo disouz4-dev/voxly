@@ -417,41 +417,115 @@ test("o tempo entra na nota mesmo sem batida clara", () => {
 });
 
 // ── calibracao pelo ouvido do KJ (06/11/2026) ─────────────
-// Ele ouviu 12 pares em teste cego (trecho do master contra o mesmo trecho da
-// versao, nota escondida ate o voto) e rotulou cada um. O resultado derrubou o
-// meu desenho: eu tinha dado peso a quatro medidas, e as outras tres estavam
-// DILUINDO a unica que funciona.
+// Ele ouviu 26 pares em dois testes cegos (trecho do master contra o mesmo
+// trecho da versao, nota escondida ate o voto) e rotulou cada um.
 //
-//   grave     11/11   master [95,97,97,100]  regravado [0,27,37,44,50,66,82]
-//   harmonia  10/11   faixas sobrepostas (87 contra 93)
-//   timbre     9/11   atrapalha: o Skyfall, que ele ouviu como master, tem 37
-//   tempo      7/11   pouco acima de moeda
+// DOIS itens sairam da conta porque a REFERENCIA estava errada, e ele achou de
+// ouvido: "Man in the Box" veio do Vitamin String Quartet (violinos contra
+// instrumental de rock) e "Parte do Seu Mundo" veio de Chiara Sasso, porque no
+// acervo o "artista" e o nome do filme. Ver src/referencia.js — nota calculada
+// contra a gravacao errada e lixo com cara de medida.
 //
-// O mecanismo explica: abaixo de 250 Hz vivem baixo e bumbo, e a voz NAO. Quem
-// tirou a voz do master entrega aquela faixa intacta; quem regravou nao tem
-// como reproduzi-la. O timbre mede justamente a regiao onde a voz ausente faz
-// falta — por isso ele e ruido nesta pergunta.
+// Com os 24 validos:
 //
-// Estes sao os valores MEDIDOS daquele lote. O teste existe para que ninguem
-// volte a dissolver o grave em media com o resto sem antes refazer a medicao.
+//   grave     21/24 no corte 85   master [77..100]  regravado [0..94]  SOBREPOE
+//   canal     24/24               todo canal rotulado deu um unico rotulo
+//
+// O primeiro lote, com 11 itens, dava 11/11 no grave e me fez acreditar em
+// separacao perfeita. O segundo lote desmentiu — que e exatamente para isso que
+// serve um lote de validacao. O grave continua sendo a melhor MEDIDA de audio,
+// e o canal e um sinal mais forte que ela.
 const { LIMITE_SELO, PESOS } = require("../src/espectro");
 
-const GABARITO_06_11 = [
-  { musica: "Metalingus",          canal: "Karstens Karaoke Elite", ouvido: "master",    p: { harmonia: 98, grave: 100, timbre: 84, tempo: 97 } },
-  { musica: "Would",               canal: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 97, grave: 97,  timbre: 75, tempo: 94 } },
-  { musica: "Be Yourself",         canal: "ObsKure Karaoke",        ouvido: "master",    p: { harmonia: 94, grave: 97,  timbre: 56, tempo: 97 } },
-  { musica: "Skyfall",             canal: "Sing King",              ouvido: "master",    p: { harmonia: 87, grave: 95,  timbre: 37, tempo: 62 } },
-  { musica: "Set Fire To the Rain", canal: "KaraFun Karaoke",       ouvido: "regravado", p: { harmonia: 89, grave: 82,  timbre: 62, tempo: 98 } },
-  { musica: "I Bet You Look Good", canal: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 93, grave: 66,  timbre: 59, tempo: 97 } },
-  { musica: "Nobodys Home",        canal: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 93, grave: 44,  timbre: 65, tempo: 96 } },
-  { musica: "Rolling in the Deep", canal: "Musisi Karaoke",         ouvido: "regravado", p: { harmonia: 88, grave: 37,  timbre: 34, tempo: 100 } },
-  { musica: "I Dont Want To Miss a Thing", canal: "Zoom Karaoke",   ouvido: "regravado", p: { harmonia: 85, grave: 27,  timbre: 40, tempo: 85 } },
-  { musica: "Someone Like You",    canal: "Musisi Karaoke",         ouvido: "regravado", p: { harmonia: 72, grave: 50,  timbre: 3,  tempo: 51 } },
-  { musica: "I Want It That Way",  canal: "Atomic Karaoke",         ouvido: "regravado", p: { harmonia: 83, grave: 0,   timbre: 30, tempo: 0 } },
+const GABARITO = [
+  // lote 1
+  { m: "Metalingus",           c: "Karstens Karaoke Elite", ouvido: "master",    p: { harmonia: 98, grave: 100, timbre: 84, tempo: 97 } },
+  { m: "Would",                c: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 97, grave: 97,  timbre: 75, tempo: 94 } },
+  { m: "Be Yourself",          c: "ObsKure Karaoke",        ouvido: "master",    p: { harmonia: 94, grave: 97,  timbre: 56, tempo: 97 } },
+  { m: "Skyfall",              c: "Sing King",              ouvido: "master",    p: { harmonia: 87, grave: 95,  timbre: 37, tempo: 62 } },
+  { m: "Set Fire To the Rain", c: "KaraFun Karaoke",        ouvido: "regravado", p: { harmonia: 89, grave: 82,  timbre: 62, tempo: 98 } },
+  { m: "I Bet You Look Good",  c: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 93, grave: 66,  timbre: 59, tempo: 97 } },
+  { m: "Nobodys Home",         c: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 93, grave: 44,  timbre: 65, tempo: 96 } },
+  { m: "Rolling in the Deep",  c: "Musisi Karaoke",         ouvido: "regravado", p: { harmonia: 88, grave: 37,  timbre: 34, tempo: 100 } },
+  { m: "I Dont Want To Miss",  c: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 85, grave: 27,  timbre: 40, tempo: 85 } },
+  { m: "Someone Like You",     c: "Musisi Karaoke",         ouvido: "regravado", p: { harmonia: 72, grave: 50,  timbre: 3,  tempo: 51 } },
+  { m: "I Want It That Way",   c: "Atomic Karaoke",         ouvido: "regravado", p: { harmonia: 83, grave: 0,   timbre: 30, tempo: 0 } },
+  // lote 2 — tirado da zona de duvida, onde o lote 1 quase nao tinha itens
+  { m: "Que Nem o Meu Cachorro", c: "Rewind Karaoke",       ouvido: "master",    p: { harmonia: 92, grave: 100, timbre: 11, tempo: 91 } },
+  { m: "So Far Away",          c: "CC Karaoke",             ouvido: "master",    p: { harmonia: 95, grave: 97,  timbre: 69, tempo: 97 } },
+  { m: "Vira a Cabeca",        c: "Genno Karaoke",          ouvido: "master",    p: { harmonia: 90, grave: 97,  timbre: 53, tempo: 73 } },
+  { m: "A Loba",               c: "Clubinho do Karaoke",    ouvido: "regravado", p: { harmonia: 84, grave: 94,  timbre: 43, tempo: 95 } },
+  { m: "Warmness on the Soul", c: "BellySings Karaoke",     ouvido: "master",    p: { harmonia: 96, grave: 89,  timbre: 26, tempo: 92 } },
+  { m: "Crying Lightning",     c: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 95, grave: 88,  timbre: 59, tempo: 99 } },
+  { m: "Valerie (68)",         c: "Karaoke Version from Zoom Karaoke", ouvido: "master", p: { harmonia: 89, grave: 86, timbre: 77, tempo: 96 } },
+  { m: "Pro Dia Nascer Feliz", c: "PARTY TYME em portugues", ouvido: "regravado", p: { harmonia: 91, grave: 84, timbre: 38, tempo: 95 } },
+  { m: "R U Mine",             c: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 96, grave: 81,  timbre: 84, tempo: 92 } },
+  { m: "Haruka Kanata",        c: "KARAOKE UtaCchaO",       ouvido: "regravado", p: { harmonia: 94, grave: 78,  timbre: 46, tempo: 86 } },
+  { m: "If I Aint Got You",    c: "KaraFun Karaoke",        ouvido: "regravado", p: { harmonia: 82, grave: 78,  timbre: 42, tempo: 78 } },
+  { m: "Like a Stone",         c: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 91, grave: 77,  timbre: 61, tempo: 99 } },
+  { m: "Vira a Cabeca",        c: "Clubinho do Karaoke",    ouvido: "regravado", p: { harmonia: 81, grave: 64,  timbre: 55, tempo: 0 } },
+  // Remedido DEPOIS do conserto de src/referencia.js. Com a referencia errada
+  // (Vitamin String Quartet) dava grave 85; com a gravacao certa da banda da
+  // 97 — 12 pontos, na direcao do rotulo dele. E a prova de que referencia
+  // errada nao e um detalhe: e a diferenca entre acertar e nao acertar.
+  { m: "Man in the Box",       c: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 97, grave: 97,  timbre: 79, tempo: 95 } },
 ];
 
-// Reproduz a media ponderada que notaDeQualidade faz, para testar os PESOS sem
-// precisar de audio.
+const ehMaster = i => i.ouvido === "master";
+
+// Melhor acerto possivel de uma medida, varrendo todo corte.
+function melhorCorte(valores) {
+  let melhor = { acertos: -1, corte: null };
+  for (let t = 0; t <= 101; t++) {
+    const acertos = valores.filter(v => (v.x >= t) === v.master).length;
+    if (acertos > melhor.acertos) melhor = { acertos, corte: t, total: valores.length };
+  }
+  return melhor;
+}
+
+const valoresDe = chave => GABARITO
+  .map(i => ({ x: i.p[chave], master: ehMaster(i) }))
+  .filter(v => v.x !== undefined && v.x !== null);
+
+test("o grave e a melhor das quatro medidas de audio", () => {
+  const notas = {};
+  for (const k of ["harmonia", "grave", "timbre", "tempo"]) notas[k] = melhorCorte(valoresDe(k)).acertos;
+  const melhor = Object.entries(notas).sort((a, b) => b[1] - a[1])[0][0];
+  assert.strictEqual(melhor, "grave", `acertos por medida: ${JSON.stringify(notas)}`);
+});
+
+test("o grave NAO separa perfeitamente: ha sobreposicao, e isso fica registrado", () => {
+  // O lote 1, com 11 itens, dava 11/11 e me fez acreditar em separacao
+  // perfeita. O lote 2 desmentiu. Este teste existe para que ninguem (eu
+  // inclusive) volte a vender o selo como infalivel.
+  const master = GABARITO.filter(ehMaster).map(i => i.p.grave);
+  const regravado = GABARITO.filter(i => !ehMaster(i)).map(i => i.p.grave);
+  assert.ok(Math.max(...regravado) > Math.min(...master),
+    `regravado chega a ${Math.max(...regravado)} e master comeca em ${Math.min(...master)}`);
+});
+
+test("o corte em vigor e o melhor possivel sobre o gabarito", () => {
+  const m = melhorCorte(valoresDe("grave"));
+  const comOCorte = GABARITO.filter(i => (i.p.grave >= LIMITE_SELO) === ehMaster(i)).length;
+  assert.strictEqual(comOCorte, m.acertos,
+    `o corte ${LIMITE_SELO} acerta ${comOCorte}; o melhor possivel e ${m.acertos} (corte ${m.corte})`);
+});
+
+test("o canal separa melhor que qualquer medida de audio", () => {
+  // Nos 24 itens, todo canal rotulado deu um unico rotulo. Por isso o selo nao
+  // pode ser so a nota da musica: a reputacao do canal e sinal mais forte, e
+  // esta disponivel ANTES de baixar.
+  const porCanal = new Map();
+  for (const i of GABARITO) {
+    if (!porCanal.has(i.c)) porCanal.set(i.c, new Set());
+    porCanal.get(i.c).add(i.ouvido);
+  }
+  const mistos = [...porCanal].filter(([, v]) => v.size > 1).map(([c]) => c);
+  assert.deepStrictEqual(mistos, [], "canal com os dois rotulos quebraria a reputacao por canal");
+  assert.ok(melhorCorte(valoresDe("grave")).acertos < GABARITO.length,
+    "se o grave passar a acertar tudo, a medicao mudou e esta conclusao precisa ser refeita");
+});
+
 function notaComPesos(partes, pesos) {
   let soma = 0, peso = 0;
   for (const [k, w] of Object.entries(pesos)) {
@@ -461,43 +535,17 @@ function notaComPesos(partes, pesos) {
   return peso > 0 ? Math.round(soma / peso) : null;
 }
 
-test("o grave sozinho separa o gabarito inteiro", () => {
-  const master = GABARITO_06_11.filter(i => i.ouvido === "master").map(i => i.p.grave);
-  const regravado = GABARITO_06_11.filter(i => i.ouvido === "regravado").map(i => i.p.grave);
-  assert.ok(Math.min(...master) > Math.max(...regravado),
-    `master min ${Math.min(...master)} tem de ficar acima de regravado max ${Math.max(...regravado)}`);
-});
-
-test("o limite do selo cai DENTRO do vao medido, nao na borda", () => {
-  // Borda generaliza pior: o corte fica no meio de 82 e 95.
-  const master = GABARITO_06_11.filter(i => i.ouvido === "master").map(i => i.p.grave);
-  const regravado = GABARITO_06_11.filter(i => i.ouvido === "regravado").map(i => i.p.grave);
-  assert.ok(LIMITE_SELO > Math.max(...regravado), `${LIMITE_SELO} tem de ficar acima de 82`);
-  assert.ok(LIMITE_SELO < Math.min(...master), `${LIMITE_SELO} tem de ficar abaixo de 95`);
-});
-
-test("os pesos atuais classificam o gabarito inteiro", () => {
-  const erros = GABARITO_06_11.filter(i =>
-    (notaComPesos(i.p, PESOS) >= LIMITE_SELO) !== (i.ouvido === "master"));
-  assert.deepStrictEqual(erros.map(e => `${e.musica} [${e.canal}]`), [],
-    "nenhum item do gabarito pode ser classificado errado pelos pesos em vigor");
-});
-
-test("diluir o grave em media com o resto volta a errar — e por isso nao se faz", () => {
-  // Os pesos que eu tinha escolhido antes de medir. Erram o Skyfall, que ele
-  // ouviu como master: timbre 37 e tempo 62 derrubam uma nota cujo grave e 95.
+test("diluir o grave em media com o resto piora — e por isso nao se faz", () => {
   const antigos = { harmonia: 0.30, grave: 0.30, timbre: 0.25, tempo: 0.15 };
-  const erros = GABARITO_06_11.filter(i =>
-    (notaComPesos(i.p, antigos) >= 86) !== (i.ouvido === "master"));
-  assert.ok(erros.length > 0,
-    "este teste existe para registrar que os pesos antigos erravam; se parou de errar, a medicao mudou e precisa ser refeita");
+  const comAntigos = melhorCorte(GABARITO.map(i => ({ x: notaComPesos(i.p, antigos), master: ehMaster(i) })));
+  const comGrave = melhorCorte(valoresDe("grave"));
+  assert.ok(comAntigos.acertos < comGrave.acertos,
+    `pesos antigos acertam ${comAntigos.acertos}, o grave sozinho acerta ${comGrave.acertos}`);
 });
 
 test("as outras tres medidas continuam sendo calculadas, como diagnostico", () => {
   // Elas saem da NOTA, nao do relatorio: e o que permite dizer "o grave bate,
   // o timbre nao" e entender a versao em vez de so pontua-la.
-  for (const k of ["harmonia", "timbre", "tempo"]) {
-    assert.ok(k in PESOS, `${k} tem de continuar listado em PESOS`);
-  }
+  for (const k of ["harmonia", "timbre", "tempo"]) assert.ok(k in PESOS, `${k} tem de continuar em PESOS`);
   assert.strictEqual(PESOS.grave, 1, "o grave e a nota");
 });

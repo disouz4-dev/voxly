@@ -70,12 +70,18 @@ const ESCALA_TIMBRE = 10;
 // teste que falha se alguem tentar.
 const PESOS = { harmonia: 0, grave: 1, timbre: 0, tempo: 0 };
 
-// Acima disto a versao leva selo. Fica no MEIO do vao medido (82 a 95), nao na
-// borda: corte na borda generaliza pior. Provisorio por honestidade — 11
-// rotulos, 4 deles master, e a medida foi escolhida depois de ver os rotulos.
-// Confirmar com um segundo lote tirado da zona de duvida (grave 77-97), que e
-// onde a decisao vive e onde o primeiro lote so tinha 2 itens.
-const LIMITE_SELO = 88;
+// Acima disto a versao leva selo. 85 e o corte que mais acerta sobre os 24
+// pares rotulados por ele (21/24): um selo falso (A Loba, do Clubinho, com
+// grave 94) e dois selos perdidos (Like a Stone 77 e R U Mine 81, ambos CC
+// Karaoke X, que ele ouviu como master).
+//
+// Ja NAO existe vao: o lote 2 mostrou que master vai de 77 e regravado chega a
+// 94. O lote 1, com 11 itens, dava separacao perfeita e me enganou — e para
+// isso que serve um lote de validacao.
+//
+// Por isso o selo nao deve sair so desta nota: nos mesmos 24 itens, a
+// REPUTACAO DO CANAL acertou 24/24, e esta disponivel antes de baixar.
+const LIMITE_SELO = 85;
 
 // ── janela ────────────────────────────────────────────────
 // Sem janela, o corte do quadro inventa frequencia que nao existe no som

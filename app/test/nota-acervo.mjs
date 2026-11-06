@@ -22,6 +22,7 @@ const execFileP = promisify(execFile);
 const req = (await import("node:module")).createRequire(import.meta.url);
 const esp = req("../src/espectro.js");
 const img = req("../src/imagens.js");
+const ref = req("../src/referencia.js");
 
 const PASTA = process.env.VOXLY_ACERVO || "/Volumes/M2 portable/Karaoke";
 const TAXA = 22050;
@@ -48,17 +49,18 @@ function partesDoNome(arquivo) {
 // ── iTunes ────────────────────────────────────────────────
 async function faixaNoItunes(artista, musica) {
   const termo = img.termoDaCapa(artista, musica);
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}&entity=musicTrack&limit=8`;
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}&entity=musicTrack&limit=12`;
   const r = await fetch(url);
   if (!r.ok) throw new Error("iTunes HTTP " + r.status);
   const res = (await r.json()).results || [];
-  const limpo = img.tituloLimpo(musica).toLowerCase();
-  const util = res.filter(x => x && x.previewUrl && !img.ehDeKaraoke(x));
-  if (!util.length) return null;
-  const exato = util.find(x => String(x.trackName || "").toLowerCase() === limpo);
-  const contem = util.find(x => String(x.trackName || "").toLowerCase().includes(limpo));
-  return exato || contem || util[0];
+  // A escolha vive em src/referencia.js, e ela EXIGE que o artista bata. Sem
+  // isso, em 06/11 o "Man in the Box" do Vitamin String Quartet entrou como
+  // original e a nota comparou violinos contra instrumental de rock — ele
+  // pegou de ouvido. Sem original nao ha nota: devolver null e a resposta
+  // certa, nao um palpite.
+  return ref.escolherOriginal(res, { artista, musica });
 }
+
 
 async function baixar(url, destino) {
   const r = await fetch(url);
