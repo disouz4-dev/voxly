@@ -13,10 +13,27 @@ import { spawn } from "node:child_process";
 import { setTimeout as espera } from "node:timers/promises";
 import path from "node:path";
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const RAIZ = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const PORTA = 9333;
+// Porta que se PEDE ao Electron. Nao e necessariamente a que ele abre: se
+// estiver ocupada, o Chromium escolhe outra e nao avisa ninguem.
+const PORTA_PEDIDA = 9333;
+
+// Onde o Electron guarda os dados do app — e onde o Chromium escreve o
+// DevToolsActivePort.
+function pastaDeDados() {
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "voxly");
+  }
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "voxly");
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "voxly");
+}
+const ARQUIVO_PORTA = path.join(pastaDeDados(), "DevToolsActivePort");
 
 const falhas = [];
 let feitos = 0;
@@ -29,19 +46,67 @@ function confere(nome, condicao, detalhe = "") {
   return false;
 }
 
-function alvos() {
-  return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${PORTA}/json`, res => {
+// O endereco do depurador nao se adivinha. Em 06/11 a esteira ficou 25s
+// pedindo 127.0.0.1:9333 enquanto as duas janelas do app JA estavam
+// carregadas (o diario do runner prova: `janela.carregou` em Gerencia e
+// Palco) — e o teste concluiu "app nao subiu", culpando o app por um defeito
+// do proprio teste. A porta verdadeira esta no DevToolsActivePort, que o
+// Chromium escreve na pasta de dados; e tenta-se IPv4 e IPv6, porque o
+// handler pode escutar so num dos dois.
+let base = null;        // ex.: "http://127.0.0.1:9333"
+let comoAchou = "";     // para a mensagem de falha
+
+function pedir(url, limiteMs = 4000) {
+  return new Promise(resolve => {
+    const req = http.get(url, res => {
       let corpo = "";
       res.on("data", d => corpo += d);
-      res.on("end", () => {
-        try { resolve(JSON.parse(corpo).filter(t => t.type === "page")); }
-        catch { resolve([]); }
-      });
+      res.on("end", () => resolve(corpo));
     });
-    req.on("error", () => resolve([]));
-    req.setTimeout(4000, () => { req.destroy(); resolve([]); });
+    req.on("error", () => resolve(null));
+    req.setTimeout(limiteMs, () => { req.destroy(); resolve(null); });
   });
+}
+
+// Primeira linha do arquivo e a porta; a segunda e o caminho do websocket.
+function portaDoArquivo() {
+  try {
+    return Number(String(fs.readFileSync(ARQUIVO_PORTA, "utf8")).split("\n")[0].trim()) || 0;
+  } catch { return 0; }
+}
+
+async function garantirBase() {
+  if (base) return base;
+  const portas = [...new Set([portaDoArquivo(), PORTA_PEDIDA])].filter(p => p > 0);
+  for (const p of portas) {
+    for (const h of ["127.0.0.1", "[::1]"]) {
+      const v = await pedir(`http://${h}:${p}/json/version`);
+      if (v && v.includes("webSocketDebuggerUrl")) {
+        base = `http://${h}:${p}`;
+        comoAchou = `${base} (porta ${p === PORTA_PEDIDA ? "pedida" : "do DevToolsActivePort"})`;
+        return base;
+      }
+    }
+  }
+  return null;
+}
+
+async function alvos() {
+  if (!(await garantirBase())) return [];
+  const corpo = await pedir(`${base}/json`);
+  try { return JSON.parse(corpo).filter(t => t.type === "page"); }
+  catch { return []; }
+}
+
+// O que mostrar quando nenhuma janela e achada: sem isto a esteira so dizia
+// "app nao subiu" e os 400 ultimos caracteres da saida, que nao diziam nada.
+function diagnostico() {
+  const p = portaDoArquivo();
+  return [
+    `depurador: ${comoAchou || "nao respondeu em nenhuma porta/endereco"}`,
+    `DevToolsActivePort: ${p ? `${p} (${ARQUIVO_PORTA})` : `AUSENTE em ${ARQUIVO_PORTA}`}`,
+    `saida do app:\n${saidaApp.slice(-2000) || "(vazia)"}`,
+  ].join("\n  ");
 }
 
 function avaliar(alvo, expressao, limiteMs = 20000) {
@@ -94,7 +159,11 @@ async function achar(qual, tentativas = 30) {
 // sandbox) e reclama de GPU que nao existe. A maquina do KJ nao usa nada disto.
 const extras = (process.env.VOXLY_FUMACA_ARGS || "").split(" ").filter(Boolean);
 
-const app = spawn("npx", ["electron", ".", `--remote-debugging-port=${PORTA}`, ...extras],
+// Arquivo de uma execucao anterior aponta para uma porta morta. O Electron o
+// apaga ao sair limpo, mas nao quando e morto a SIGTERM, como aqui.
+try { fs.rmSync(ARQUIVO_PORTA, { force: true }); } catch {}
+
+const app = spawn("npx", ["electron", ".", `--remote-debugging-port=${PORTA_PEDIDA}`, ...extras],
   { cwd: RAIZ, stdio: ["ignore", "pipe", "pipe"] });
 let saidaApp = "";
 app.stdout.on("data", d => saidaApp += d);
@@ -106,7 +175,7 @@ process.on("exit", encerrar);
 try {
   console.log("\n== o app sobe ==");
   const host = await achar("host");
-  if (!confere("a Gerência abre", !!host, saidaApp.slice(-400))) throw new Error("app nao subiu");
+  if (!confere("a Gerência abre", !!host, diagnostico())) throw new Error("app nao subiu");
   const palco = await achar("palco");
   confere("o Palco abre", !!palco);
 
