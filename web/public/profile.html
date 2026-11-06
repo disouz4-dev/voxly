@@ -340,7 +340,7 @@
          que aparecer para todos os usuarios, para eles saberem quando vai
          terminar, um timer com o tempo restante". -->
     <div class="card" id="sessao-restante-card" style="display:none;">
-      <div class="slot-label">⏳ A noite acaba em</div>
+      <div class="slot-label">⏳ O karaokê finaliza em</div>
       <div id="sessao-restante" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.9rem;color:var(--accent);letter-spacing:.04em;font-variant-numeric:tabular-nums;">00:00:00</div>
       <div id="sessao-restante-aviso" style="font-size:.72rem;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;"></div>
     </div>
@@ -674,7 +674,7 @@
     let sessaoAtiva  = false;
     let sessaoRegras = { permitirDuo: true, maxParticipacoesDuo: 1, prioridadeAtiva: true };
     let sessaoTermino = null;   // horario que o KJ marcou para acabar
-    let _restanteTimer = null;  // relogio do "A noite acaba em"
+    let _restanteTimer = null;  // relogio do "O karaoke finaliza em"
     // O documento da sessao lido ao resolver qual e a sessao: reaproveitado ao
     // entrar, em vez de buscar de novo (era uma ida a mais ao servidor).
     let _sessaoInicial = null;
@@ -1674,7 +1674,7 @@ function escutarFila() {
         duracaoS: e.duracao,
       });
       if (!cabeDeNovo.cabe) {
-        mostrarToast('A fila já está cheia até o fim da noite — não dá mais para entrar.', 5000);
+        mostrarToast('A fila já está cheia até o fim do karaokê — não dá mais para entrar.', 5000);
         return;
       }
       const slot = VoxlyHistorico.slotParaPedido({ ativa: filhaAtiva, espera: filhaEspera });
@@ -2853,7 +2853,7 @@ function escutarFila() {
       const dif = fim - Date.now();
       if (dif <= 0) {
         alvo.textContent = '00:00:00';
-        aviso.textContent = 'A sessão desta casa encerrou.';
+        aviso.textContent = 'O karaokê desta casa já finalizou.';
         return;
       }
       const t = Math.floor(dif / 1000);
@@ -2868,7 +2868,7 @@ function escutarFila() {
       });
       aviso.textContent = r.cabe
         ? 'Dá tempo de pedir música.'
-        : 'A fila já está cheia até o fim da noite — não dá mais para entrar.';
+        : 'A fila já está cheia até o fim do karaokê — não dá mais para entrar.';
     }
 
     // ── Ativar conteúdo após entrar na sessão ────────────────
