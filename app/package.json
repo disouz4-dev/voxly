@@ -17,7 +17,7 @@
     "lint": "node --check src/main.js && node --check src/preload.js",
     "fumaca": "node test/fumaca.mjs",
     "qa-download": "node test/qa-download.mjs",
-    "sincronizar-regras": "cp src/ordem.js src/trava.js src/sessao-regras.js src/texto.js src/sugestoes.js src/historico.js src/seguro.js src/chat.js src/entrada.js src/comando.js src/link-youtube.js ../web/public/ && node scripts/versao-web.js"
+    "sincronizar-regras": "cp src/ordem.js src/imagens.js src/trava.js src/sessao-regras.js src/texto.js src/sugestoes.js src/historico.js src/seguro.js src/chat.js src/entrada.js src/comando.js src/link-youtube.js ../web/public/ && node scripts/versao-web.js"
   },
   "dependencies": {
     "chokidar": "^3.5.3",

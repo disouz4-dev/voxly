@@ -124,3 +124,39 @@ test("o limite da imagem é bem menor que o do documento", () => {
   assert.ok(LIMITE_IMAGEM_BYTES < 1048576 / 4,
     `${LIMITE_IMAGEM_BYTES} bytes — tem de sobrar folga no documento de 1 MB`);
 });
+
+// ── As chaves dos documentos ──────────────────────────────
+// A chave e usada nos DOIS lados: a Gerencia grava, o celular le. Enquanto
+// estavam duplicadas, a do artista saia "seether__" de um lado e "seether" do
+// outro — a Gerencia gravava num documento e o celular procurava em outro.
+// Pego no teste de 06/11, lendo o documento de volta depois de gravar.
+
+const { slugDoNome, chaveDoArtista, chaveDaCapa } = require("../src/imagens");
+
+test("a chave do artista nao leva separador no fim", () => {
+  assert.strictEqual(chaveDoArtista("Seether"), "seether");
+  assert.notStrictEqual(chaveDoArtista("Seether"), "seether__");
+});
+
+test("a chave da capa junta artista e musica", () => {
+  assert.strictEqual(chaveDaCapa("Seether", "Broken"), "seether__broken");
+});
+
+test("acento, caixa e pontuacao saem da chave", () => {
+  assert.strictEqual(chaveDoArtista("Legião Urbana"), "legiao_urbana");
+  assert.strictEqual(chaveDaCapa("Pitty", "Me Adora!"), "pitty__me_adora");
+  assert.strictEqual(chaveDaCapa("System of a Down", "N.I.B"), "system_of_a_down__n_i_b");
+});
+
+test("nome vazio, nulo ou so pontuacao nao estoura", () => {
+  assert.strictEqual(slugDoNome(null), "");
+  assert.strictEqual(slugDoNome("!!!"), "");
+  assert.strictEqual(chaveDaCapa("", ""), "__");
+});
+
+test("a chave e estavel: o mesmo nome da sempre o mesmo documento", () => {
+  // E o que garante que a Gerencia e o celular se encontrem.
+  for (const n of ["Seether", "seether", "SEETHER", " Seether "]) {
+    assert.strictEqual(chaveDoArtista(n), "seether", `variacao ${JSON.stringify(n)}`);
+  }
+});

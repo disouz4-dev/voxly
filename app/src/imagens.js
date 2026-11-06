@@ -85,9 +85,24 @@ function imagemCabe(dataUrl, limite = LIMITE_IMAGEM_BYTES) {
   return n > 0 && n <= limite;
 }
 
+// ── As chaves dos documentos ──────────────────────────────
+// Moram aqui porque sao usadas nos DOIS lados: a Gerencia grava e o app do
+// cantor le. Enquanto estavam duplicadas, a do artista saia "seether__" de um
+// lado e "seether" do outro — a Gerencia gravava num documento e o celular
+// procurava em outro (pego no teste de 06/11).
+function slugDoNome(texto) {
+  return String(texto || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+const chaveDoArtista = artista => slugDoNome(artista);
+const chaveDaCapa = (artista, musica) => slugDoNome(artista) + "__" + slugDoNome(musica);
+
 const api = {
   escolherArteDeArtista, escolherArteDeMusica, urlDaArteEm,
   precisaDeImagem, tamanhoDoDataUrl, imagemCabe,
+  slugDoNome, chaveDoArtista, chaveDaCapa,
   LIMITE_IMAGEM_BYTES, LADO_PADRAO,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = api;

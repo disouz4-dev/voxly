@@ -3143,12 +3143,11 @@ https://www.youtube.com/@canal/videos"></textarea>
   let _filaImagens = [];
   let _filaImagensRodando = false;
 
-  function chaveDaCapa(artista, musica) {
-    const limpa = t => String(t || '').toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-    return limpa(artista) + '__' + limpa(musica);
-  }
+  // As chaves vivem em src/imagens.js, num lugar so: a Gerencia grava e o app
+  // do cantor le, e enquanto estavam duplicadas uma saia "seether__" e a outra
+  // "seether" — a Gerencia gravava num documento e o celular lia outro.
+  const chaveDoArtista = a => VoxlyImagens.chaveDoArtista(a);
+  const chaveDaCapa = (a, m) => VoxlyImagens.chaveDaCapa(a, m);
 
   function preencherImagensDoAcervo(itens) {
     if (!window.electronAPI || !window.electronAPI.imagemReduzida) return;
@@ -3158,7 +3157,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       const artista = (i.artista || '').trim();
       if (artista && !artistasVistos.has(artista)) {
         artistasVistos.add(artista);
-        pedidos.push({ tipo: 'artista', colecao: 'artistas', id: chaveDaCapa(artista, ''), artista });
+        pedidos.push({ tipo: 'artista', colecao: 'artistas', id: chaveDoArtista(artista), artista });
       }
       if (artista && i.musica) {
         pedidos.push({ tipo: 'musica', colecao: 'capas', id: chaveDaCapa(artista, i.musica),

@@ -591,6 +591,7 @@
   <script src="/texto.js"></script>
   <script src="/sugestoes.js"></script>
   <script src="/historico.js"></script>
+  <script src="/imagens.js"></script>
   <script src="/seguro.js"></script>
   <script src="/chat.js"></script>
   <script src="/entrada.js"></script>
@@ -3119,9 +3120,8 @@ function escutarFila() {
     let _capaQueue = [];
     let _capaQueueRunning = false;
 
-    function chaveCapa(artista, musica) {
-      return slugArtista(artista) + '__' + slugArtista(musica);
-    }
+    // A chave vem de imagens.js, o mesmo modulo que a Gerencia usa para gravar.
+    const chaveCapa = (artista, musica) => VoxlyImagens.chaveDaCapa(artista, musica);
 
     // Pede ao banco a capa das musicas que estao na tela. So das que estao: ler
     // 386 documentos de uma vez a cada busca e desperdicio.
