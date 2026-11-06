@@ -45,10 +45,37 @@ const COEFS_MFCC = 13;
 // chute: calibrada no acervo dele em 06/11. Subir o numero e perdoar mais.
 const ESCALA_TIMBRE = 10;
 
-// Peso de cada parte na nota final. Iniciais, documentados para serem
-// recalibrados com a distribuicao do acervo dele: o grave pesa mais que o
-// timbre porque e a medida que a voz ausente nao estraga.
-const PESOS = { harmonia: 0.30, grave: 0.30, timbre: 0.25, tempo: 0.15 };
+// Peso de cada parte na nota. CALIBRADO no ouvido dele em 06/11/2026, num teste
+// cego de 12 pares (trecho do master contra o mesmo trecho da versao, nota
+// escondida ate o voto):
+//
+//   grave     11/11   master [95,97,97,100]  regravado [0,27,37,44,50,66,82]
+//   harmonia  10/11   faixas sobrepostas (87 contra 93)
+//   timbre     9/11   atrapalha: o Skyfall, que ele ouviu como master, tem 37
+//   tempo      7/11   pouco acima de moeda
+//
+// Os pesos que eu havia escolhido (0,30/0,30/0,25/0,15) erravam o Skyfall
+// justamente por isso: as outras tres medidas DILUIAM a unica que funciona. A
+// busca em grade concordou — todas as melhores combinacoes poem o grave entre
+// 0,7 e 1,0 e o resto em zero.
+//
+// O mecanismo explica o resultado: abaixo de 250 Hz vivem baixo e bumbo, e a
+// voz NAO. Quem tirou a voz do master entrega aquela faixa intacta; quem
+// regravou nao tem como reproduzi-la. O timbre mede justamente a regiao onde a
+// voz ausente faz falta — e por isso e ruido nesta pergunta.
+//
+// As outras tres continuam sendo CALCULADAS e devolvidas: servem para explicar
+// a versao ("o grave bate, o timbre nao") em vez de so pontua-la. Dissolver o
+// grave numa media com elas de novo exige refazer a medicao primeiro, e ha
+// teste que falha se alguem tentar.
+const PESOS = { harmonia: 0, grave: 1, timbre: 0, tempo: 0 };
+
+// Acima disto a versao leva selo. Fica no MEIO do vao medido (82 a 95), nao na
+// borda: corte na borda generaliza pior. Provisorio por honestidade — 11
+// rotulos, 4 deles master, e a medida foi escolhida depois de ver os rotulos.
+// Confirmar com um segundo lote tirado da zona de duvida (grave 77-97), que e
+// onde a decisao vive e onde o primeiro lote so tinha 2 itens.
+const LIMITE_SELO = 88;
 
 // ── janela ────────────────────────────────────────────────
 // Sem janela, o corte do quadro inventa frequencia que nao existe no som
@@ -545,5 +572,5 @@ module.exports = {
   croma, mfcc, fluxoEspectral, bpmDe,
   correlacaoPearson, cosseno, alinhar, notaDeQualidade,
   gravesDe, reduzirSerie, procurarTrecho, semelhancaEm, perfilDeTempo,
-  TAMANHO, SALTO, TETO_GRAVE_HZ, PESOS, ESCALA_TIMBRE, CV_MINIMO,
+  TAMANHO, SALTO, TETO_GRAVE_HZ, PESOS, ESCALA_TIMBRE, CV_MINIMO, LIMITE_SELO,
 };

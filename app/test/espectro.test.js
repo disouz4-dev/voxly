@@ -265,10 +265,14 @@ test("mesma harmonia com timbre diferente perde pontos, mas nao todos", () => {
   // As mesmas tres notas, agora com uma pilha de harmonicos: outro timbre.
   const outro = soma(serra(261.6, 4), serra(329.6, 4), serra(392.0, 4));
   const b = medidasDe(soma(outro, cliques(120, 4)));
-  const { nota, partes } = notaDeQualidade(a, b);
+  const { partes } = notaDeQualidade(a, b);
+  // A INTENCAO do teste sobrevive a calibracao de 06/11: o diagnostico tem de
+  // distinguir "mesma harmonia, outro instrumento". O que mudou e que a NOTA
+  // nao e mais uma media destas partes — ela e o grave, e aqui o grave e igual
+  // de proposito (mesma pilha de cliques nos dois), entao a nota alta esta
+  // certa: nada abaixo de 250 Hz mudou.
   assert.ok(partes.harmonia > 60, `harmonia deveria aguentar a oitava: ${partes.harmonia}`);
   assert.ok(partes.timbre < 70, `timbre deveria cair: ${partes.timbre}`);
-  assert.ok(nota > 25 && nota < 90, `nota intermediaria esperada, deu ${nota}`);
 });
 
 test("a nota e um inteiro de 0 a 100", () => {
@@ -410,4 +414,90 @@ test("o tempo entra na nota mesmo sem batida clara", () => {
   const m = medidasDe(soma(seno(261.6, 6), seno(329.6, 6)));
   const { partes } = notaDeQualidade(m, m);
   assert.strictEqual(partes.tempo, 100, `partes: ${JSON.stringify(partes)}`);
+});
+
+// ── calibracao pelo ouvido do KJ (06/11/2026) ─────────────
+// Ele ouviu 12 pares em teste cego (trecho do master contra o mesmo trecho da
+// versao, nota escondida ate o voto) e rotulou cada um. O resultado derrubou o
+// meu desenho: eu tinha dado peso a quatro medidas, e as outras tres estavam
+// DILUINDO a unica que funciona.
+//
+//   grave     11/11   master [95,97,97,100]  regravado [0,27,37,44,50,66,82]
+//   harmonia  10/11   faixas sobrepostas (87 contra 93)
+//   timbre     9/11   atrapalha: o Skyfall, que ele ouviu como master, tem 37
+//   tempo      7/11   pouco acima de moeda
+//
+// O mecanismo explica: abaixo de 250 Hz vivem baixo e bumbo, e a voz NAO. Quem
+// tirou a voz do master entrega aquela faixa intacta; quem regravou nao tem
+// como reproduzi-la. O timbre mede justamente a regiao onde a voz ausente faz
+// falta — por isso ele e ruido nesta pergunta.
+//
+// Estes sao os valores MEDIDOS daquele lote. O teste existe para que ninguem
+// volte a dissolver o grave em media com o resto sem antes refazer a medicao.
+const { LIMITE_SELO, PESOS } = require("../src/espectro");
+
+const GABARITO_06_11 = [
+  { musica: "Metalingus",          canal: "Karstens Karaoke Elite", ouvido: "master",    p: { harmonia: 98, grave: 100, timbre: 84, tempo: 97 } },
+  { musica: "Would",               canal: "CC Karaoke X",           ouvido: "master",    p: { harmonia: 97, grave: 97,  timbre: 75, tempo: 94 } },
+  { musica: "Be Yourself",         canal: "ObsKure Karaoke",        ouvido: "master",    p: { harmonia: 94, grave: 97,  timbre: 56, tempo: 97 } },
+  { musica: "Skyfall",             canal: "Sing King",              ouvido: "master",    p: { harmonia: 87, grave: 95,  timbre: 37, tempo: 62 } },
+  { musica: "Set Fire To the Rain", canal: "KaraFun Karaoke",       ouvido: "regravado", p: { harmonia: 89, grave: 82,  timbre: 62, tempo: 98 } },
+  { musica: "I Bet You Look Good", canal: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 93, grave: 66,  timbre: 59, tempo: 97 } },
+  { musica: "Nobodys Home",        canal: "Zoom Karaoke Official",  ouvido: "regravado", p: { harmonia: 93, grave: 44,  timbre: 65, tempo: 96 } },
+  { musica: "Rolling in the Deep", canal: "Musisi Karaoke",         ouvido: "regravado", p: { harmonia: 88, grave: 37,  timbre: 34, tempo: 100 } },
+  { musica: "I Dont Want To Miss a Thing", canal: "Zoom Karaoke",   ouvido: "regravado", p: { harmonia: 85, grave: 27,  timbre: 40, tempo: 85 } },
+  { musica: "Someone Like You",    canal: "Musisi Karaoke",         ouvido: "regravado", p: { harmonia: 72, grave: 50,  timbre: 3,  tempo: 51 } },
+  { musica: "I Want It That Way",  canal: "Atomic Karaoke",         ouvido: "regravado", p: { harmonia: 83, grave: 0,   timbre: 30, tempo: 0 } },
+];
+
+// Reproduz a media ponderada que notaDeQualidade faz, para testar os PESOS sem
+// precisar de audio.
+function notaComPesos(partes, pesos) {
+  let soma = 0, peso = 0;
+  for (const [k, w] of Object.entries(pesos)) {
+    if (partes[k] === undefined || !w) continue;
+    soma += partes[k] * w; peso += w;
+  }
+  return peso > 0 ? Math.round(soma / peso) : null;
+}
+
+test("o grave sozinho separa o gabarito inteiro", () => {
+  const master = GABARITO_06_11.filter(i => i.ouvido === "master").map(i => i.p.grave);
+  const regravado = GABARITO_06_11.filter(i => i.ouvido === "regravado").map(i => i.p.grave);
+  assert.ok(Math.min(...master) > Math.max(...regravado),
+    `master min ${Math.min(...master)} tem de ficar acima de regravado max ${Math.max(...regravado)}`);
+});
+
+test("o limite do selo cai DENTRO do vao medido, nao na borda", () => {
+  // Borda generaliza pior: o corte fica no meio de 82 e 95.
+  const master = GABARITO_06_11.filter(i => i.ouvido === "master").map(i => i.p.grave);
+  const regravado = GABARITO_06_11.filter(i => i.ouvido === "regravado").map(i => i.p.grave);
+  assert.ok(LIMITE_SELO > Math.max(...regravado), `${LIMITE_SELO} tem de ficar acima de 82`);
+  assert.ok(LIMITE_SELO < Math.min(...master), `${LIMITE_SELO} tem de ficar abaixo de 95`);
+});
+
+test("os pesos atuais classificam o gabarito inteiro", () => {
+  const erros = GABARITO_06_11.filter(i =>
+    (notaComPesos(i.p, PESOS) >= LIMITE_SELO) !== (i.ouvido === "master"));
+  assert.deepStrictEqual(erros.map(e => `${e.musica} [${e.canal}]`), [],
+    "nenhum item do gabarito pode ser classificado errado pelos pesos em vigor");
+});
+
+test("diluir o grave em media com o resto volta a errar — e por isso nao se faz", () => {
+  // Os pesos que eu tinha escolhido antes de medir. Erram o Skyfall, que ele
+  // ouviu como master: timbre 37 e tempo 62 derrubam uma nota cujo grave e 95.
+  const antigos = { harmonia: 0.30, grave: 0.30, timbre: 0.25, tempo: 0.15 };
+  const erros = GABARITO_06_11.filter(i =>
+    (notaComPesos(i.p, antigos) >= 86) !== (i.ouvido === "master"));
+  assert.ok(erros.length > 0,
+    "este teste existe para registrar que os pesos antigos erravam; se parou de errar, a medicao mudou e precisa ser refeita");
+});
+
+test("as outras tres medidas continuam sendo calculadas, como diagnostico", () => {
+  // Elas saem da NOTA, nao do relatorio: e o que permite dizer "o grave bate,
+  // o timbre nao" e entender a versao em vez de so pontua-la.
+  for (const k of ["harmonia", "timbre", "tempo"]) {
+    assert.ok(k in PESOS, `${k} tem de continuar listado em PESOS`);
+  }
+  assert.strictEqual(PESOS.grave, 1, "o grave e a nota");
 });
