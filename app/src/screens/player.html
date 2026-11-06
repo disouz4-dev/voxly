@@ -142,6 +142,8 @@ body {
   letter-spacing:.5em; text-transform:uppercase; margin-bottom:8px;
   text-shadow:0 0 24px rgba(255,180,84,.35);
 }
+#prev-capa { width:clamp(130px,13vw,200px); height:clamp(130px,13vw,200px); border-radius:16px;
+  object-fit:cover; margin-bottom:16px; box-shadow:0 10px 34px rgba(0,0,0,.55); }
 .preview-song   { font-family:'Unbounded'; font-weight:600; font-size:clamp(1.5rem,3.4vw,2.7rem); letter-spacing:.01em; text-align:center; margin-bottom:6px; }
 .preview-artist { font-family:'Space Mono', monospace; font-size:clamp(.8rem,1.6vw,1.05rem); color:var(--mudo); margin-bottom:8px; }
 .preview-singer {
@@ -568,6 +570,9 @@ body.modo-publico .show-countdown-time { font-size:clamp(2.4rem,6vw,4rem); }
     <div id="prev-waveform"></div>
     <div class="preview-label">🎤 Próxima Música</div>
     <div id="prev-avatars"></div>
+    <!-- Arte do album da musica (pedido dele em 06/11). Vem pronta no comando
+         da chamada, em base64: o Palco nao fala com o banco. -->
+    <img id="prev-capa" alt="" style="display:none;">
     <div class="preview-song"   id="prev-song">—</div>
     <div class="preview-artist" id="prev-artist">—</div>
     <div class="preview-singer" id="prev-singer">—</div>
@@ -1907,6 +1912,13 @@ document.addEventListener("DOMContentLoaded", () => {
             pararIntervalo();
           }
 
+          // A capa so aparece quando existe: sem ela a tela fica como era.
+          const elCapa = document.getElementById("prev-capa");
+          if (elCapa) {
+            const capa = VoxlySeguro.urlDeImagem(dados.capaURL);
+            if (capa) { elCapa.src = capa; elCapa.style.display = ''; }
+            else { elCapa.removeAttribute('src'); elCapa.style.display = 'none'; }
+          }
           document.getElementById("prev-song").textContent   = dados.musica  || "—";
           document.getElementById("prev-artist").textContent = dados.artista || "—";
           document.getElementById("prev-singer").textContent = duo

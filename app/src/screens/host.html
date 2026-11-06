@@ -530,6 +530,9 @@ footer strong { color:var(--ambar); font-weight:700; }
       <span class="folder-path" id="folder-path-display">Nenhuma pasta selecionada</span>
       <button class="btn btn-ghost btn-sm" onclick="selectFolder()">📁 Biblioteca</button>
       <button class="btn btn-ghost btn-sm" onclick="scanFolder()">🔄</button>
+      <button class="btn btn-ghost btn-sm" id="btnSincronizar" onclick="sincronizarAcervo()"
+              title="Varre a pasta, publica o acervo no banco e busca a foto de cada artista e a capa de cada música">⬇ Sincronizar</button>
+      <span id="sincronizarStatus" style="font-size:.66rem;color:var(--mudo);white-space:nowrap;"></span>
     </div>
     <div class="panel-body" id="queue-list">
       <div class="empty">A fila está vazia.<br>Aguarde solicitações.</div>
@@ -1209,6 +1212,7 @@ https://www.youtube.com/@canal/videos"></textarea>
 <script src="../entrada.js"></script>
 <script src="../previsao.js"></script>
 <script src="../catalogo.js"></script>
+<script src="../imagens.js"></script>
 <script src="../link-youtube.js"></script>
 <script src="../comando.js"></script>
 <script src="../autoplay.js"></script>
@@ -2302,11 +2306,15 @@ https://www.youtube.com/@canal/videos"></textarea>
   // texto — artista e musica — enquanto os arquivos seguem no disco do KJ.
   const LIMITE_CATALOGO = 5000; // documento do Firestore tem teto de 1 MB
 
-  async function publicarCatalogo() {
+  async function publicarCatalogo(tentativa = 0) {
     if (!window.electronAPI) return;
     try {
+      // O servidor local sobe junto com o app, e o DOMContentLoaded pode
+      // chegar antes dele: no teste de 06/11 a publicacao do arranque foi
+      // embora nessa corrida e NADA rodou — nem o catalogo no banco, nem a
+      // fila de imagens. Agora tenta de novo, com folga crescente.
       const resp = await fetch('http://127.0.0.1:7432/catalogo');
-      if (!resp.ok) return;
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const songs = await resp.json();
 
       // Deduplica: o mesmo par artista+musica pode existir em varios arquivos.
@@ -2332,6 +2340,11 @@ https://www.youtube.com/@canal/videos"></textarea>
 
       itens.sort((a, b) => a.artista.localeCompare(b.artista, 'pt-BR') ||
                            a.musica.localeCompare(b.musica, 'pt-BR'));
+
+      // As imagens entram na fila com o catalogo em maos, antes da decisao de
+      // publicar: a guarda abaixo pode barrar a publicacao (HD desconectado) e
+      // isso nao e razao para deixar o acervo sem foto no banco.
+      preencherImagensDoAcervo(itens);
 
       // A copia no banco E o acervo do app do cantor (ele busca ali, nao no
       // disco). Publicar de forma burra apaga o acervo inteiro quando o HD
@@ -2364,6 +2377,9 @@ https://www.youtube.com/@canal/videos"></textarea>
       console.log(`[CATALOGO] publicado: ${itens.length} musicas`);
     } catch (e) {
       console.warn('[CATALOGO] falha ao publicar:', e.message);
+      diario('catalogo.publicacao-falhou', { erro: e.message, tentativa }, 'aviso');
+      // Ate 5 tentativas, dobrando a espera: 2s, 4s, 8s, 16s, 32s.
+      if (tentativa < 5) setTimeout(() => publicarCatalogo(tentativa + 1), 2000 * Math.pow(2, tentativa));
     }
   }
 
@@ -3115,6 +3131,95 @@ https://www.youtube.com/@canal/videos"></textarea>
     }
   }
 
+  // ── Imagens do acervo, guardadas no banco ─────────────────
+  // Quem produz e a Gerencia: ela tem rede, ffmpeg e o catalogo inteiro. Para
+  // cada artista e cada musica sem imagem, consulta o iTunes, reduz a arte a um
+  // JPEG de 120px (uns 3,5 KB) e grava em base64 no proprio documento
+  // (`artistas/{slug}`, `capas/{chave}`). O celular so le.
+  //
+  // Nada e escrito no disco: a decisao dele em 06/11 foi "nao tem que nada
+  // ficar local". E a folga de 1,2 s entre consultas existe porque o iTunes
+  // limita por IP, e um 403 derruba tambem a identificacao de musica.
+  let _filaImagens = [];
+  let _filaImagensRodando = false;
+
+  function chaveDaCapa(artista, musica) {
+    const limpa = t => String(t || '').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return limpa(artista) + '__' + limpa(musica);
+  }
+
+  function preencherImagensDoAcervo(itens) {
+    if (!window.electronAPI || !window.electronAPI.imagemReduzida) return;
+    const pedidos = [];
+    const artistasVistos = new Set();
+    for (const i of (itens || [])) {
+      const artista = (i.artista || '').trim();
+      if (artista && !artistasVistos.has(artista)) {
+        artistasVistos.add(artista);
+        pedidos.push({ tipo: 'artista', colecao: 'artistas', id: chaveDaCapa(artista, ''), artista });
+      }
+      if (artista && i.musica) {
+        pedidos.push({ tipo: 'musica', colecao: 'capas', id: chaveDaCapa(artista, i.musica),
+                       artista, musica: i.musica });
+      }
+    }
+    const naFila = new Set(_filaImagens.map(x => x.colecao + '/' + x.id));
+    for (const p of pedidos) if (!naFila.has(p.colecao + '/' + p.id)) _filaImagens.push(p);
+    processarFilaImagens();
+  }
+
+  async function buscarNoItunes(termo, entidade) {
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(termo)}`
+      + `&entity=${entidade}&limit=5`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return (await resp.json()).results || [];
+  }
+
+  async function processarFilaImagens() {
+    if (_filaImagensRodando || modoOffline) return;
+    _filaImagensRodando = true;
+    try {
+      while (_filaImagens.length) {
+        const p = _filaImagens.shift();
+        const ref = db.collection(p.colecao).doc(p.id);
+        let doc = null;
+        try { const d = await ref.get(); doc = d.exists ? d.data() : null; } catch (e) { continue; }
+        if (!VoxlyImagens.precisaDeImagem(doc)) continue;
+        let arte = null;
+        try {
+          arte = p.tipo === 'artista'
+            ? VoxlyImagens.escolherArteDeArtista(await buscarNoItunes(p.artista, 'album'), p.artista)
+            : VoxlyImagens.escolherArteDeMusica(
+                await buscarNoItunes(`${p.artista} ${p.musica}`, 'musicTrack'), p.musica);
+        } catch (e) {
+          // Limite do iTunes ou rede: para a fila e tenta na proxima varredura,
+          // em vez de insistir e levar 403 em tudo.
+          diario('imagens.busca-falhou', { erro: e.message, tipo: p.tipo }, 'aviso');
+          break;
+        }
+        const img = arte ? await window.electronAPI.imagemReduzida(arte, VoxlyImagens.LADO_PADRAO) : null;
+        const base = p.tipo === 'artista'
+          ? { nome: p.artista }
+          : { artista: p.artista, musica: p.musica };
+        try {
+          await ref.set({
+            ...base,
+            // `semArte` marca quem o iTunes nao tem, para nao consultar de novo
+            // a cada varredura — eram centenas de consultas por nada.
+            ...(img ? { img, semArte: false } : { semArte: true }),
+            imagemEm: firebase.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+        } catch (e) { /* regra do banco ou rede: a proxima varredura tenta */ }
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    } finally {
+      _filaImagensRodando = false;
+    }
+  }
+
   // ── Ações da fila ─────────────────────────────────────────
   // Ordem de confianca: versao escolhida pelo KJ > id do video > nome.
   async function arquivoDoItem(item) {
@@ -3605,6 +3710,17 @@ https://www.youtube.com/@canal/videos"></textarea>
       chamadaVozAtiva = _p.chamadaVoz !== false;
     }
 
+    // Arte do album na chamada (pedido dele em 06/11). Ela ja esta no banco, em
+    // `capas/{chave}.img` — a Gerencia e quem fala com o Firestore, entao a arte
+    // viaja no proprio comando e o Palco nao precisa de rede. Falhar aqui nao
+    // atrasa a chamada: sem arte, a tela fica como era.
+    let capaURL = null;
+    try {
+      const doc = await db.collection('capas')
+        .doc(chaveDaCapa(proxima.artista, proxima.musica)).get();
+      if (doc.exists) capaURL = doc.data().img || null;
+    } catch (e) { /* sem arte, a chamada segue */ }
+
     // Play (ou outra chamada) aconteceu enquanto isto era montado: desiste.
     if (!_controleChamada.valida(_tokenChamada)) return;
 
@@ -3614,6 +3730,7 @@ https://www.youtube.com/@canal/videos"></textarea>
         musica: proxima.musica, artista: proxima.artista,
         cantor: proxima.nomeArtistico, duo: proxima.duoNome || null,
         photoURL: proxima.photoURL || null, duoPhotoURL: proxima.duoPhotoURL || null,
+        capaURL,
         itemId: proxima.id, segundos: SEGUNDOS_CONFIRMACAO,
         voz: vozEscolhida, chamadaVoz: chamadaVozAtiva
       }));
@@ -5688,6 +5805,58 @@ https://www.youtube.com/@canal/videos"></textarea>
     if (folder) document.getElementById('folder-path-display').textContent = folder;
   }
 
+  // ── Sincronizar o acervo (pedido dele em 06/11) ───────────
+  // Um botao que faz a volta inteira de uma vez: varre a pasta, publica o
+  // catalogo no banco e raspa a foto de cada artista e a capa de cada musica do
+  // iTunes, gravando tudo em `artistas/{slug}.img` e `capas/{chave}.img`.
+  //
+  // Antes isso so acontecia sozinho, em pedacos, quando a pasta mudava — e nao
+  // havia como pedir. Com 386 musicas a raspagem leva uns 8 minutos pela folga
+  // de 1,2 s entre consultas (o iTunes limita por IP), por isso o progresso
+  // aparece ao lado do botao.
+  let _sincronizando = false;
+  async function sincronizarAcervo() {
+    if (_sincronizando) { mostrarToast('A sincronização já está em andamento.'); return; }
+    if (!window.electronAPI) return;
+    const btn = document.getElementById('btnSincronizar');
+    const alvo = document.getElementById('sincronizarStatus');
+    const dizer = t => { if (alvo) alvo.textContent = t; };
+    _sincronizando = true;
+    if (btn) btn.disabled = true;
+    try {
+      dizer('varrendo a pasta…');
+      const n = await window.electronAPI.scanMusicFolder();
+      dizer(`${n} músicas — publicando…`);
+      diario('kj.sincronizarAcervo', { musicas: n });
+      // publicarCatalogo tambem enfileira as imagens (e tem a guarda contra
+      // varredura vazia apagar o acervo do banco).
+      await publicarCatalogo();
+      if (!_filaImagens.length && !_filaImagensRodando) {
+        dizer('acervo em dia');
+        mostrarToast(`✅ Acervo sincronizado: ${n} músicas. As imagens já estavam no banco.`, 6000);
+        return;
+      }
+      const total = _filaImagens.length;
+      mostrarToast(`⬇ Sincronizando ${n} músicas e buscando ${total} imagens. Pode deixar rodando.`, 8000);
+      // Acompanha a fila sem travar a tela.
+      await new Promise(resolve => {
+        const t = setInterval(() => {
+          const faltam = _filaImagens.length;
+          dizer(faltam ? `imagens: faltam ${faltam} de ${total}` : 'imagens em dia');
+          if (!faltam && !_filaImagensRodando) { clearInterval(t); resolve(); }
+        }, 1500);
+      });
+      mostrarToast('✅ Acervo e imagens sincronizados.', 6000);
+    } catch (e) {
+      dizer('falhou');
+      diario('kj.sincronizarAcervo.falhou', { erro: e.message }, 'erro');
+      mostrarToast('⚠️ A sincronização falhou: ' + e.message, 8000);
+    } finally {
+      _sincronizando = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function scanFolder() {
     if (!window.electronAPI) return;
     const n = await window.electronAPI.scanMusicFolder();
@@ -6166,7 +6335,7 @@ https://www.youtube.com/@canal/videos"></textarea>
       // botoes
       'procurarVersoes','testarSaida','ajustarTom','ajustarPitchFila','vincularArquivo','verificarAtualizacao',
       'usarVersaoLocal','trocarMusicaFila','toggleIntervalo','toggleAudiencia','tocarMusica','testarVoz','skipSong',
-      'selectFolder','scanFolder','salvarRegras','removerDuoFila','reiniciarParaAtualizar',
+      'selectFolder','scanFolder','sincronizarAcervo','salvarRegras','removerDuoFila','reiniciarParaAtualizar',
       'reiniciarMusica','reabrirPlayer','pularMusica','playAgora','pararPrevia','pararDownloadYt','openSettings',
       'instalarPiper','iniciarFila','iniciarDownloadYt','finalizarSessao','editarSessaoAtiva',
       'derrubarSessoes','definirInicioShow','confirmarIniciarSessao','confirmarExpulsaoCantor',

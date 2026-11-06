@@ -25,6 +25,7 @@ const { motivoFalha } = require("./yt-falha");
 const { podeAtualizarSozinho, comoInstalar } = require("./atualizacao");
 const ytdlp = require("./ytdlp");
 const loudness = require("./loudness");
+const imagens = require("./imagens");
 const { autoUpdater } = require("electron-updater");
 const diario = require("./diario");
 const licenca = require("./licenca");
@@ -486,71 +487,17 @@ ipcMain.handle("ganho-normalizacao", async (_, arquivo) => {
   return ganho;
 });
 
-// ── Fotos de artistas ──────────────────────────────────────
-
-function pastaArtistas(folder) {
-  return path.join(folder, "artistas");
-}
-
-function fotoArtistaPath(folder, nome) {
-  const nomeSafe = nome.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "_";
-  return path.join(pastaArtistas(folder), nomeSafe, "photo.jpg");
-}
-
-let _fotoQueue        = [];
-let _fotoQueueRunning = false;
-
-async function processarFilaFotos(folder) {
-  if (_fotoQueueRunning) return;
-  _fotoQueueRunning = true;
-  while (_fotoQueue.length) {
-    const nome = _fotoQueue.shift();
-    await baixarFotoArtista(nome, folder);
-    await new Promise(r => setTimeout(r, 400));
-  }
-  _fotoQueueRunning = false;
-  console.log("[ARTISTA] Download de fotos concluído.");
-}
-
-async function baixarFotoArtista(nome, folder) {
-  const dest = fotoArtistaPath(folder, nome);
-  if (fs.existsSync(dest)) return;
-  try {
-    // `entity=musicArtist` NUNCA devolve artworkUrl100 — medido em 06/11 com
-    // Pitty, Seether e Legiao Urbana: 0 resultados com arte. Com isso, mesmo
-    // depois de consertar o `net` que faltava, todo download morria calado no
-    // "if (!match?.artworkUrl100) return". Em `entity=album` a arte vem em
-    // todos, e o artistName continua vindo para conferir o nome.
-    const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=album&limit=5`;
-    const searchResp = await net.fetch(searchUrl);
-    if (!searchResp.ok) return;
-    const data = await searchResp.json();
-    const results = data.results || [];
-    const match = results.find(r => r.artistName?.toLowerCase() === nome.toLowerCase()) || results[0];
-    if (!match?.artworkUrl100) return;
-
-    const imgUrl = match.artworkUrl100.replace("100x100bb", "600x600bb");
-    const imgResp = await net.fetch(imgUrl);
-    if (!imgResp.ok) return;
-
-    const buf = Buffer.from(await imgResp.arrayBuffer());
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, buf);
-    console.log(`[ARTISTA] ✓ ${nome}`);
-  } catch(e) {
-    console.warn(`[ARTISTA] Erro ${nome}:`, e.message);
-  }
-}
-
-function agendarDownloadFotos(folder) {
-  if (!folder || !fs.existsSync(folder)) return;
-  const artistas = [...new Set(catalogoLocal.map(s => s.artista).filter(Boolean))];
-  _fotoQueue = artistas.filter(nome => !fs.existsSync(fotoArtistaPath(folder, nome)));
-  if (_fotoQueue.length) {
-    console.log(`[ARTISTA] ${_fotoQueue.length} fotos para baixar`);
-    processarFilaFotos(folder);
-  }
-}
+// ── Fotos de artistas: nao ficam mais no disco ─────────────
+// Decisao dele em 06/11: "a copia das imagens tem que ficar no Firebase, nao
+// tem que nada ficar local". Quem produz a imagem agora e a Gerencia
+// (host.html): consulta o iTunes, pede a reducao pelo IPC `imagem-reduzida` e
+// grava o JPEG de 120px em base64 DENTRO do documento do Firestore
+// (`artistas/{slug}.img`, `capas/{chave}.img`).
+//
+// O que havia aqui — `baixarFotoArtista`, `processarFilaFotos`,
+// `agendarDownloadFotos` e a pasta `artistas/` criada dentro do acervo — saiu
+// inteiro. De todo modo nunca funcionou: o `net` nao estava importado desde
+// 01/07/2026 e, mesmo com ele, `entity=musicArtist` nao devolve arte.
 
 // ── Servidor HTTP ──────────────────────────────────────────
 
@@ -922,19 +869,6 @@ function iniciarServidorCatalogo(tokenLan) {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ ok: true, total: catalogoLocal.length }));
 
-    } else if (rota.startsWith("/artista-foto/")) {
-      const folder = store.get("musicFolder", null);
-      if (!folder) { res.statusCode = 404; res.end(""); return; }
-      const nome = decodeURIComponent(rota.slice("/artista-foto/".length));
-      const filePath = fotoArtistaPath(folder, nome);
-      if (fs.existsSync(filePath)) {
-        res.setHeader("Content-Type", "image/jpeg");
-        res.setHeader("Cache-Control", "max-age=86400");
-        fs.createReadStream(filePath).pipe(res);
-      } else {
-        res.statusCode = 404; res.end("");
-      }
-
     } else {
       res.statusCode = 404;
       res.setHeader("Content-Type", "application/json");
@@ -1175,7 +1109,6 @@ app.whenReady().then(() => {
   if (folder && fs.existsSync(folder)) {
     catalogoLocal = construirCatalogo(folder);
     startWatcher(folder);
-    agendarDownloadFotos(folder);
   }
   servidorLocal = new ServidorLocal({
     caminhoDados: path.join(app.getPath("userData"), "voxly-offline.json"),
@@ -1351,7 +1284,6 @@ ipcMain.handle("select-music-folder", async () => {
     store.set("musicFolder", folder);
     catalogoLocal = construirCatalogo(folder);
     startWatcher(folder);
-    agendarDownloadFotos(folder);
     console.log(`[CATALOGO] ${catalogoLocal.length} músicas carregadas de ${folder}`);
     return folder;
   }
@@ -1450,7 +1382,6 @@ ipcMain.handle("scan-music-folder", () => {
   const folder = store.get("musicFolder", null);
   if (folder) {
     catalogoLocal = construirCatalogo(folder);
-    agendarDownloadFotos(folder);
     console.log(`[CATALOGO] Varredura: ${catalogoLocal.length} músicas`);
     if (hostWindow) hostWindow.webContents.send("music-folder-changed");
   }
@@ -1588,6 +1519,47 @@ ipcMain.handle("toggle-audience", () => {
 ipcMain.handle("get-audience-state", () => !!(audienceWindow && !audienceWindow.isDestroyed()));
 
 // ── IPC: Resolve caminho completo p/ playlist de intervalo ──
+// Arte do iTunes reduzida a um JPEG pequeno, em base64, para caber DENTRO do
+// documento do Firestore. Decisao dele em 06/11: "a copia das imagens tem que
+// ficar no Firebase, nao tem que nada ficar local" — entao nada e escrito no
+// disco aqui, o retorno vai direto para o banco.
+//
+// O redimensionamento e pelo ffmpeg por pipe, sem arquivo temporario.
+ipcMain.handle("imagem-reduzida", async (_, url, lado) => {
+  if (!url || typeof url !== "string" || !/^https:\/\//.test(url)) return null;
+  const ffmpeg = resolverBinario("ffmpeg");
+  if (!ffmpeg) return null;
+  try {
+    const resp = await net.fetch(imagens.urlDaArteEm(url, lado || imagens.LADO_PADRAO));
+    if (!resp.ok) return null;
+    const bruto = Buffer.from(await resp.arrayBuffer());
+    if (!bruto.length) return null;
+    const n = Number(lado) > 0 ? Math.round(Number(lado)) : imagens.LADO_PADRAO;
+    const jpeg = await new Promise(resolve => {
+      const ff = spawn(ffmpeg, [
+        "-nostdin", "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+        "-vf", `scale=${n}:${n}:force_original_aspect_ratio=increase,crop=${n}:${n}`,
+        "-q:v", "6", "-f", "mjpeg", "pipe:1",
+      ], { windowsHide: true });
+      const partes = [];
+      const limite = setTimeout(() => { try { ff.kill(); } catch (_) {} }, 20000);
+      ff.stdout.on("data", d => partes.push(d));
+      ff.stderr.on("data", () => {});
+      ff.on("close", () => { clearTimeout(limite); resolve(Buffer.concat(partes)); });
+      ff.on("error", () => { clearTimeout(limite); resolve(Buffer.alloc(0)); });
+      ff.stdin.on("error", () => {});
+      ff.stdin.end(bruto);
+    });
+    if (!jpeg.length) return null;
+    const dataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+    // Arte que veio em tamanho errado nao entra no documento.
+    return imagens.imagemCabe(dataUrl) ? dataUrl : null;
+  } catch (e) {
+    registrar("main", "imagem.reduzir-falhou", { erro: e.message }, "aviso");
+    return null;
+  }
+});
+
 ipcMain.handle("fetch-image", async (_, url) => {
   if (!url) return null;
   try {

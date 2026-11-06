@@ -3110,10 +3110,12 @@ function escutarFila() {
       _carregarFotosBackground();
     }
 
-    // ── Capas das musicas ────────────────────────────────────
-    const _LS_CAPAS_KEY = 'voxly_capas_v1';
-    const _LS_CAPAS_TTL = 30 * 24 * 60 * 60 * 1000;   // capa de album nao muda
-    let _capas = {};              // chave -> url
+    // ── Capas das musicas, lidas do banco ────────────────────
+    // "A copia das imagens tem que ficar no Firebase, nao tem que nada ficar
+    // local" (06/11). Quem busca no iTunes e reduz a imagem e a Gerencia; aqui
+    // so se LE o que ela gravou no documento (`capas/{chave}`, campo `img`:
+    // JPEG de 120px em base64, uns 3,5 KB).
+    let _capas = {};              // chave -> data URL (ou '' quando nao ha arte)
     let _capaQueue = [];
     let _capaQueueRunning = false;
 
@@ -3121,22 +3123,8 @@ function escutarFila() {
       return slugArtista(artista) + '__' + slugArtista(musica);
     }
 
-    function _salvarCapasLocal() {
-      try { localStorage.setItem(_LS_CAPAS_KEY, JSON.stringify({ ts: Date.now(), d: _capas })); } catch (e) {}
-    }
-
-    function _aplicarCapasLocal() {
-      try {
-        const raw = localStorage.getItem(_LS_CAPAS_KEY);
-        if (!raw) return;
-        const payload = JSON.parse(raw);
-        if (Date.now() - payload.ts > _LS_CAPAS_TTL) return;
-        _capas = payload.d || {};
-      } catch (e) {}
-    }
-
-    // Pede a capa das musicas que estao na tela. So das que estao: 386 consultas
-    // de uma vez estouram o limite do iTunes por IP.
+    // Pede ao banco a capa das musicas que estao na tela. So das que estao: ler
+    // 386 documentos de uma vez a cada busca e desperdicio.
     function agendarCapas(chavesComNomes) {
       let novas = 0;
       for (const item of chavesComNomes) {
@@ -3153,29 +3141,19 @@ function escutarFila() {
       _capaQueueRunning = true;
       try {
         while (_capaQueue.length) {
-          const item = _capaQueue.shift();
-          if (_capas[item.chave] !== undefined) continue;
-          // O Firestore primeiro: a capa que outro celular ja achou serve.
-          let url = null;
-          try {
-            const doc = await db.collection('capas').doc(item.chave).get();
-            if (doc.exists) url = doc.data().url || null;
-          } catch (e) {}
-          if (url === null) {
-            url = await fetchCapaDaMusica(item.artista, item.musica);
+          // Em lote: o Firestore cobra por documento lido, e a tela mostra
+          // varias musicas de uma vez.
+          const lote = _capaQueue.splice(0, 10);
+          await Promise.all(lote.map(async item => {
+            if (_capas[item.chave] !== undefined) return;
+            let img = '';
             try {
-              await db.collection('capas').doc(item.chave).set({
-                artista: item.artista || null, musica: item.musica || null, url: url || null,
-                fetchedAt: firebase.firestore.FieldValue.serverTimestamp(),
-              }, { merge: true });
+              const doc = await db.collection('capas').doc(item.chave).get();
+              if (doc.exists) img = doc.data().img || '';
             } catch (e) {}
-            // Folga entre consultas: o iTunes limita por IP e um 403 derruba
-            // tambem o autocomplete da busca, que e o que o publico ve.
-            await new Promise(r => setTimeout(r, 1200));
-          }
-          _capas[item.chave] = url || '';
-          _salvarCapasLocal();
-          _pintarCapaNoDOM(item.chave, url);
+            _capas[item.chave] = img;
+            _pintarCapaNoDOM(item.chave, img);
+          }));
         }
       } finally {
         _capaQueueRunning = false;
@@ -3237,7 +3215,10 @@ function escutarFila() {
               const d = snap.data();
               const art = _artistasCache[slug];
               if (!art) return;
-              if (d.photoURL) art.photoURL = d.photoURL;
+              // `img`: o JPEG pequeno que a Gerencia gravou no banco. O
+              // `photoURL` antigo era endereco na Apple e fica como reserva
+              // para o acervo que ainda nao foi reprocessado.
+              if (d.img || d.photoURL) art.photoURL = d.img || d.photoURL;
               if (d.origem)   art.origem   = d.origem;
               const age = Date.now() - (d.fetchedAt?.toDate?.()?.getTime?.() || 0);
               if (age < 30 * 86400 * 1000) return;
@@ -3540,14 +3521,14 @@ function escutarFila() {
         const slug = _artistaQueue.shift();
         const art  = _artistasCache[slug];
         if (!art) continue;
-        const [photo, origem] = await Promise.all([fetchArtistPhoto(art.nome), fetchArtistOrigem(art.nome)]);
-        let mudou = false;
-        if (photo && photo !== art.photoURL)   { art.photoURL = photo; _atualizarFotoNoDOM(slug, photo); }
-        if (origem && origem !== art.origem)   { art.origem = origem; mudou = true; }
-        if (mudou) renderCatalogo();
+        // So a origem (Nacional/Internacional) e buscada daqui — ela nao e
+        // imagem. A foto quem produz e a Gerencia, que grava `img` no mesmo
+        // documento; este laco nao a toca para nao apagar o que ela gravou.
+        const origem = await fetchArtistOrigem(art.nome);
+        if (origem && origem !== art.origem) { art.origem = origem; renderCatalogo(); }
         try {
           await db.collection('artistas').doc(slug).set({
-            nome: art.nome, photoURL: photo || null, origem: origem || null,
+            nome: art.nome, origem: origem || null,
             fetchedAt: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
         } catch(e) {}
@@ -3557,44 +3538,11 @@ function escutarFila() {
       _artistaQueueRunning = false;
     }
 
-    // `entity=musicArtist` NUNCA devolve artworkUrl100 — medido em 06/11 com
-    // Pitty, Seether e Legiao Urbana: zero resultados com arte. Era por isso que
-    // a foto do artista nunca aparecia no acervo, mesmo sem dar erro nenhum. Em
-    // `entity=album` a arte vem em todos, e o artistName continua vindo para
-    // conferir se e o artista certo.
-    async function fetchArtistPhoto(nome) {
-      try {
-        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=album&limit=5`);
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        const comArte = (data.results || []).filter(r => r.artworkUrl100);
-        if (!comArte.length) return null;
-        const match = comArte.find(r => r.artistName?.toLowerCase() === nome.toLowerCase()) || comArte[0];
-        return match.artworkUrl100.replace('100x100bb', '600x600bb');
-      } catch(e) { return null; }
-    }
-
-    // ── Capa do album da musica (pedido do dono, 06/11) ──────
-    // Mesma API do iTunes que o app ja usa. Uma busca por musica, com o nome do
-    // artista no termo, e a capa da faixa que mais casa. Fica guardada no
-    // Firestore (colecao `capas`) para a casa inteira, e no localStorage deste
-    // celular: 386 musicas sao 386 consultas, e o iTunes limita por IP.
-    async function fetchCapaDaMusica(artista, musica) {
-      try {
-        const termo = `${artista || ''} ${musica || ''}`.trim();
-        if (!termo) return null;
-        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(termo)}&entity=musicTrack&limit=5`);
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        const comArte = (data.results || []).filter(r => r.artworkUrl100);
-        if (!comArte.length) return null;
-        const alvo = (musica || '').toLowerCase();
-        const match = comArte.find(r => (r.trackName || '').toLowerCase() === alvo)
-          || comArte.find(r => (r.trackName || '').toLowerCase().includes(alvo))
-          || comArte[0];
-        return match.artworkUrl100.replace('100x100bb', '300x300bb');
-      } catch(e) { return null; }
-    }
+    // A foto do artista e a capa da musica NAO sao buscadas aqui. Quem consulta
+    // o iTunes e reduz a imagem e a Gerencia, que grava o JPEG pequeno dentro
+    // do documento (`artistas/{slug}.img`, `capas/{chave}.img`) — "a copia das
+    // imagens tem que ficar no Firebase, nao tem que nada ficar local" (06/11).
+    // Este app so le o campo `img`.
 
     async function fetchArtistOrigem(nome) {
       try {
