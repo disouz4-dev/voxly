@@ -87,7 +87,37 @@ function vagasDoCantor(pedidos) {
   return { ativa: daVaga("ativa"), espera: daVaga("espera"), pendentes };
 }
 
-const api = { entradaDoHistorico, agruparPorNoite, slotParaPedido, vagasDoCantor };
+// ── O cantor trocando as duas musicas dele de lugar ───────
+// Pedido do dono (06/11): "o cantor pode alterar a ordem da musica que ele quer
+// cantar, ele pode colocar a musica da espera na fila principal e vice versa".
+//
+// `ordemFila` e so a ordem de CHEGADA e e ela que da a posicao na fila. Trocar
+// apenas o `slot` faria a musica promovida entrar com o numero dela — mais
+// alto, porque foi pedida depois — e o cantor perderia o lugar na fila por ter
+// reordenado as proprias musicas. Entao as duas trocam `slot` E `ordemFila`:
+// muda qual musica toca naquele lugar, nao o lugar.
+//
+// Devolve [{ id, slot, ordemFila }, ...] para gravar, ou null quando a troca
+// nao vale. Nada mais do pedido e reescrito.
+function trocaDeVagas(ativa, espera) {
+  if (!ativa || !espera || ativa.id === espera.id) return null;
+  // No palco, sendo chamado ou pronto: trocar mudaria a musica de quem ja esta
+  // subindo.
+  if (ativa.status !== "aguardando" || espera.status !== "aguardando") return null;
+  // Pedido sem slot e da fila principal (o mesmo que vagasDoCantor assume).
+  if ((ativa.slot || "ativa") !== "ativa" || espera.slot !== "espera") return null;
+  // Numero crú, sem Number(): `Number(null)` da 0, que e finito, e a troca
+  // aceitaria um pedido sem posicao — jogando a musica para o fim da fila sem
+  // aviso. Mesmo cuidado que ordem.js tem no `ordemDe`.
+  const na = ativa.ordemFila, ne = espera.ordemFila;
+  if (!Number.isFinite(na) || !Number.isFinite(ne)) return null;
+  return [
+    { id: ativa.id,  slot: "espera", ordemFila: ne },
+    { id: espera.id, slot: "ativa",  ordemFila: na },
+  ];
+}
+
+const api = { entradaDoHistorico, agruparPorNoite, slotParaPedido, vagasDoCantor, trocaDeVagas };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyHistorico = api;
 

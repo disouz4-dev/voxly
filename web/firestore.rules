@@ -402,6 +402,10 @@ service cloud.firestore {
     // aqui nao derruba a noite de ninguem.
     match /catalogo/{itemId}    { allow read, write: if logado(); }
     match /artistas/{slug}      { allow read, write: if logado(); }
+    // Capa de album por musica (pedido do dono em 06/11). Cache da casa toda:
+    // quem achar a capa no iTunes guarda aqui e os outros celulares reusam, em
+    // vez de cada um consultar a mesma musica e estourar o limite por IP.
+    match /capas/{chave}        { allow read, write: if logado(); }
     match /configuracoes/{doc}  { allow read: if logado(); allow write: if false; }
   }
 }

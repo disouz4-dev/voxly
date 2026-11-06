@@ -44,7 +44,6 @@
     .fila-slot { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: var(--surface2); margin-bottom: 8px; border: 1px solid #ffffff10; }
     .fila-slot.ativa  { border-color: var(--accent2); }
     .fila-slot.vazia  { border: 1px dashed #ffffff20; justify-content: center; cursor: pointer; }
-    .fila-slot.vazia:hover { border-color: var(--accent); }
     .fila-icon { width: 38px; height: 38px; border-radius: 8px; background: var(--accent2); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
     .fila-info { flex: 1; }
     .fila-musica { font-size: 0.9rem; font-weight: 600; }
@@ -53,6 +52,12 @@
     .fila-vazia-txt { font-size: 0.85rem; color: var(--muted); }
     .fila-pos { font-size: 0.75rem; color: var(--muted); background: var(--surface); padding: 3px 8px; border-radius: 6px; }
     .btn-pedir { width: 100%; padding: 14px; background: var(--accent2); color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s; margin-top: 4px; }
+    /* Fila cheia: o botao fica apagado e sem clique, em vez de so trocar o texto. */
+    .btn-pedir:disabled { opacity: .45; cursor: not-allowed; filter: grayscale(.5); box-shadow: none; }
+    /* Switch da ordem das duas musicas do cantor (pedido de 06/11). */
+    .btn-trocar-vagas { width: 100%; margin-top: 10px; padding: 9px; background: none; border: 1px solid var(--accent2); border-radius: 10px; color: var(--accent2); font-family: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; letter-spacing: .04em; }
+    .btn-trocar-vagas:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-trocar-vagas span { font-size: 1rem; letter-spacing: -.08em; margin-right: 4px; }
     .btn-pedir:hover { background: #6a3de8; transform: translateY(-1px); }
     .btn-pedir:disabled { background: #333; color: var(--muted); cursor: not-allowed; transform: none; }
     .hist-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid #ffffff08; }
@@ -165,6 +170,15 @@
     .badge-eu         { background: #7c4dff30; color: var(--accent2); }
 
     /* ── Catálogo ── */
+    /* Aviso do acervo: tem de chamar atencao sem parecer erro. */
+    .aviso-acervo { margin:14px 16px 4px; padding:13px 15px; border-radius:14px;
+      border:1px solid rgba(255,180,84,.45);
+      background:linear-gradient(150deg, rgba(255,180,84,.14), rgba(255,180,84,.05));
+      box-shadow:0 4px 18px rgba(255,180,84,.08); }
+    .aviso-acervo-titulo { font-family:'Unbounded', sans-serif; font-weight:700; font-size:.85rem;
+      color:var(--accent); margin-bottom:5px; letter-spacing:.01em; }
+    .aviso-acervo-texto { font-size:.78rem; line-height:1.55; color:var(--text); }
+    .aviso-acervo-texto b { color:var(--accent); font-weight:700; }
     .cat-search { width:100%; padding:12px 16px; background:var(--surface2); border:1px solid #ffffff18; border-radius:10px; color:var(--text); font-size:0.9rem; }
     .cat-search:focus { outline:none; border-color:var(--accent2); }
 
@@ -194,7 +208,9 @@
     .artista-foto-cat img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
     .artista-nome-cat { font-size:0.95rem; font-weight:700; }
     .artista-qtd-cat { font-size:0.72rem; color:var(--muted); margin-top:2px; }
-    .musica-row-cat { display:flex; align-items:center; gap:10px; padding:10px 16px 10px 82px; border-top:1px solid #ffffff06; cursor:pointer; transition:background 0.1s; }
+    .musica-row-cat { display:flex; align-items:center; gap:10px; padding:10px 16px 10px 52px; border-top:1px solid #ffffff06; cursor:pointer; transition:background 0.1s; }
+    /* Capa do album da musica. Nasce com um "♪" e recebe a imagem depois. */
+    .capa-musica { width:34px; height:34px; border-radius:6px; background:var(--surface2); flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
     .musica-row-cat:active { background:var(--surface2); }
     .musica-nome-cat { flex:1; font-size:0.86rem; font-weight:500; }
     .musica-indisponivel { color:var(--muted); }
@@ -320,19 +336,12 @@
   <!-- SEÇÃO DE MÚSICA — oculta até entrar na sessão -->
   <div id="sessao-conteudo" style="display:none;">
 
-    <!-- Contagem regressiva para início do show -->
-    <div class="card" id="show-countdown-card" style="display:none;">
-      <div class="slot-label">🎤 O Show começa em</div>
-      <div id="show-countdown-web" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.9rem;color:var(--accent);letter-spacing:.04em;font-variant-numeric:tabular-nums;">00:00:00</div>
-      <div style="font-size:.72rem;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;">Aproveite para pedir suas músicas — o KJ dá o play na hora marcada!</div>
-    </div>
-
     <!-- Tempo que falta da noite. Pedido do dono (06/11): "o tempo da sessao tem
          que aparecer para todos os usuarios, para eles saberem quando vai
          terminar, um timer com o tempo restante". -->
     <div class="card" id="sessao-restante-card" style="display:none;">
       <div class="slot-label">⏳ A noite acaba em</div>
-      <div id="sessao-restante" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.6rem;color:var(--accent);letter-spacing:.04em;font-variant-numeric:tabular-nums;">--:--</div>
+      <div id="sessao-restante" style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:1.9rem;color:var(--accent);letter-spacing:.04em;font-variant-numeric:tabular-nums;">00:00:00</div>
       <div id="sessao-restante-aviso" style="font-size:.72rem;color:var(--muted);margin-top:6px;font-family:'Space Mono',monospace;"></div>
     </div>
 
@@ -343,11 +352,16 @@
         <div class="card">
           <div class="fila-label">NA FILA PRINCIPAL</div>
           <div class="fila-slot vazia" id="slotAtiva">
-            <span class="fila-vazia-txt">+ Adicionar música</span>
+            <span class="fila-vazia-txt">Vazio</span>
           </div>
+          <button class="btn-trocar-vagas" id="btnTrocarVagas" onclick="trocarMinhasVagas()"
+                  title="Trocar a ordem: a música em espera vai para a fila principal e vice-versa"
+                  style="display:none;">
+            <span aria-hidden="true">↑↓</span> Trocar a ordem
+          </button>
           <div class="fila-label" style="margin-top:12px;">EM ESPERA</div>
           <div class="fila-slot vazia" id="slotEspera">
-            <span class="fila-vazia-txt">+ Adicionar música em espera</span>
+            <span class="fila-vazia-txt">Vazio</span>
           </div>
           <button class="btn-pedir" id="btnPedir" onclick="pedirMusicaBtn()">🎵 Pedir Música</button>
           <button onclick="mudarTab('catalogo')" class="btn-pedir" style="margin-top:8px;">
@@ -392,6 +406,17 @@
 
     <!-- TAB: CATÁLOGO -->
     <div id="tab-catalogo" style="display:none;">
+      <!-- Aviso destacado (pedido do dono, 06/11): o acervo nao e o limite —
+           musica que nao esta aqui pode ser pedida e o KJ baixa na hora. Muita
+           gente desistia ao nao achar a musica na lista. -->
+      <div class="aviso-acervo">
+        <div class="aviso-acervo-titulo">🔎 Não achou a sua música?</div>
+        <div class="aviso-acervo-texto">
+          Pode pedir mesmo assim. O que não está no acervo é <b>baixado na hora</b> —
+          escreva o nome da música no <b>Pedir Música</b> e confirme. Ela entra na fila
+          como <b>aguardando download</b> e o KJ baixa antes da sua vez.
+        </div>
+      </div>
       <div class="section" style="padding-bottom:10px;">
         <div class="cat-search-wrap">
           <input id="catBusca" class="cat-search" type="search" placeholder="Buscar artista ou música..."
@@ -644,11 +669,10 @@
     let sessaoAtiva  = false;
     let sessaoRegras = { permitirDuo: true, maxParticipacoesDuo: 1, prioridadeAtiva: true };
     let sessaoTermino = null;   // horario que o KJ marcou para acabar
+    let _restanteTimer = null;  // relogio do "A noite acaba em"
     // O documento da sessao lido ao resolver qual e a sessao: reaproveitado ao
     // entrar, em vez de buscar de novo (era uma ida a mais ao servidor).
     let _sessaoInicial = null;
-    let showHorarioWeb       = null;
-    let showContagemWebTimer = null;
     let presencasSessao = []; // cantores ativos na sessão (para o seletor de duo)
     // Posicao de cada pedido na fila, na ordem que a Gerencia ve. O slot do
     // cantor mostrava ordemFila, que nao e posicao: e fracionario para o cafe
@@ -945,6 +969,14 @@ function escutarFila() {
     function renderFila() {
       renderSlot('slotAtiva',  filhaAtiva,  'ativa');
       renderSlot('slotEspera', filhaEspera, 'espera');
+      // O switch so aparece quando ha as duas musicas para trocar, e so vale
+      // enquanto nenhuma delas esta subindo ao palco (regra em trocaDeVagas).
+      const bt = document.getElementById('btnTrocarVagas');
+      if (bt) {
+        const pode = filaAberta && !!VoxlyHistorico.trocaDeVagas(filhaAtiva, filhaEspera);
+        bt.style.display = (filhaAtiva && filhaEspera) ? 'block' : 'none';
+        bt.disabled = !pode;
+      }
       const btn = document.getElementById('btnPedir');
       if (!filaAberta) {
         btn.disabled    = true;
@@ -953,6 +985,38 @@ function escutarFila() {
         const cheio = !!(filhaAtiva && filhaEspera);
         btn.disabled    = cheio;
         btn.textContent = cheio ? '🎵 Fila Completa' : filhaAtiva ? '🎵 Adicionar em Espera' : '🎵 Pedir Música';
+      }
+    }
+
+    // Troca as duas musicas do cantor de lugar. Lote unico: se so uma gravacao
+    // passasse, ele ficaria com duas na mesma vaga.
+    let _trocandoVagas = false;
+    async function trocarMinhasVagas() {
+      if (_trocandoVagas) return;
+      if (!filaAberta) { mostrarAvisoFilaFechada(); return; }
+      const troca = VoxlyHistorico.trocaDeVagas(filhaAtiva, filhaEspera);
+      if (!troca) {
+        mostrarToast('Não dá para trocar agora — uma das músicas já está sendo chamada.', 4000);
+        return;
+      }
+      _trocandoVagas = true;
+      const bt = document.getElementById('btnTrocarVagas');
+      if (bt) bt.disabled = true;
+      try {
+        if (modoOffline) {
+          mostrarToast('Sem conexão com a casa — a troca precisa do servidor.', 4000);
+          return;
+        }
+        const fila = db.collection('sessoes').doc(SESSAO_ID).collection('fila');
+        const lote = db.batch();
+        for (const t of troca) lote.update(fila.doc(t.id), { slot: t.slot, ordemFila: t.ordemFila });
+        await lote.commit();
+        mostrarToast('↑↓ Ordem trocada.', 3000);
+      } catch (e) {
+        mostrarToast('Não foi possível trocar a ordem. Tente de novo.', 4000);
+      } finally {
+        _trocandoVagas = false;
+        renderFila();
       }
     }
 
@@ -1010,9 +1074,14 @@ function escutarFila() {
             </div>
           </div>`;
       } else {
+        // A vaga vazia so MOSTRA que esta vazia. Clicar nela abria o mesmo modal
+        // do botao laranja, e eram dois jeitos de pedir a mesma musica na mesma
+        // tela ("adicionar musica e pedir musica sao a duplicata", 06/11). Quem
+        // pede e o botao "🎵 Pedir Musica".
         el.className = 'fila-slot vazia';
-        el.onclick = () => { if (!filaAberta) { mostrarAvisoFilaFechada(); return; } abrirModal(slot); };
-        el.innerHTML = `<span class="fila-vazia-txt">+ Adicionar música</span>`;
+        el.onclick = null;
+        el.style.cursor = 'default';
+        el.innerHTML = `<span class="fila-vazia-txt">Vazio</span>`;
       }
     }
 
@@ -1284,7 +1353,7 @@ function escutarFila() {
     function selecionarMusicaIdx(i) {
       const el = document.getElementById('resultadosBusca');
       const r = el._resultados?.[i];
-      if (r) selecionarMusica(r.id, r.musica, r.artista, r.disponivel, r.videoId);
+      if (r) selecionarMusica(r.id, r.musica, r.artista, r.disponivel, r.videoId, r.duracao);
     }
 
     function mudarTom(delta) {
@@ -1295,13 +1364,18 @@ function escutarFila() {
       if (musicaSelecionada) musicaSelecionada.semitons = v;
     }
 
-    function selecionarMusica(id, musica, artista, disponivel, videoId) {
+    function selecionarMusica(id, musica, artista, disponivel, videoId, duracao) {
       semitonsEscolhido = 0;
       document.getElementById('tomValor').textContent = '0';
       document.getElementById('tomLabel').textContent = 'semitons (original)';
       // videoId: o id do arquivo no acervo. Vai no pedido para o Palco tocar o
       // arquivo exato, sem casar por nome (que punha música errada, 09/10).
-      musicaSelecionada = { catalogoId: id, musica, artista, disponivel, semitons: 0, videoId: videoId || null };
+      // `duracao` (segundos, quando o catalogo sabe) e o que decide se a musica
+      // cabe antes do fim da noite — sessao-regras.js cabeOutraMusica.
+      const dur = Number(duracao);
+      musicaSelecionada = { catalogoId: id, musica, artista, disponivel, semitons: 0,
+                            videoId: videoId || null,
+                            duracao: Number.isFinite(dur) && dur > 0 ? dur : null };
       document.getElementById('musicaSelecionadaNome').textContent   = musica;
       document.getElementById('musicaSelecionadaArtista').textContent= artista;
       document.getElementById('musicaSelecionadaStatus').innerHTML   = disponivel
@@ -1362,10 +1436,11 @@ function escutarFila() {
         const cabe = VoxlySessao.cabeOutraMusica({
           termino: sessaoTermino,
           fimDaFila: sessaoAtualDoc && sessaoAtualDoc.filaFimPrevistoEm,
+          duracaoS: escolhida.duracao,
         });
         if (!cabe.cabe) {
-          errEl.textContent = 'A fila já está cheia até o fim da noite — sua música só começaria '
-            + cabe.atrasoMin + ' min depois do encerramento. Fale com o KJ.';
+          errEl.textContent = 'Essa música terminaria ' + cabe.atrasoMin
+            + ' min depois do fim da noite. Escolha uma mais curta ou fale com o KJ.';
           return;
         }
       }
@@ -1551,6 +1626,7 @@ function escutarFila() {
       const cabeDeNovo = VoxlySessao.cabeOutraMusica({
         termino: sessaoTermino,
         fimDaFila: sessaoAtualDoc && sessaoAtualDoc.filaFimPrevistoEm,
+        duracaoS: e.duracao,
       });
       if (!cabeDeNovo.cabe) {
         mostrarToast('A fila já está cheia até o fim da noite — não dá mais para entrar.', 5000);
@@ -2660,7 +2736,7 @@ function escutarFila() {
       } catch (_) {}
       SESSAO_ID = null;
       sessaoAtiva = false;
-      clearInterval(showContagemWebTimer);
+      clearInterval(_restanteTimer); _restanteTimer = null;
 
       const conteudo = document.getElementById('sessao-conteudo');
       if (conteudo) conteudo.style.display = 'none';
@@ -2698,24 +2774,11 @@ function escutarFila() {
         if (data.regras) sessaoRegras = { ...sessaoRegras, ...data.regras };
         sessaoTermino = data.horarioTermino || null;
         atualizarRestanteDaSessao();
-        if (!_restanteTimer) _restanteTimer = setInterval(atualizarRestanteDaSessao, 30 * 1000);
+        if (!_restanteTimer) _restanteTimer = setInterval(atualizarRestanteDaSessao, 1000);
         const novaFilaAberta = data.filaAberta !== false;
         if (novaFilaAberta !== filaAberta) {
           filaAberta = novaFilaAberta;
           renderFila();
-        }
-
-        // Contagem regressiva do show
-        const hor = data.horarioInicioShow
-          ? (data.horarioInicioShow.toDate ? data.horarioInicioShow.toDate().getTime() : data.horarioInicioShow)
-          : null;
-        showHorarioWeb = data.showIniciado ? null : hor;
-        clearInterval(showContagemWebTimer);
-        if (showHorarioWeb) {
-          atualizarContagemWeb();
-          showContagemWebTimer = setInterval(atualizarContagemWeb, 1000);
-        } else {
-          atualizarContagemWeb();
         }
 
         // Sessão encerrada: redireciona para index
@@ -2727,44 +2790,37 @@ function escutarFila() {
       });
     }
 
-    function atualizarContagemWeb() {
-      const card = document.getElementById('show-countdown-card');
-      const time = document.getElementById('show-countdown-web');
-      if (!card) return;
-      if (!showHorarioWeb || !sessaoAtiva) { card.style.display = 'none'; return; }
-      const dif = showHorarioWeb - Date.now();
-      card.style.display = 'block';
-      if (dif <= 0) { time.textContent = 'É HORA DO SHOW!'; return; }
-      const s = Math.floor(dif / 1000);
-      const hh = String(Math.floor(s / 3600)).padStart(2, '0');
-      const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-      const ss = String(s % 60).padStart(2, '0');
-      time.textContent = hh + ':' + mm + ':' + ss;
-    }
-
     // Tempo que falta da noite, para todo mundo ver. E o mesmo card que avisa
     // quando a fila ja esta cheia ate o fim — antes a pessoa pedia, esperava a
     // noite toda e nao cantava.
-    let _restanteTimer = null;
     function atualizarRestanteDaSessao() {
       const card = document.getElementById('sessao-restante-card');
       const alvo = document.getElementById('sessao-restante');
       const aviso = document.getElementById('sessao-restante-aviso');
       if (!card) return;
       if (!sessaoAtiva || !sessaoTermino) { card.style.display = 'none'; return; }
+      const fim = sessaoTermino.toDate ? sessaoTermino.toDate().getTime() : Number(sessaoTermino);
+      if (!Number.isFinite(fim)) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+
+      // Hora, minuto e segundo (pedido do dono, 06/11). O relogio bate de
+      // segundo em segundo, como a contagem do inicio do show fazia.
+      const dif = fim - Date.now();
+      if (dif <= 0) {
+        alvo.textContent = '00:00:00';
+        aviso.textContent = 'A sessão desta casa encerrou.';
+        return;
+      }
+      const t = Math.floor(dif / 1000);
+      const dois = n => String(n).padStart(2, '0');
+      alvo.textContent = `${dois(Math.floor(t / 3600))}:${dois(Math.floor((t % 3600) / 60))}:${dois(t % 60)}`;
+
+      // Sem musica escolhida ainda: a conta usa a media de uma faixa, so para
+      // dizer se ainda da tempo de pedir.
       const r = VoxlySessao.cabeOutraMusica({
         termino: sessaoTermino,
         fimDaFila: sessaoAtualDoc && sessaoAtualDoc.filaFimPrevistoEm,
       });
-      card.style.display = 'block';
-      if (r.restamMin == null) { card.style.display = 'none'; return; }
-      if (r.restamMin <= 0) {
-        alvo.textContent = 'acabou';
-        aviso.textContent = 'A sessão desta casa encerrou.';
-        return;
-      }
-      const hh = Math.floor(r.restamMin / 60);
-      alvo.textContent = (hh ? hh + 'h' : '') + String(r.restamMin % 60).padStart(hh ? 2 : 1, '0') + 'min';
       aviso.textContent = r.cabe
         ? 'Dá tempo de pedir música.'
         : 'A fila já está cheia até o fim da noite — não dá mais para entrar.';
@@ -2999,13 +3055,93 @@ function escutarFila() {
       const totalEl = document.getElementById('cat-total');
       if (totalEl) totalEl.textContent = `${_catalogoSongs.length.toLocaleString('pt-BR')} músicas`;
 
-      // Prompt inicial
-      el.innerHTML = `<div class="empty" style="padding:30px 0;">
-        <span style="font-size:0.78rem;color:var(--muted);">Use a busca ou escolha um filtro</span>
-      </div>`;
+      // Depois de carregar, MOSTRA o acervo. Antes escrevia aqui um aviso
+      // ("Use a busca ou escolha um filtro") por cima da lista, e com o filtro
+      // em "Todos" nao aparecia musica nenhuma — a outra metade do
+      // "o filtro todos nao filtra todas as musicas" (06/11).
+      renderCatalogo();
 
       // Carrega cache de foto/origem em background
       _carregarFotosBackground();
+    }
+
+    // ── Capas das musicas ────────────────────────────────────
+    const _LS_CAPAS_KEY = 'voxly_capas_v1';
+    const _LS_CAPAS_TTL = 30 * 24 * 60 * 60 * 1000;   // capa de album nao muda
+    let _capas = {};              // chave -> url
+    let _capaQueue = [];
+    let _capaQueueRunning = false;
+
+    function chaveCapa(artista, musica) {
+      return slugArtista(artista) + '__' + slugArtista(musica);
+    }
+
+    function _salvarCapasLocal() {
+      try { localStorage.setItem(_LS_CAPAS_KEY, JSON.stringify({ ts: Date.now(), d: _capas })); } catch (e) {}
+    }
+
+    function _aplicarCapasLocal() {
+      try {
+        const raw = localStorage.getItem(_LS_CAPAS_KEY);
+        if (!raw) return;
+        const payload = JSON.parse(raw);
+        if (Date.now() - payload.ts > _LS_CAPAS_TTL) return;
+        _capas = payload.d || {};
+      } catch (e) {}
+    }
+
+    // Pede a capa das musicas que estao na tela. So das que estao: 386 consultas
+    // de uma vez estouram o limite do iTunes por IP.
+    function agendarCapas(chavesComNomes) {
+      let novas = 0;
+      for (const item of chavesComNomes) {
+        if (_capas[item.chave] !== undefined) continue;
+        if (_capaQueue.some(q => q.chave === item.chave)) continue;
+        _capaQueue.push(item);
+        novas++;
+      }
+      if (novas) processarFilaCapas();
+    }
+
+    async function processarFilaCapas() {
+      if (_capaQueueRunning) return;
+      _capaQueueRunning = true;
+      try {
+        while (_capaQueue.length) {
+          const item = _capaQueue.shift();
+          if (_capas[item.chave] !== undefined) continue;
+          // O Firestore primeiro: a capa que outro celular ja achou serve.
+          let url = null;
+          try {
+            const doc = await db.collection('capas').doc(item.chave).get();
+            if (doc.exists) url = doc.data().url || null;
+          } catch (e) {}
+          if (url === null) {
+            url = await fetchCapaDaMusica(item.artista, item.musica);
+            try {
+              await db.collection('capas').doc(item.chave).set({
+                artista: item.artista || null, musica: item.musica || null, url: url || null,
+                fetchedAt: firebase.firestore.FieldValue.serverTimestamp(),
+              }, { merge: true });
+            } catch (e) {}
+            // Folga entre consultas: o iTunes limita por IP e um 403 derruba
+            // tambem o autocomplete da busca, que e o que o publico ve.
+            await new Promise(r => setTimeout(r, 1200));
+          }
+          _capas[item.chave] = url || '';
+          _salvarCapasLocal();
+          _pintarCapaNoDOM(item.chave, url);
+        }
+      } finally {
+        _capaQueueRunning = false;
+      }
+    }
+
+    function _pintarCapaNoDOM(chave, url) {
+      if (!url) return;
+      document.querySelectorAll(`[data-capa="${chave}"]`).forEach(el => {
+        el.innerHTML = `<img src="${escHtml(url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" onerror="this.style.display='none'">`;
+      });
     }
 
     const _LS_ARTISTAS_KEY = 'voxly_artistas_v1';
@@ -3039,6 +3175,7 @@ function escutarFila() {
 
     async function _carregarFotosBackground() {
       // Tenta cache local primeiro (evita reads desnecessários no Firestore)
+      _aplicarCapasLocal();
       const cacheValido = _aplicarArtistasLocal();
 
       const slugs = Object.keys(_artistasCache);
@@ -3238,17 +3375,12 @@ function escutarFila() {
       const el = document.getElementById('cat-lista');
       if (!el || !_catalogoSongs.length) return;
       const termo = _catBuscaTermo;
-      const filtrando = termo.length >= 1 || _origemFiltro !== 'todos';
 
-      // Sem busca nem filtro: restaura total geral e mostra prompt
-      if (!filtrando) {
-        const totalEl = document.getElementById('cat-total');
-        if (totalEl) totalEl.textContent = `${_catalogoSongs.length.toLocaleString('pt-BR')} músicas`;
-        el.innerHTML = `<div class="empty" style="padding:30px 0;">
-          <span style="font-size:0.78rem;color:var(--muted);">Use a busca ou escolha um filtro</span>
-        </div>`;
-        return;
-      }
+      // "Todos" com a busca vazia LISTA TUDO. Antes caia num aviso ("Use a
+      // busca ou escolha um filtro") e nao aparecia musica nenhuma — o dono em
+      // 06/11: "o filtro todos nao filtra todas as musicas". Nacional e
+      // Internacional ja listavam seus grupos inteiros; Todos era o unico que
+      // nao mostrava nada.
 
       let entradas = Object.entries(_artistasCache).filter(([, art]) => {
         if (_origemFiltro === 'nacional'      && art.origem !== 'nacional')      return false;
@@ -3303,14 +3435,27 @@ function escutarFila() {
         ? `<img src="${escHtml(art.photoURL)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none'">`
         : `<span style="font-size:1.1rem;font-weight:800;">${(art.nome||'?')[0].toUpperCase()}</span>`;
 
+      // Capa do album ao lado do nome da musica (pedido do dono, 06/11). O
+      // quadradinho nasce com a inicial e e trocado pela imagem quando a capa
+      // chega — a busca no iTunes e assincrona e limitada por IP.
+      const pedidosDeCapa = [];
       const rows = musicas.map(s => {
         const idx = _catalogoSongs.indexOf(s);
         const disp = s.disponivel !== false;
+        const nome = limparNome(s.musica || '');
+        const ch = chaveCapa(art.nome, nome);
+        const capa = _capas[ch];
+        if (capa === undefined) pedidosDeCapa.push({ chave: ch, artista: art.nome, musica: nome });
+        const dentro = capa
+          ? `<img src="${escHtml(capa)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" onerror="this.style.display='none'">`
+          : `<span style="font-size:.6rem;color:var(--muted);">♪</span>`;
         return `<div class="musica-row-cat" onclick="pedirMusicaDoCatalogo(${idx})">
-          <span class="musica-nome-cat ${disp ? '' : 'musica-indisponivel'}">${escHtml(limparNome(s.musica || ''))}</span>
+          <div class="capa-musica" data-capa="${escHtml(ch)}">${dentro}</div>
+          <span class="musica-nome-cat ${disp ? '' : 'musica-indisponivel'}">${escHtml(nome)}</span>
           ${disp ? '' : '<span style="font-size:0.65rem;color:var(--danger);flex-shrink:0;">⬇</span>'}
         </div>`;
       }).join('');
+      if (pedidosDeCapa.length) agendarCapas(pedidosDeCapa);
 
       return `<div class="artista-bloco" id="bloco-cat-${slug}">
         <div class="artista-header-cat">
@@ -3338,7 +3483,8 @@ function escutarFila() {
         return;
       }
       if ((await abrirModal(slot)) === false) return;
-      selecionarMusica(song.id || null, limparNome(song.musica || ''), song.artista || '', song.disponivel !== false, song.videoId || null);
+      selecionarMusica(song.id || null, limparNome(song.musica || ''), song.artista || '',
+                       song.disponivel !== false, song.videoId || null, song.duracao);
     }
 
     // ── Busca de foto/origem do artista via API + cache Firestore ──
@@ -3366,16 +3512,42 @@ function escutarFila() {
       _artistaQueueRunning = false;
     }
 
+    // `entity=musicArtist` NUNCA devolve artworkUrl100 — medido em 06/11 com
+    // Pitty, Seether e Legiao Urbana: zero resultados com arte. Era por isso que
+    // a foto do artista nunca aparecia no acervo, mesmo sem dar erro nenhum. Em
+    // `entity=album` a arte vem em todos, e o artistName continua vindo para
+    // conferir se e o artista certo.
     async function fetchArtistPhoto(nome) {
       try {
-        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=musicArtist&limit=3`);
+        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(nome)}&entity=album&limit=5`);
         if (!resp.ok) return null;
         const data = await resp.json();
-        if (!data.results?.length) return null;
-        const match = data.results.find(r => r.artistName?.toLowerCase() === nome.toLowerCase()) || data.results[0];
-        const url = match?.artworkUrl100;
-        if (!url) return null;
-        return url.replace('100x100bb', '600x600bb');
+        const comArte = (data.results || []).filter(r => r.artworkUrl100);
+        if (!comArte.length) return null;
+        const match = comArte.find(r => r.artistName?.toLowerCase() === nome.toLowerCase()) || comArte[0];
+        return match.artworkUrl100.replace('100x100bb', '600x600bb');
+      } catch(e) { return null; }
+    }
+
+    // ── Capa do album da musica (pedido do dono, 06/11) ──────
+    // Mesma API do iTunes que o app ja usa. Uma busca por musica, com o nome do
+    // artista no termo, e a capa da faixa que mais casa. Fica guardada no
+    // Firestore (colecao `capas`) para a casa inteira, e no localStorage deste
+    // celular: 386 musicas sao 386 consultas, e o iTunes limita por IP.
+    async function fetchCapaDaMusica(artista, musica) {
+      try {
+        const termo = `${artista || ''} ${musica || ''}`.trim();
+        if (!termo) return null;
+        const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(termo)}&entity=musicTrack&limit=5`);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        const comArte = (data.results || []).filter(r => r.artworkUrl100);
+        if (!comArte.length) return null;
+        const alvo = (musica || '').toLowerCase();
+        const match = comArte.find(r => (r.trackName || '').toLowerCase() === alvo)
+          || comArte.find(r => (r.trackName || '').toLowerCase().includes(alvo))
+          || comArte[0];
+        return match.artworkUrl100.replace('100x100bb', '300x300bb');
       } catch(e) { return null; }
     }
 
