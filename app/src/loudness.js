@@ -43,6 +43,23 @@ function lerMedida(saida) {
   return { lufs, pico: Number.isFinite(pico) ? pico : null };
 }
 
+// ── Duracao do arquivo, de graca ──────────────────────────
+// O mesmo ffmpeg que mede a loudness ja imprime o cabecalho do arquivo, e ali
+// vem "Duration: HH:MM:SS.ms". Guardar isso evita uma segunda passada no
+// acervo, e e o que a regra do fim da noite precisa: a musica so entra se
+// terminar dentro da tolerancia depois do horario marcado (pedido do dono em
+// 06/11, "uma de 7 min nao entra, uma de 4 min entra").
+//
+// Devolve segundos, ou null — "Duration: N/A" existe, e o main.js corta o
+// inicio do stderr quando ele passa de 100 KB, levando o cabecalho embora.
+function lerDuracao(saida) {
+  if (!saida || typeof saida !== "string") return null;
+  const m = saida.match(/Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+  if (!m) return null;
+  const s = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  return Number.isFinite(s) && s > 0 ? s : null;
+}
+
 function ganhoDaMedida(medida, { alvo = ALVO_LUFS } = {}) {
   const lufs = medida && Number(medida.lufs);
   if (!Number.isFinite(lufs) || lufs < LUFS_MINIMO) return 1;
@@ -56,22 +73,54 @@ function ganhoDaMedida(medida, { alvo = ALVO_LUFS } = {}) {
 function criarCacheMedidas(dadosIniciais) {
   const dados = (dadosIniciais && typeof dadosIniciais === "object") ? { ...dadosIniciais } : {};
   const segundos = ms => Math.floor(Number(ms) / 1000);
+  // Vale a entrada? Mesmo arquivo (caminho, tamanho e data) e nada mais.
+  const mesma = (e, st) => !!e && typeof e === "object" && !!st
+    && e.size === st.size && e.mtime === segundos(st.mtimeMs);
+  const duracaoBoa = d => (Number.isFinite(d) && d > 0 ? d : null);
   return {
     obter(caminho, st) {
       const e = dados[caminho];
-      if (!e || typeof e !== "object" || !st) return null;
-      if (e.size !== st.size || e.mtime !== segundos(st.mtimeMs)) return null;
+      if (!mesma(e, st)) return null;
       if (!Number.isFinite(e.lufs)) return null;
-      return { lufs: e.lufs, pico: Number.isFinite(e.pico) ? e.pico : null };
+      return {
+        lufs: e.lufs,
+        pico: Number.isFinite(e.pico) ? e.pico : null,
+        // A duracao veio depois (06/11) e as medidas antigas nao a tem: null
+        // em vez de inventar numero. Quem precisa dela pergunta em duracaoDe.
+        duracao: duracaoBoa(e.duracao),
+      };
+    },
+    // So a duracao, para quem nao quer a medida de volume.
+    duracaoDe(caminho, st) {
+      const e = dados[caminho];
+      return mesma(e, st) ? duracaoBoa(e.duracao) : null;
     },
     guardar(caminho, st, medida) {
+      const antes = dados[caminho];
+      // A duracao ja guardada nao se perde quando a medida de volume e
+      // regravada, e vice-versa: sao duas leituras diferentes do mesmo arquivo.
+      const duracao = duracaoBoa(medida && medida.duracao)
+        ?? (mesma(antes, st) ? duracaoBoa(antes.duracao) : null);
       dados[caminho] = { size: st.size, mtime: segundos(st.mtimeMs), lufs: medida.lufs, pico: medida.pico };
+      if (duracao != null) dados[caminho].duracao = duracao;
+    },
+    // Grava so a duracao, preservando a medida de volume que ja estiver ali.
+    // E assim que as medidas antigas ganham duracao, com uma leitura barata do
+    // cabecalho em vez de refazer a medida do arquivo inteiro.
+    guardarDuracao(caminho, st, segs) {
+      const d = duracaoBoa(segs);
+      if (d == null || !st) return;
+      const antes = mesma(dados[caminho], st) ? dados[caminho] : null;
+      dados[caminho] = {
+        ...(antes || {}),
+        size: st.size, mtime: segundos(st.mtimeMs), duracao: d,
+      };
     },
     dados() { return dados; },
   };
 }
 
-const api = { ALVO_LUFS, lerMedida, ganhoDaMedida, criarCacheMedidas };
+const api = { ALVO_LUFS, lerMedida, ganhoDaMedida, criarCacheMedidas, lerDuracao };
 if (typeof module !== "undefined" && module.exports) module.exports = api;
 else raiz.VoxlyLoudness = api;
 

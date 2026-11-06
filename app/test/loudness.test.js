@@ -80,7 +80,9 @@ test("cache devolve a medida enquanto o arquivo é o mesmo", () => {
   const cache = criarCacheMedidas();
   const st = { size: 1000, mtimeMs: 1_700_000_000_123 };
   cache.guardar("/m/a.mp4", st, { lufs: -10, pico: -1 });
-  assert.deepStrictEqual(cache.obter("/m/a.mp4", st), { lufs: -10, pico: -1 });
+  // `duracao` entrou na medida em 06/11 (ver duracao-ffmpeg.test.js): quando
+  // nao foi lida, vem null em vez de numero inventado.
+  assert.deepStrictEqual(cache.obter("/m/a.mp4", st), { lufs: -10, pico: -1, duracao: null });
 });
 
 test("arquivo trocado (outro tamanho ou data) é medido de novo", () => {
@@ -101,7 +103,7 @@ test("cache sobrevive a ser salvo e recarregado", () => {
   const a = criarCacheMedidas();
   a.guardar("/m/a.mp4", { size: 1, mtimeMs: 2000 }, { lufs: -12, pico: -3 });
   const b = criarCacheMedidas(JSON.parse(JSON.stringify(a.dados())));
-  assert.deepStrictEqual(b.obter("/m/a.mp4", { size: 1, mtimeMs: 2000 }), { lufs: -12, pico: -3 });
+  assert.deepStrictEqual(b.obter("/m/a.mp4", { size: 1, mtimeMs: 2000 }), { lufs: -12, pico: -3, duracao: null });
 });
 
 test("cache corrompido no disco não derruba nada", () => {

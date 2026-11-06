@@ -2320,7 +2320,12 @@ https://www.youtube.com/@canal/videos"></textarea>
         vistos.add(chave);
         // Leva o id do video: o celular grava ele no pedido e o Palco toca o
         // arquivo exato, sem casar por nome (que punha música errada, 09/10).
-        itens.push({ artista: artista || 'Desconhecido', musica, videoId: s.videoId || null });
+        // A duracao vai junto: e o que o celular usa para saber se a musica
+        // cabe antes do fim da noite (sessao-regras.js cabeOutraMusica). Sem
+        // ela, o celular cai na media de 4 min.
+        const dur = Number(s.duracao);
+        itens.push({ artista: artista || 'Desconhecido', musica, videoId: s.videoId || null,
+                     ...(Number.isFinite(dur) && dur > 0 ? { duracao: Math.round(dur) } : {}) });
         if (itens.length >= LIMITE_CATALOGO) break;
       }
 

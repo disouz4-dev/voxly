@@ -224,6 +224,17 @@ function separarArtistaMusica(base) {
   return { artista: "Desconhecido", musica: limpo || base };
 }
 
+// Duracao guardada do arquivo, em segundos, ou null. Nao mede: so olha o cache
+// (quem mede e a fila de medicao, em segundo plano).
+function duracaoMedidaDe(fullPath) {
+  try {
+    const st = statDeArquivo(fullPath);
+    if (!st) return null;
+    const d = medidas().duracaoDe(fullPath, st);
+    return Number.isFinite(d) && d > 0 ? Math.round(d) : null;
+  } catch (_) { return null; }
+}
+
 function construirCatalogo(folder) {
   if (!folder || !fs.existsSync(folder)) return [];
   const exts = [".mp4", ".mkv", ".avi", ".webm", ".mp3"];
@@ -231,6 +242,9 @@ function construirCatalogo(folder) {
   // Todo caminho que muda o acervo passa por aqui (abertura, download,
   // varredura, arquivo apagado): e o ponto unico para medir o que for novo.
   agendarMedicaoDoAcervo(arquivos);
+  // Duracao de todo o acervo: barata, e o catalogo precisa dela para saber se a
+  // musica cabe antes do fim da noite.
+  agendarDuracoes(arquivos);
   return arquivos.map(fullPath => {
     const nomeArq = path.basename(fullPath);
     const base   = nomeArq.replace(path.extname(fullPath), "").replace(RE_ID_SUFIXO, "").trim();
@@ -244,7 +258,11 @@ function construirCatalogo(folder) {
       // musica errada no palco (09/10).
       videoId:   mId ? mId[1] : null,
       arquivo:   path.relative(folder, fullPath),
-      disponivel: true
+      disponivel: true,
+      // Segundos, quando o arquivo ja foi medido (a medicao do acervo roda em
+      // segundo plano). O celular usa isto para saber se a musica cabe antes do
+      // fim da noite; sem ela, vale a media de 4 min.
+      duracao:   duracaoMedidaDe(fullPath),
     };
   });
 }
@@ -278,12 +296,27 @@ function medidas() {
   return _medidas;
 }
 
-function salvarMedidasDepois() {
+// O adiamento de 2 s junta varias medidas numa gravacao so. Mas ele era
+// reiniciado a cada chamada, e numa fila continua (a das duracoes, que faz um
+// arquivo a cada 60 ms) a gravacao nunca chegava: o app fechava antes e tudo o
+// que foi medido ia embora. Por isso existe o teto de 10 s — adiar, sim;
+// adiar para sempre, nao.
+let _primeiraMedidaPendente = 0;
+const TETO_ADIAR_MEDIDAS_MS = 10000;
+
+function gravarMedidasAgora() {
   clearTimeout(_timerSalvarMedidas);
-  _timerSalvarMedidas = setTimeout(() => {
-    try { fs.writeFileSync(CAMINHO_MEDIDAS, JSON.stringify(medidas().dados())); }
-    catch (e) { console.warn("[VOLUME] nao salvei as medidas:", e.message); }
-  }, 2000);
+  _timerSalvarMedidas = null;
+  _primeiraMedidaPendente = 0;
+  try { fs.writeFileSync(CAMINHO_MEDIDAS, JSON.stringify(medidas().dados())); }
+  catch (e) { console.warn("[VOLUME] nao salvei as medidas:", e.message); }
+}
+
+function salvarMedidasDepois() {
+  if (!_primeiraMedidaPendente) _primeiraMedidaPendente = Date.now();
+  if (Date.now() - _primeiraMedidaPendente >= TETO_ADIAR_MEDIDAS_MS) { gravarMedidasAgora(); return; }
+  clearTimeout(_timerSalvarMedidas);
+  _timerSalvarMedidas = setTimeout(gravarMedidasAgora, 2000);
 }
 
 function statDeArquivo(arquivo) {
@@ -305,14 +338,75 @@ function rodarMedicao(arquivo, { fundo = false } = {}) {
     // video que esta tocando: prioridade minima.
     if (fundo) { try { os.setPriority(child.pid, os.constants.priority.PRIORITY_LOW); } catch (_) {} }
     const limite = setTimeout(() => { try { child.kill(); } catch (_) {} }, 60000);
+    // A duracao vem no cabecalho, logo no comeco, e o corte abaixo joga o
+    // comeco fora. Entao ela e lida ANTES, na primeira vez que aparecer.
+    let duracao = null;
     child.stderr.on("data", d => {
       saida += d.toString();
+      if (duracao == null) duracao = loudness.lerDuracao(saida);
       // O resumo vem no fim; o comeco (cabecalho do arquivo) pode ir embora.
       if (saida.length > 100000) saida = saida.slice(-20000);
     });
-    child.on("close", () => { clearTimeout(limite); resolve(loudness.lerMedida(saida)); });
+    child.on("close", () => {
+      clearTimeout(limite);
+      const medida = loudness.lerMedida(saida);
+      // A duracao viaja junto da medida: e o mesmo cache, o mesmo ffmpeg.
+      resolve(medida && duracao != null ? { ...medida, duracao } : medida);
+    });
     child.on("error", () => { clearTimeout(limite); resolve(null); });
   });
+}
+
+// ── Duracao: leitura barata, so do cabecalho ──────────────
+// A medida de loudness le o arquivo inteiro (minutos por musica). Para a
+// duracao basta o cabecalho: "ffmpeg -i arquivo" sem saida imprime o
+// "Duration:" e sai com erro — milissegundos, em vez de uma passada completa.
+// E o que permite dar duracao as 424 medidas que ja existiam sem remedir nada.
+function rodarDuracao(arquivo) {
+  const ffmpeg = resolverBinario("ffmpeg");
+  if (!ffmpeg) return Promise.resolve(null);
+  return new Promise(resolve => {
+    let saida = "";
+    const child = spawn(ffmpeg, ["-nostdin", "-hide_banner", "-i", arquivo], { windowsHide: true });
+    const limite = setTimeout(() => { try { child.kill(); } catch (_) {} }, 15000);
+    // Sai com codigo de erro de proposito (nao foi pedida saida nenhuma): o que
+    // interessa e o cabecalho que ele imprimiu antes de reclamar.
+    child.stderr.on("data", d => { if (saida.length < 20000) saida += d.toString(); });
+    child.on("close", () => { clearTimeout(limite); resolve(loudness.lerDuracao(saida)); });
+    child.on("error", () => { clearTimeout(limite); resolve(null); });
+  });
+}
+
+let _filaDuracao = [];
+let _filaDuracaoRodando = false;
+
+// Enfileira quem ainda nao tem duracao guardada. Roda devagar e para enquanto
+// o Palco toca, como a fila de medicao.
+function agendarDuracoes(arquivos) {
+  const novos = (Array.isArray(arquivos) ? arquivos : []).filter(Boolean);
+  if (!novos.length) return;
+  const vistos = new Set(_filaDuracao);
+  for (const a of novos) if (!vistos.has(a)) _filaDuracao.push(a);
+  processarFilaDuracao();
+}
+
+async function processarFilaDuracao() {
+  if (_filaDuracaoRodando) return;
+  _filaDuracaoRodando = true;
+  try {
+    while (_filaDuracao.length) {
+      while (palcoTocando()) await new Promise(r => setTimeout(r, 5000));
+      const arquivo = _filaDuracao.shift();
+      const st = await fs.promises.stat(arquivo).catch(() => null);
+      if (!st || !st.isFile()) continue;
+      if (medidas().duracaoDe(arquivo, st) != null) continue;
+      const segs = await rodarDuracao(arquivo);
+      if (segs != null) { medidas().guardarDuracao(arquivo, st, segs); salvarMedidasDepois(); }
+      await new Promise(r => setTimeout(r, 60));
+    }
+  } finally {
+    _filaDuracaoRodando = false;
+  }
 }
 
 // Medida guardada, ou mede agora. Duas perguntas pelo mesmo arquivo esperam a
@@ -1235,7 +1329,12 @@ ipcMain.handle("restart-to-update", () => {
 
 ipcMain.handle("app-versao", () => app.getVersion());
 
-app.on("before-quit", () => { registrar("main", "app.fechando", null); gravarDiario(); });
+app.on("before-quit", () => {
+  registrar("main", "app.fechando", null);
+  gravarDiario();
+  // O que foi medido e ainda nao foi para o disco se perderia aqui.
+  if (_timerSalvarMedidas || _primeiraMedidaPendente) gravarMedidasAgora();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
