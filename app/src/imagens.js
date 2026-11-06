@@ -29,8 +29,56 @@ function limpar(s) {
     .toLowerCase().trim();
 }
 
+// ── O canal de karaoke ───────────────────────────────────
+// O acervo guarda o nome do canal colado no nome da musica. Do diario de
+// 06/11: {"musica": "Highway To Hell - Karaoke Master", "artista": "ACDC"}. Era
+// esse texto que ia inteiro para o iTunes, e perguntar
+// "ACDC Highway To Hell - Karaoke Master" devolve a compilacao do canal — cuja
+// capa e a arte do canal. Foi o que ele viu em duas do Blink 182.
+//
+// `semCanal` (identificacao.js) nao serve aqui: precisa saber o nome do canal,
+// que so se conhece na hora do download. Aqui a regra e pelo conteudo.
+const RE_KARAOKE = /karaok|karafun|playback|instrumental|vocal hero|sing king|party tyme|stingray|backing track|multitrack|minus one|sem voz/i;
+
+// Tira do FIM do titulo os trechos que falam de karaoke, e os parenteses do
+// tipo "(Karaoke Version)". So do fim, e so o que casa: "Love Me Do -
+// Remastered 2009" fica inteiro.
+function tituloLimpo(musica) {
+  let t = String(musica === 0 || musica ? musica : "").trim();
+  if (!t) return "";
+  const original = t;
+  // Marcador de desempate de arquivo com nome igual: "[a1b2c3]" no fim. O app
+  // do cantor ja o tirava antes de montar a chave (limparNome) e a Gerencia
+  // nao — a chave divergia nas musicas duplicadas. Agora sai aqui, para os dois
+  // lados concordarem.
+  t = t.replace(/\s*-?\s*\[[0-9a-f]{6}\]\s*$/i, "").trim();
+  t = t.replace(/[([][^)\]]*[)\]]/g, m => (RE_KARAOKE.test(m) ? " " : m));
+  const partes = t.split(/\s+[-–—]\s+/);
+  while (partes.length > 1 && RE_KARAOKE.test(partes[partes.length - 1])) partes.pop();
+  const limpo = partes.join(" - ").replace(/\s{2,}/g, " ").trim();
+  // Titulo que era SO o nome do canal: perguntar algo torto e melhor que
+  // perguntar nada.
+  return limpo || original;
+}
+
+// Resultado do iTunes que e karaoke, e nao o album. O pedido dele, textual:
+// "eu quero a foto do album da musica. Nunca" a do canal — entao isto nao
+// desempata, elimina.
+function ehDeKaraoke(r) {
+  if (!r || typeof r !== "object") return false;
+  return [r.artistName, r.collectionName, r.trackName]
+    .some(c => typeof c === "string" && RE_KARAOKE.test(c));
+}
+
+// O termo da consulta num lugar so, para a Gerencia e o celular perguntarem a
+// mesma coisa.
+function termoDaCapa(artista, musica) {
+  return [String(artista || "").trim(), tituloLimpo(musica)].filter(Boolean).join(" ");
+}
+
 const comArte = lista => (Array.isArray(lista) ? lista : [])
-  .filter(r => r && typeof r.artworkUrl100 === "string" && r.artworkUrl100);
+  .filter(r => r && typeof r.artworkUrl100 === "string" && r.artworkUrl100)
+  .filter(r => !ehDeKaraoke(r));
 
 // A arte do artista: o resultado cujo nome casa, senao o primeiro que tem arte.
 function escolherArteDeArtista(resultados, nome) {
@@ -47,7 +95,9 @@ function escolherArteDeArtista(resultados, nome) {
 function escolherArteDeMusica(resultados, musica) {
   const lista = comArte(resultados);
   if (!lista.length) return null;
-  const alvo = limpar(musica);
+  // Limpo, senao nunca ha casamento exato: o iTunes devolve "Broken" e o
+  // acervo pede "Broken - PARTY TYME KARAOKE CHANNEL".
+  const alvo = limpar(tituloLimpo(musica));
   const exato = lista.find(r => limpar(r.trackName) === alvo);
   if (exato) return exato.artworkUrl100;
   const contem = alvo && lista.find(r => limpar(r.trackName).includes(alvo));
@@ -61,11 +111,20 @@ function urlDaArteEm(url, lado = LADO_PADRAO) {
   return url.replace(/\/\d+x\d+bb\./, `/${n}x${n}bb.`);
 }
 
+// Versao da regra que produziu a imagem. Sobe quando a BUSCA muda, para que o
+// que foi gravado pela regra velha seja buscado de novo uma vez. A 2 marca o
+// conserto de 06/11: titulo sem o canal de karaoke e recusa de compilacao de
+// karaoke.
+const REGRA_IMAGEM = 2;
+
 // Vale pedir imagem para este documento? Documento ausente ou sem `img`, sim.
 // Marcado como `semArte`, nao: artista que o iTunes nao tem seria consultado a
 // cada abertura do acervo, centenas de vezes por noite, para nada.
+// E qualquer documento de regra anterior, sim: a arte dele saiu de uma consulta
+// que hoje se sabe errada.
 function precisaDeImagem(doc) {
   if (!doc || typeof doc !== "object") return true;
+  if (Number(doc.regra || 0) < REGRA_IMAGEM) return true;
   if (doc.img) return false;
   return !doc.semArte;
 }
@@ -97,12 +156,16 @@ function slugDoNome(texto) {
 }
 
 const chaveDoArtista = artista => slugDoNome(artista);
-const chaveDaCapa = (artista, musica) => slugDoNome(artista) + "__" + slugDoNome(musica);
+// O titulo vai limpo: as cinco versoes de karaoke de "Broken" dividem uma capa
+// so, e a Gerencia, o celular e a chamada do Palco se encontram sem cada um ter
+// de lembrar de limpar o texto.
+const chaveDaCapa = (artista, musica) => slugDoNome(artista) + "__" + slugDoNome(tituloLimpo(musica));
 
 const api = {
   escolherArteDeArtista, escolherArteDeMusica, urlDaArteEm,
   precisaDeImagem, tamanhoDoDataUrl, imagemCabe,
   slugDoNome, chaveDoArtista, chaveDaCapa,
+  tituloLimpo, ehDeKaraoke, termoDaCapa, REGRA_IMAGEM,
   LIMITE_IMAGEM_BYTES, LADO_PADRAO,
 };
 if (typeof module !== "undefined" && module.exports) module.exports = api;

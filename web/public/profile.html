@@ -537,11 +537,21 @@
 
       <!-- Música selecionada ou digitada manualmente -->
       <div id="musicaSelecionadaBox" style="display:none;background:#1c1c2e;border:1px solid #7c4dff;border-radius:8px;padding:12px;margin-bottom:10px;">
-        <div style="font-size:0.7rem;color:#7c4dff;font-weight:700;margin-bottom:4px;">SELECIONADA</div>
-        <div id="musicaSelecionadaNome" style="font-weight:600;"></div>
-        <div id="musicaSelecionadaArtista" style="font-size:0.8rem;color:#7a7a9d;"></div>
-        <div id="musicaSelecionadaStatus" style="font-size:0.7rem;margin-top:4px;"></div>
-        <button onclick="limparSelecao()" style="background:none;border:none;color:#ff5555;font-size:0.8rem;cursor:pointer;margin-top:4px;">✕ Limpar</button>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <!-- Capa do album no card de confirmacao (pedido dele em 06/11: "no
+               card, quando eu vou pedir a musica... nao vai tambem a imagem do
+               album. Tem que ir tambem"). Mesma fonte do catalogo: o documento
+               `capas/{chave}` no banco. -->
+          <div class="capa-musica" id="musicaSelecionadaCapa" data-capa=""
+               style="width:56px;height:56px;border-radius:8px;"><span style="font-size:.9rem;color:var(--muted);">♪</span></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.7rem;color:#7c4dff;font-weight:700;margin-bottom:4px;">SELECIONADA</div>
+            <div id="musicaSelecionadaNome" style="font-weight:600;"></div>
+            <div id="musicaSelecionadaArtista" style="font-size:0.8rem;color:#7a7a9d;"></div>
+            <div id="musicaSelecionadaStatus" style="font-size:0.7rem;margin-top:4px;"></div>
+            <button onclick="limparSelecao()" style="background:none;border:none;color:#ff5555;font-size:0.8rem;cursor:pointer;margin-top:4px;">✕ Limpar</button>
+          </div>
+        </div>
       </div>
 
       <!-- Botão para adicionar música não encontrada -->
@@ -1192,6 +1202,7 @@ function escutarFila() {
     function limparSelecao() {
       musicaSelecionada = null;
       semitonsEscolhido = 0;
+      mostrarCapaSelecionada(null, null);
       document.getElementById('musicaSelecionadaBox').style.display = 'none';
       document.getElementById('tomContainer').style.display = 'none';
       document.getElementById('btnConfirmar').disabled = true;
@@ -1427,6 +1438,7 @@ function escutarFila() {
       document.getElementById('musicaSelecionadaStatus').innerHTML   = disponivel
         ? '<span style="color:#00e676;font-size:0.7rem;">✓ Arquivo disponível</span>'
         : '<span style="color:#ff1744;font-size:0.7rem;">⬇ Aguardando Download</span>';
+      mostrarCapaSelecionada(artista, musica);
       document.getElementById('musicaSelecionadaBox').style.display = 'block';
       document.getElementById('tomContainer').style.display = 'block';
       document.getElementById('resultadosBusca').style.display = 'none';
@@ -3158,6 +3170,24 @@ function escutarFila() {
       } finally {
         _capaQueueRunning = false;
       }
+    }
+
+    // Capa do album no card de confirmacao do pedido. O quadradinho nasce com a
+    // nota e e trocado quando a capa chega — _pintarCapaNoDOM acha este
+    // elemento pelo `data-capa`, igual aos do catalogo.
+    function mostrarCapaSelecionada(artista, musica) {
+      const el = document.getElementById('musicaSelecionadaCapa');
+      if (!el) return;
+      const vazio = '<span style="font-size:.9rem;color:var(--muted);">♪</span>';
+      if (!artista && !musica) { el.setAttribute('data-capa', ''); el.innerHTML = vazio; return; }
+      const nome = limparNome(musica || '');
+      const ch = chaveCapa(artista, nome);
+      el.setAttribute('data-capa', ch);
+      const capa = _capas[ch];
+      el.innerHTML = capa
+        ? `<img src="${escHtml(capa)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.style.display='none'">`
+        : vazio;
+      if (capa === undefined) agendarCapas([{ chave: ch, artista, musica: nome }]);
     }
 
     function _pintarCapaNoDOM(chave, url) {

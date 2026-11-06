@@ -94,14 +94,20 @@ test("documento sem imagem precisa de imagem", () => {
   assert.strictEqual(precisaDeImagem({ img: "" }), true);
 });
 
-test("documento com imagem não é pedido de novo", () => {
-  assert.strictEqual(precisaDeImagem({ img: "data:image/jpeg;base64,/9j/4AAQ" }), false);
+test("documento com imagem da regra atual não é pedido de novo", () => {
+  // A regra entra desde 06/11: imagem de regra anterior volta para a fila, e
+  // isso tem teste proprio mais abaixo.
+  assert.strictEqual(precisaDeImagem({
+    img: "data:image/jpeg;base64,/9j/4AAQ", regra: require("../src/imagens").REGRA_IMAGEM,
+  }), false);
 });
 
 test("documento marcado como SEM arte não é pedido de novo", () => {
   // Artista que o iTunes nao tem: marca-se e nao se insiste a cada abertura do
   // acervo, senao sao centenas de consultas por noite para nada.
-  assert.strictEqual(precisaDeImagem({ img: null, semArte: true }), false);
+  assert.strictEqual(precisaDeImagem({
+    img: null, semArte: true, regra: require("../src/imagens").REGRA_IMAGEM,
+  }), false);
 });
 
 test("tamanho real do base64, não o da string", () => {
@@ -159,4 +165,181 @@ test("a chave e estavel: o mesmo nome da sempre o mesmo documento", () => {
   for (const n of ["Seether", "seether", "SEETHER", " Seether "]) {
     assert.strictEqual(chaveDoArtista(n), "seether", `variacao ${JSON.stringify(n)}`);
   }
+});
+
+// ── O canal de karaoke no titulo ──────────────────────────
+// Achado por ele em 06/11: "duas musicas do Blink 182 trouxeram thumbnails dos
+// canais de karaoke e nao dos albuns". A causa esta no diario do mesmo dia: o
+// acervo guarda o canal colado no nome da musica —
+//   {"musica": "Highway To Hell - Karaoke Master", "artista": "ACDC"}
+// — e era esse texto que ia inteiro para o iTunes. Pedir
+// "ACDC Highway To Hell - Karaoke Master" devolve a compilacao do canal, e a
+// capa da compilacao e a arte do canal. Duas defesas: limpar o titulo antes de
+// perguntar, e RECUSAR resultado de karaoke mesmo assim ("eu quero a foto do
+// album da musica. Nunca" a do canal).
+//
+// `semCanal` (identificacao.js) nao serve aqui: ele precisa saber o nome do
+// canal, que so existe no momento do download. Aqui a regra e pelo conteudo.
+
+const {
+  tituloLimpo, ehDeKaraoke, termoDaCapa,
+} = require("../src/imagens");
+
+test("o canal de karaoke sai do fim do titulo", () => {
+  const casos = [
+    ["Highway To Hell - Karaoke Master", "Highway To Hell"],
+    ["Broken - PARTY TYME KARAOKE CHANNEL", "Broken"],
+    ["Caramel - KARAOKE BALKA", "Caramel"],
+    ["Jeremy - Vocal Hero Karaoke Rock", "Jeremy"],
+    ["I Dont Want To Miss a Thing - Zoom Karaoke Official", "I Dont Want To Miss a Thing"],
+    ["Dont Stop Believin - CC Karaoke X", "Dont Stop Believin"],
+    ["Duvet - Lily Karaoke", "Duvet"],
+    ["Beggin' - KaraFun Karaoke", "Beggin'"],
+  ];
+  for (const [bruto, limpo] of casos) {
+    assert.strictEqual(tituloLimpo(bruto), limpo, `bruto: ${bruto}`);
+  }
+});
+
+test("titulo sem canal nenhum fica como esta", () => {
+  for (const t of ["Hypnotize", "Sou Favela", "Você Me Faz Tão Bem", "Evidências",
+                   "Don't Look Back in Anger", "All the Small Things"]) {
+    assert.strictEqual(tituloLimpo(t), t);
+  }
+});
+
+test("hifen que faz parte do nome da musica nao e cortado", () => {
+  // O corte so acontece quando o trecho do fim fala de karaoke.
+  assert.strictEqual(tituloLimpo("Love Me Do - Remastered 2009"), "Love Me Do - Remastered 2009");
+  assert.strictEqual(tituloLimpo("Enter Sandman - Metallica - Sing King Karaoke"),
+    "Enter Sandman - Metallica");
+});
+
+test("parenteses de versao karaoke saem; os outros ficam", () => {
+  assert.strictEqual(tituloLimpo("Broken (Karaoke Version)"), "Broken");
+  assert.strictEqual(tituloLimpo("Broken (feat. Amy Lee)"), "Broken (feat. Amy Lee)");
+});
+
+test("titulo que e SO o nome do canal nao fica vazio", () => {
+  // Melhor perguntar algo torto que perguntar nada.
+  assert.strictEqual(tituloLimpo("Karaoke Master"), "Karaoke Master");
+});
+
+test("titulo nulo, vazio ou torto nao estoura", () => {
+  assert.strictEqual(tituloLimpo(null), "");
+  assert.strictEqual(tituloLimpo(""), "");
+  assert.strictEqual(tituloLimpo(42), "42");
+});
+
+test("a chave da capa usa o titulo limpo, entao versoes do mesmo som dividem a arte", () => {
+  // Isso tambem faz a Gerencia, o celular e a chamada do Palco se encontrarem
+  // sem cada um ter de lembrar de limpar o texto.
+  const a = chaveDaCapa("Seether", "Broken - PARTY TYME KARAOKE CHANNEL");
+  const b = chaveDaCapa("Seether", "Broken - KaraFun Karaoke");
+  assert.strictEqual(a, "seether__broken");
+  assert.strictEqual(a, b);
+});
+
+test("resultado de canal de karaoke e reconhecido", () => {
+  assert.strictEqual(ehDeKaraoke({ artistName: "Party Tyme Karaoke" }), true);
+  assert.strictEqual(ehDeKaraoke({ collectionName: "Karaoke Classics, Vol. 3" }), true);
+  assert.strictEqual(ehDeKaraoke({ trackName: "Broken (Karaoke Version)" }), true);
+  assert.strictEqual(ehDeKaraoke({ artistName: "The Karaoke Channel" }), true);
+  assert.strictEqual(ehDeKaraoke({ artistName: "Seether", collectionName: "Disclaimer II",
+                                   trackName: "Broken" }), false);
+});
+
+test("a capa NUNCA vem de uma compilacao de karaoke", () => {
+  // O pedido dele, textual: "eu quero a foto do album da musica. Nunca" a do
+  // canal. Entao se o unico resultado com arte for de karaoke, nao ha arte.
+  const r = [
+    { trackName: "Broken", artistName: "Party Tyme Karaoke",
+      collectionName: "Karaoke Hits", artworkUrl100: arte(20) },
+  ];
+  assert.strictEqual(escolherArteDeMusica(r, "Broken"), null);
+});
+
+test("entre a compilacao de karaoke e o album de verdade, vence o album", () => {
+  const r = [
+    { trackName: "Broken", artistName: "Karaoke Master", artworkUrl100: arte(21) },
+    { trackName: "Broken", artistName: "Seether", collectionName: "Disclaimer II",
+      artworkUrl100: arte(22) },
+  ];
+  assert.strictEqual(escolherArteDeMusica(r, "Broken"), arte(22));
+});
+
+test("a foto do artista tambem recusa canal de karaoke", () => {
+  const r = [{ artistName: "Seether Karaoke Tribute", artworkUrl100: arte(23) }];
+  assert.strictEqual(escolherArteDeArtista(r, "Seether"), null);
+});
+
+test("a arte casa com o titulo limpo, nao com o bruto", () => {
+  // O iTunes devolve "Broken"; o acervo pede
+  // "Broken - PARTY TYME KARAOKE CHANNEL". Sem limpar, nunca ha casamento
+  // exato e caia-se no primeiro resultado qualquer.
+  const r = [
+    { trackName: "Broken (Live)", artistName: "Seether", artworkUrl100: arte(24) },
+    { trackName: "Broken", artistName: "Seether", artworkUrl100: arte(25) },
+  ];
+  assert.strictEqual(escolherArteDeMusica(r, "Broken - PARTY TYME KARAOKE CHANNEL"), arte(25));
+});
+
+test("o termo da consulta sai limpo e num lugar so", () => {
+  assert.strictEqual(termoDaCapa("ACDC", "Highway To Hell - Karaoke Master"),
+    "ACDC Highway To Hell");
+  assert.strictEqual(termoDaCapa("Seether", "Broken"), "Seether Broken");
+  assert.strictEqual(termoDaCapa("", "Broken"), "Broken");
+});
+
+// ── A regra com que a imagem foi buscada ──────────────────
+// As capas gravadas antes de 06/11 vieram de consulta suja (com o canal de
+// karaoke no titulo) e sem recusar compilacao de karaoke. Para a maioria a
+// chave mudou junto com a limpeza, e o documento velho fica orfao — mas musica
+// sem sufixo ("Hypnotize") mantem a chave e ficaria com a arte errada para
+// sempre, porque `precisaDeImagem` responderia "ja tem". Por isso o documento
+// carrega a versao da regra que o produziu.
+const { REGRA_IMAGEM } = require("../src/imagens");
+
+test("imagem gravada pela regra atual nao e buscada de novo", () => {
+  assert.strictEqual(precisaDeImagem({ img: "data:image/jpeg;base64,/9j/4AAQ", regra: REGRA_IMAGEM }), false);
+});
+
+test("imagem de regra antiga (ou sem regra) e buscada de novo", () => {
+  assert.strictEqual(precisaDeImagem({ img: "data:image/jpeg;base64,/9j/4AAQ" }), true);
+  assert.strictEqual(precisaDeImagem({ img: "data:image/jpeg;base64,/9j/4AAQ", regra: 1 }), true);
+});
+
+test("semArte de regra antiga tambem e tentado de novo", () => {
+  // Marcado como "o iTunes nao tem" por causa do titulo sujo: merece outra
+  // chance agora que o titulo vai limpo.
+  assert.strictEqual(precisaDeImagem({ semArte: true }), true);
+  assert.strictEqual(precisaDeImagem({ semArte: true, regra: REGRA_IMAGEM }), false);
+});
+
+test("a regra e um numero que sobe", () => {
+  assert.ok(Number.isInteger(REGRA_IMAGEM) && REGRA_IMAGEM >= 2);
+});
+
+// ── O marcador de desempate ───────────────────────────────
+// Arquivos de nome igual ganham um sufixo "[a1b2c3]" no catalogo, e o app do
+// cantor tira esse sufixo (limparNome) ANTES de montar a chave — a Gerencia
+// nao tirava. Resultado: nas musicas duplicadas a Gerencia gravava
+// `seether__broken_a1b2c3` e o celular lia `seether__broken`. E o mesmo erro de
+// chave divergente de 1.1.38, noutro lugar; a limpeza passa a morar aqui, para
+// os dois lados concordarem sem nenhum deles lembrar.
+test("o marcador de desempate sai do titulo", () => {
+  assert.strictEqual(tituloLimpo("Broken [a1b2c3]"), "Broken");
+  assert.strictEqual(tituloLimpo("Broken - [a1b2c3]"), "Broken");
+  assert.strictEqual(tituloLimpo("Broken - KaraFun Karaoke [9f8e7d]"), "Broken");
+});
+
+test("colchete que nao e marcador fica", () => {
+  // Seis caracteres, mas nao hexadecimais.
+  assert.strictEqual(tituloLimpo("Broken [ao vivo]"), "Broken [ao vivo]");
+  assert.strictEqual(tituloLimpo("Song [zzzzzz]"), "Song [zzzzzz]");
+});
+
+test("a chave e a mesma venha o titulo com marcador ou sem", () => {
+  assert.strictEqual(chaveDaCapa("Seether", "Broken [a1b2c3]"),
+                     chaveDaCapa("Seether", "Broken"));
 });
